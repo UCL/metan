@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.0  David Fisher  08nov2018}{...}
+{* *! version 3.2  David Fisher  28jan2019}{...}
 {vieweralsosee "admetan" "help admetan"}{...}
 {vieweralsosee "admetani" "help admetani"}{...}
 {vieweralsosee "ipdover" "help ipdover"}{...}
@@ -303,7 +303,6 @@ For further details of this option and the {opt list} and {opt nograph} suboptio
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Matrices}{p_end}
 {synopt:{cmd:r(coeffs)}}Matrix of study and subgroup identifiers, effect coefficients, numbers of participants, and weights{p_end}
-{synopt:{cmd:r(bystats)}}Matrix of heterogeneity statistics by subgroup{p_end}
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Variables}{p_end}
@@ -329,7 +328,7 @@ Setup
 {* example_end}{...}
 {txt}{...}
 {pmore}
-{it:({stata admetan_hlp_run ipdmetan_setup1 using ipdmetan_beta.sthlp:click to run})}{p_end}
+{it:({stata admetan_hlp_run ipdmetan_setup1 using ipdmetan.sthlp, restnot:click to run})}{p_end}
 
 
 {pstd}
@@ -354,7 +353,7 @@ box2opts(mcolor(blue)) ci2opts(lcolor(blue))){* ///}{p_end}
 {* example_end}{...}
 {txt}{...}
 {pmore}
-{it:({stata admetan_hlp_run ipdmetan_ex2 using ipdmetan_beta.sthlp:click to run})}{p_end}
+{it:({stata admetan_hlp_run ipdmetan_ex2 using ipdmetan.sthlp, restpres:click to run})}{p_end}
 
 
 {pstd}
@@ -374,7 +373,7 @@ favours("Favours greater treatment effect" "with higher disease stage"{* ///}{..
 {* example_end}{...}
 {txt}{...}
 {pmore}
-{it:({stata admetan_hlp_run ipdmetan_ex3 using ipdmetan_beta.sthlp:click to run})}{p_end}
+{it:({stata admetan_hlp_run ipdmetan_ex3 using ipdmetan.sthlp, restpres:click to run})}{p_end}
 
 
 {pstd}
@@ -389,7 +388,7 @@ Aggregate data setup: create aggregate dataset from IPD dataset (for example pur
 {* example_end}{...}
 {txt}{...}
 {pmore}
-{it:({stata admetan_hlp_run ipdmetan_setup2 using ipdmetan_beta.sthlp:click to run})}{p_end}
+{it:({stata admetan_hlp_run ipdmetan_setup2 using ipdmetan.sthlp, restpresnot:click to run})}{p_end}
 
 
 {pstd}
@@ -404,7 +403,7 @@ Including aggregate data in the analysis
 {* example_end}{...}
 {txt}{...}
 {pmore}
-{it:({stata admetan_hlp_run ipdmetan_ex4 using ipdmetan_beta.sthlp:click to run})}{p_end}
+{it:({stata admetan_hlp_run ipdmetan_ex4 using ipdmetan.sthlp, restpres:click to run})}{p_end}
 
 
 {pstd}
@@ -423,7 +422,7 @@ forest(nostats nowt favours(Favours treatment # Favours control)){* ///}{p_end}
 {* example_end}{...}
 {txt}{...}
 {pmore}
-{it:({stata admetan_hlp_run ipdmetan_ex5 using ipdmetan_beta.sthlp:click to run})}{p_end}
+{it:({stata admetan_hlp_run ipdmetan_ex5 using ipdmetan.sthlp, restpres:click to run})}{p_end}
 
 
 {pstd}
@@ -439,7 +438,7 @@ forest(nostats nowt favours(Favours treatment # Favours control)){p_end}
 {* example_end}{...}
 {txt}{...}
 {pmore}
-{it:({stata admetan_hlp_run ipdmetan_ex6 using ipdmetan_beta.sthlp:click to run})}{p_end}
+{it:({stata admetan_hlp_run ipdmetan_ex6 using ipdmetan.sthlp, restpres:click to run})}{p_end}
 
 
 

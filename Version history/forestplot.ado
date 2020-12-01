@@ -63,13 +63,17 @@
 // - N.B. cannot override "interaction" option with pointopts(msymbol(square)) -- is this a bug or a feature?
 // for next version:  include addplot() option ?
 
-*! version 3.0  David Fisher  08nov2018
+* version 3.0  David Fisher  08nov2018
 
-*! version 3.0.1  David Fisher  03dec2018
+* version 3.1  David Fisher  03dec2018
 // only implement lalign() if c(stata_version)>=15
 // corrected order of `graphopts' and `fpuseopts' so that -useopts- works as intended
 // -forestplot- now consistently honours blank varlabels in lcols/rcols (whether string or numeric)
 
+*! version 3.2  David Fisher  28jan2019
+// corrected error which caused first help-file example to fail
+// some text in help file is updated
+// improved counting of rows in titles containing compound quotes
 
 
 program define forestplot, sortpreserve rclass
@@ -228,6 +232,12 @@ program define forestplot, sortpreserve rclass
 					nois disp as text `"Note: option {bf:labels(}{it:varname}{bf:)} not specified; using default {it:varname}"' as res `" {bf:_LABELS}"'
 				}
 			}
+			
+			// Jan 2019
+			else if "`x'"=="labels" {
+				nois disp as text `"Note: option {bf:labels(}{it:varname}{bf:)} not specified and default {it:varname} {bf:_LABELS} not found; observations will be unlabelled"'
+				local names nonames
+			}
 		}
 	}
 
@@ -237,7 +247,9 @@ program define forestplot, sortpreserve rclass
 		tempvar flag
 		qui gen byte `flag' =      `touse' & `_USE'==1 &  missing(`_ES', `_LCI', `_UCI', `wgt')
 		qui replace  `flag' = 1 if `touse' & `_USE'==2 & !missing(`_ES', `_LCI', `_UCI')
-		qui replace  `flag' = 1 if `touse' & `_USE'==6 & !missing(`labels') & `"`names'"'==`""'
+		if `"`names'"'==`""' {		// Jan 2019
+			qui replace  `flag' = 1 if `touse' & `_USE'==6 & !missing(`labels')
+		}
 		qui replace  `flag' = 1 if `touse' & inlist(`_USE', 2, 6) & !missing(`wgt') & `"`wt'"'==`""'
 		qui replace  `flag' = 1 if `touse' & `_USE' >6 & !missing(`_USE')
 		qui count if `flag'
@@ -576,7 +588,9 @@ program define forestplot, sortpreserve rclass
 	qui replace `_ES' = .  if `touse' & `_USE'==2
 	qui replace `_LCI' = . if `touse' & `_USE'==2
 	qui replace `_UCI' = . if `touse' & `_USE'==2
-	qui replace `labels' = "" if `touse' & `_USE'==6 & `"`names'"'==`""'
+	if `"`names'"'==`""' {
+		qui replace `labels' = "" if `touse' & `_USE'==6
+	}
 	qui replace `wgt' = . if `touse' & inlist(`_USE', 2, 6) & `"`wt'"'==`""'
 	
 		
@@ -2515,18 +2529,10 @@ program define GetAspectRatio, rclass
 	// [modified Nov 2017 for v2.2 beta]
 	// (N.B. favours will be done separately)
 	// [modified Feb 2018]
+	// [Jan 2019: converted to subroutine for better parsing of compound quotes]
 	foreach opt in title subtitle caption note xtitle {
-		local rows`opt' = 0
-		local rest `"``opt''"'
-		_parse comma rest options : rest
-		if `"`rest'"'!=`""' {
-			// March 2018
-			// word count has trouble with apostrophes (but not double-quotes)
-			// so replace them with "a" for the purposes of word-counting
-			local rest2 : subinstr local rest `"'"' `"a"', all
-			gettoken foo bar : rest2, qed(q) quotes
-			local rows`opt' = cond(`q', `: word count `rest2'', 1)
-		}
+		GetRows ``opt''
+		local rows`opt' = r(rows)
 	}
 	
 
@@ -2790,6 +2796,34 @@ program define GetAspectRatio, rclass
 		
 end
 		
+
+* GetRows: subroutine of GetAspectRatio
+// added Jan 2019
+program define GetRows, rclass
+	syntax [anything(id="text string")] [, *]
+	local rows = 0
+	if `"`anything'"'!=`""' {
+		// March 2018
+		// word count has trouble with apostrophes (but not double-quotes)
+		// so replace them with "a" for the purposes of word-counting
+		/*
+		local rest : subinstr local anything `"'"' `"a"', all
+		gettoken foo bar : rest, qed(q) quotes
+		local rows = cond(`q', `: word count `rest'', 1)
+		*/
+
+		// Jan 2019: if title() etc. finds "" or `""' at the start, the title is set to nothing
+		if substr(trim(`"`anything'"'), 1, 2)==`""""' | substr(trim(`"`anything'"'), 1, 4)==`"`""'"' {
+			return scalar rows = 0
+			exit
+		}
+		
+		// Jan 2019: else, remove quotes using gettoken
+		gettoken foo bar : anything, qed(q) quotes
+		local rows = cond(`q', `: word count `anything'', 1)
+	}
+	return scalar rows = `rows'
+end
 		
 		
 

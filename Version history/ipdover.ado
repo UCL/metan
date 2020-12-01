@@ -21,14 +21,18 @@
 // various bug fixes
 // improvements to behaviour if some estimates are missing
 
-*! version 3.0  David Fisher  08nov2018
+* version 3.0  David Fisher  08nov2018
 // fixed bug preventing options to [command]
 
 // upversioned to v3.0 to match with ipdmetan and admetan
 // added `useopts' functionality
 
-*! version 3.0.1  David Fisher 03dec2018
+* version 3.1  David Fisher 03dec2018
 // fixed bug in RD option
+
+*! version 3.2  David Fisher 28jan2019
+// no changes to code; upversioned to match admetan/ipdmetan
+// but a minor change to text in the help file
 
 
 

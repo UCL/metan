@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.0  David Fisher  08nov2018}{...}
+{* *! version 3.2  David Fisher  28jan2019}{...}
 {vieweralsosee "admetan" "help admetan"}{...}
 {vieweralsosee "admetani" "help admetani"}{...}
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
@@ -88,7 +88,7 @@ with some additional options as described below.
 {pstd}
 {cmd:forestplot} creates forest plots from variables containing point estimates and lower/upper confidence limits.
 The meta-analysis programs {bf:{help admetan}}, {bf:{help ipdmetan}} and {bf:{help ipdover}} call {cmd:forestplot} by default, and pass on any relevant options.
-They can also save datasets with additional information that {cmd:forestplot} recognises.
+They can also save datasets with additional information that {cmd:forestplot} recognises (see {help admetan##saved_datasets:saved datasets}).
 Alternatively, {cmd:forestplot} can simply be run on data currently in memory.
 
 {pstd}
@@ -98,7 +98,7 @@ In either case, these three variables should represent the effect size (point es
 {pstd}
 By default, {cmd:forestplot} will also check for variables named {bf:_USE}, {bf:_WT} and {bf:_LABELS}.
 If the dataset in memory was created by {bf:{help admetan}}, {bf:{help ipdmetan}} or {bf:{help ipdover}},
- these variables should already exist.
+ these variables should already exist (see {help admetan##saved_datasets:saved datasets}).
 Otherwise (or if the user wishes not to use these variables), any of options {opt use(use)}, {opt wgt(wgt)} or {opt labels(labels)}
  may be supplied, containing alternative {it:varname}s.
 
@@ -125,6 +125,19 @@ The values of {bf:_USE} or {it:use} are interpreted by {cmd:forestplot} in the f
 {p 8 15 2}4 = heterogeneity information; assumed to be present only in the first left-hand column{p_end}
 {p 8 15 2}5 = overall pooled effect{p_end}
 {p 8 15 2}6 = blank line{p_end}
+
+{pstd}
+Note that {cmd:forestplot} creates a variable named {bf:_EFFECT} containing a string-valued concatenation of the (formatted) effect size
+and confidence limits, which by default is plotted in a column to the right of the plotted data.
+If a variable {bf:_EFFECT} was previously created by {cmd:admetan|ipdmetan|ipdover} (see {help admetan##saved_datasets:saved datasets}),
+then it will be overwritten by {cmd:forestplot}.
+Hence, to avoid losing information stored in the existing variable (such as user-inserted p-values), you can specify
+the option {bf:rcols(_EFFECT)} in conjunction with {opt nostats} when running {cmd:forestplot}.
+This tells {cmd:forestplot} that instead of
+creating (and hence overwriting) {bf:_EFFECT}, it should instead use the existing variable as a standard column of data.
+(The weight variable {bf:_WT} will typically also need to be added to {opt rcols()}, along with the {opt nowt} option,
+to maintain the default ordering of data columns.)
+This technique is demonstrated in the penultimate {help forestplot##examples:example}.
 
 
 {marker options}{...}
@@ -546,7 +559,7 @@ We also request a "filled" diamond, and demonstrate the use of the {opt cirange(
 
 {pstd}
 (Note that we need to include {bf:_EFFECT} within {opt rcols()} to prevent {cmd:forestplot} over-writing our p-value;
-and that {bf:_WT} also needs to be included to maintain the default ordering of columns.)
+and that {bf:_WT} also needs to be included to maintain the default ordering of columns; see {help forestplot##description:Description}.)
 
 {cmd}{...}
 {* example_start - forestplot_ex5}{...}
@@ -557,13 +570,17 @@ and that {bf:_WT} also needs to be included to maintain the default ordering of 
 {p 16 20 2}
 saving(`forestplot_example') nograph{p_end}
 {phang2}
+. preserve{p_end}
+{phang2}
 . use `forestplot_example', clear{p_end}
 {phang2}
-. replace _EFFECT = "p=0.261" if _USE==5{p_end}
+. replace _EFFECT = "p=0.261" if _USE==4{p_end}
 {phang2}
 . forestplot, useopts nostats nowt rcols(_EFFECT _WT) diamopt(fcolor("0 0 100")){* ///}{p_end}
 {p 16 20 2}
 xlabel(-.25 0 .25) cirange(-.35 .35) range(-.5 .5){p_end}
+{phang2}
+. restore{p_end}
 {* example_end}{...}
 {txt}{...}
 {pmore}
@@ -603,7 +620,7 @@ With the first {cmd:admetan} command, we set up the "look" of the forest plot (t
 and save this information using {opt savedims(matname)}. The second forest plot then has this information applied
 with {opt usedims(matname)}. Finally, the third plot not only uses {opt usedims(matname)} but also {opt colsonly} to
 produce a "forest plot" consisting of just the list of study names, but with the same text size and aesthetics, so that all
-three plots line up nicely when using {cmd:graph combine}.
+three plots line up nicely when using {bf:{help graph combine}}.
 
 
 

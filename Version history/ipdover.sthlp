@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.0  David Fisher  08nov2018}{...}
+{* *! version 3.2  David Fisher  28jan2019}{...}
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "metan" "help metan"}{...}
@@ -61,7 +61,7 @@ and by default sample size will appear to the left of the plot
 (instead of study weights appearing to the right of the plot as in {cmd:ipdmetan}).
 
 {pstd}
-Saved datasets (see {bf:{help ipdmetan}}) include the following identifier variables:{p_end}
+{help admetan##saved_datasets:Saved datasets} may include the following identifier variables:{p_end}
 {p2colset 8 24 24 8}
 {p2col:{cmd:_BY}}subset of data (c.f. {help by}) as supplied to second {opt over()} option, if applicable{p_end}
 {p2col:{cmd:_OVER}}identifier of variable within {it:over_varlist}{p_end}

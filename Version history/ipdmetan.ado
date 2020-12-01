@@ -101,7 +101,7 @@
 * version 2.1  David Fisher  14sep2017
 // various bug fixes; improvements to wgt() option
 
-*! version 3.0  David Fisher  08nov2018
+* version 3.0  David Fisher  08nov2018
 // various bug fixes and minor improvements
 // now includes IPD+AD code previously within admetan.ado
 //   so that admetan is completely self-contained
@@ -110,9 +110,14 @@
 //  - allow by() AND byad??  (with the effect that studies are stratified by both "by" and "source")
 //  - see statalist post re weights with -teffects-
 
-*! version 3.0.1  David Fisher  04dec2018
+* version 3.1  David Fisher  04dec2018
 // only pass straight to admetan_setup if one obs per study *AND* "`cmdstruc'"=="specific"
 // minor correction/clarification to options `admopts' passed to -admetan-
+
+*! version 3.2  David Fisher  28jan2019
+// GetNewname adds an extra underscore where `newname' matches _[A-Z] (and hence would o/w be caught by "badnames")
+// Fixed bugs preventing help file examples from running
+
 
 
 program define ipdmetan, rclass
@@ -2327,6 +2332,14 @@ program GetNewname
 	args mnewname colon oldname namelist
 	
 	local newname = strtoname(`"`oldname'"')		// matrix colname (valid Stata varname)
+	
+	// Jan 2019:  If newname begins _[A-Z], add an additional underscore
+	// (so as not to clash with simplified `badnames' check)
+	local cALPHA `c(ALPHA)'
+	local el2 = substr(`"`newname'"', 2, 1)
+	if substr(`"`newname'"', 1, 1)==`"_"' & `: list el2 in cALPHA' {
+		local newname `"_`newname'"'
+	}
 				
 	// Adjust newname if duplicates
 	if `: list newname in namelist' {
@@ -3469,6 +3482,12 @@ program define admetan_setup, rclass
 	}		// end if "`cmdstruc'"==""
 		
 	if `"`ad'"'!=`""' {	
+
+		// Jan 2019 for v3.2:  Keep track of "stored" varnames found in AD only, not in IPD
+		foreach v in _ES _seES _LCI _UCI _WT _NN _CC {
+			cap confirm var `v'
+			if !_rc local ipdstored `ipdstored' `v'
+		}
 	
 		// Declare tempvars `newstudy' and `newby' for use if string
 		//   and `_SOURCE' (with label `sourcelab') to store source of data (IPD or AD).
@@ -3493,7 +3512,7 @@ program define admetan_setup, rclass
 				c_local err noerr		// tell ipdmetan not to also report an "error in {bf:admetan_setup}"
 				exit _rc
 			}
-		}		
+		}
 	}		// end if `"`ad'"'!=`""'
 
 	
@@ -3521,9 +3540,18 @@ program define admetan_setup, rclass
 			syntax [name] [, *]
 			if `"`namelist'"'==`"_BYAD"' local plotid `"`_SOURCE', `options'"'
 		}
+		
+		// UP TO HERE 25th JAN
+		// Jan 2019 for v3.2:  Keep track of "stored" varnames found in AD only, not in IPD
+		foreach v in _ES _seES _LCI _UCI _WT _NN _CC {
+			cap confirm var `v'
+			if !_rc & !`: list v in ipdstored' local adstored `adstored' `v'
+		}
+		if `"`adstored'"'!=`""' local storedopt `"stored(`adstored')"'
+		
 	}
-	local byopt   = cond(`"`_BY'"'!=`""', `"`_BY', m"', `""')					// August 2018
-	local nptsopt = cond(`"`_NN'"'!=`""', `"`_NN', `plot' `integer'"', `""')	// October 2018
+	if `"`_BY'"'!=`""' local byopt `"`_BY', m"'						// August 2018
+	if `"`_NN'"'!=`""' local nptsopt `"`_NN', `plot' `integer'"'	// October 2018
 	// (Note: `_STUDY' is guaranteed to exist, so don't need to worry about it being empty)
 
 	// `bymissing' and `smissing' already dealt with;
@@ -3534,7 +3562,7 @@ program define admetan_setup, rclass
 		///
 		/// /* extra admetan options, only relevant to ipdmetan; e.g. to prompt suitable display text: */
 		/// /*  [N.B. `admopts' also contains:  estexp(`estexp') explist(`explist') `interaction' ipdxline(`extraline') lrvlist(`lrvlist') ] */
-		ipdmetan(`admopts' use(`_USE') `byad' `sourceopt' `preserve')
+		ipdmetan(`admopts' use(`_USE') `byad' `sourceopt' `storedopt' `preserve')
 	
 	// N.B. `summstat' and `log' are *not* passed to -admetan-
 	//  as all the necessary info is already stored in `eform' and `effect'.

@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.0  David Fisher  08nov2018}{...}
+{* *! version 3.2  David Fisher  28jan2019}{...}
 {vieweralsosee "admetani" "help admetani"}{...}
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
 {vieweralsosee "ipdover" "help ipdover"}{...}
@@ -10,6 +10,7 @@
 {viewerjumpto "Description" "admetan##description"}{...}
 {viewerjumpto "Options" "admetan##options"}{...}
 {viewerjumpto "Saved results" "admetan##saved_results"}{...}
+{viewerjumpto "Saved datasets" "admetan##saved_datasets"}{...}
 {viewerjumpto "Note: differences from metan" "admetan##diffs_metan"}{...}
 {viewerjumpto "Examples" "admetan##examples"}{...}
 {viewerjumpto "References" "admetan##refs"}{...}
@@ -78,12 +79,13 @@ For both {cmd:admetan} and {bf:{help ipdmetan}}, certain options are limited to 
 {synopt :{opt nokeepv:ars}}do not add {help admetan##saved_results:new variables} to the dataset{p_end}
 {synopt :{opt nors:ample}}do not even add new variable {bf:_rsample} recording which observations were used (cf. {help f_e:e(sample)}){p_end}
 {synopt :{opt noov:erall} {opt nosu:bgroup}}suppress overall pooling, or pooling within subgroups{p_end}
-{synopt :{opt notab:le}}suppress printing the table of effect sizes to screen{p_end}
+{synopt :{opt notab:le}}suppress printing the table of effect sizes to screen; see also {opt summaryonly}{p_end}
 {synopt :{opt ovwt sgwt}}override default choice of whether to display overall weights or subgroup weights{p_end}
 {synopt :{opt qe(varname)}}variable containing Quality Effects ({help admetan##refs:Doi et al 2015b}; see also {help admetan##model:{it:model}}){p_end}
 {synopt :{opt re} | {opt random}}specify the standard DerSimonian & Laird random-effects model{p_end}
 {synopt :{opt t}}use a {it:t}-distribution on {it:k-1} degrees of freedom to calculate confidence intervals for pooled results{p_end}
 {synopt :{cmd:sortby(}{it:varname}|{cmd:_n)}}ordering of studies in table and forest plot{p_end}
+{synopt :{opt wgt(varname)}}specify a variable containing user-defined weights{p_end}
 {synopt :{opt npts(varname)}}(generic effect measures only) specify variable containing participant numbers, to be displayed in forest plot if applicable{p_end}
 
 {syntab :Specific effect measures only}
@@ -114,7 +116,7 @@ display heterogeneity p-value{p_end}
 {synopt :{opt rfdist}, {opt rflevel(#)}}display approximate predictive interval, with optional coverage level{p_end}
 {synopt :{opt lcol:s(varlist)}, {opt rcol:s(varlist)}}display (and/or save) columns of additional data{p_end}
 {synopt :{opt plotid(varname)}}define groups of observations in which to apply specific plot rendition options{p_end}
-{synopt :{opt summaryonly}}show only summary estimates (diamonds) in the forest plot{p_end}
+{synopt :{opt summaryonly}}show only summary estimates (diamonds) in the forest plot and on screen{p_end}
 {synopt :{cmdab:sa:ving(}{it:saving_option}{cmd:)}}save data in the form of a "forestplot results set" to {it:filename}{p_end}
 {synopt :{opt nowarn:ing}}suppress the default display of a note warning that studies are weighted from random effects anaylses{p_end}
 
@@ -149,7 +151,9 @@ if not specifically referenced below.{p_end}
 {synopt :{opt reml}}Restricted maximum likelihood (REML) estimator{p_end}
 {synopt :{opt hm}}Hartung-Makambi estimator ({help admetan##refs:Hartung and Makambi 2003}){p_end}
 {synopt :{opt b0} {opt bp}}Rukhin B0 and BP estimators{p_end}
-{synopt :{opt sj2s} | {opt mv}}Sidik-Jonkman two-step estimator aka Model Error Variance-type estimator{p_end}
+{synopt :{opt sj2s} [{cmd:, init(}{it:model_name}{cmd:)}]}Sidik-Jonkman two-step estimator, with initial estimate of tau-squared using {it:model_name} (default is {opt vc}){p_end}
+{synopt :{opt dk2s} [{cmd:, init(vc | dl)}]}DerSimonian-Kacker two-step estimator ({help admetan##refs:DerSimonian and Kacker 2007}),
+with initial estimate {opt vc} (default) or {opt dl}{p_end}
 {synopt :{opt sa} [{cmd:, isq(}{it:real}{cmd:) tausq(}{it:real}{cmd:)}]}Sensitivity analysis with user-defined I-squared
 (taking values between 0 and 100; default is 80%) or tau-squared (>=0){p_end}
 
@@ -157,8 +161,10 @@ if not specifically referenced below.{p_end}
 {synopt :{opt hk:sj} [{cmd:, {ul:notru}ncate}]}Hartung-Knapp-Sidik-Jonkman variance correction
 applied to the standard DerSimonian-Laird model;
 optionally {ul:without} truncation of correction factor at 1 ({help admetan##refs:R{c o:}ver et al 2015}){p_end}
-{synopt :{opt pl} [{cmd:, {ul:ba}rtlett z}]}Estimation using profile likelihood, optionally with Bartlett's correction ({help admetan##refs:Huizenga et al 2011});
-and/or with {it:z}-test for pooled effect instead of the default chi-squared{p_end}
+{synopt :{opt pl} [{cmd:, {ul:ba}rtlett {ul:sk}ovgaard z}]}Estimation using profile likelihood,
+optionally with Bartlett's ({help admetan##refs:Huizenga et al 2011}) or Skovgaard's ({help admetan##refs:Guolo 2012}) correction.
+Option {opt z} displays the signed (square-root) log-likelihood statistic compared to a standard normal distribution, instead of the default
+log-likelihood statistic compared to a chi-squared distribution.{p_end}
 {synopt :{opt kr} [{cmd:, eim oim}]}Kenward-Roger variance correction, 
 using expected (default) or observed information matrix to compute degrees of freedom ({help admetan##refs:Morris et al 2018}){p_end}
 {synopt :{opt bt}}Biggerstaff-Tweedie approximate Gamma model{p_end}
@@ -171,10 +177,11 @@ using expected (default) or observed information matrix to compute degrees of fr
 {marker model_opts}{...}
 {synopthdr :model_opts}
 {synoptline}
-{synopt :{opt hk:sj} [{cmdab:notru:ncate}]} The Hartung-Knapp-Sidik-Jonkman variance correction (see above)
+{synopt :{opt hk:sj} [{cmdab:notru:ncate}]}The Hartung-Knapp-Sidik-Jonkman variance correction (see above)
 may also be applied to any other standard model involving a tau-squared estimator; e.g. {cmd:re(reml, hksj)}{p_end}
 {synopt :{opt qp:rofile}}Request a confidence interval for tau-squared using Q Profile method ({help admetan##refs:Viechtbauer 2007});
 note that most {ul:iterative} tau-squared estimators produce their own confidence intervals, which are otherwise reported by default{p_end}
+{synopt :{opt ro:bust}}Use the Sidik-Jonkman robust (sandwich-like) variance estimator ({help admetan##refs:Sidik and Jonkman 2006}){p_end}
 
 {syntab :options for iteration, replication or numerical integration}
 {synopt :{opt itol(#)}}Tolerance for iteration convergence (with {opt eb}, {opt ml}, {opt reml}, {opt pl}, {opt kr}, {opt bt} or {opt hc}){p_end}
@@ -317,6 +324,7 @@ See also the {opt qe(varname)} option.
 {phang}
 {opt nograph}, {opt notable} request the suppression of, respectively,
 construction of the forest plot and the table of effect sizes.
+Additionally, the forest plot option {opt summaryonly} has a similar effect to {opt notable} on the printed output.
 
 {phang}
 {opt nohet} suppresses heterogeneity statistics in both table and forest plot.
@@ -366,7 +374,7 @@ see also {cmd:model(}{help admetan##model:{it:model_name}}{cmd:)}
 {phang}
 {opt t} requests that a ("Student's") {it:t} distribution with {it:k-1} degrees of freedom be used to calculate confidence intervals
 for pooled results, where {it:k} is the number of studies. Intervals will be at least as wide as using a Normal distribution.
-Note that certain random-effects and variance-correction models use a {it:t} distribution by default.
+Note that certain random-effects and variance-correction models (e.g. Hartung-Knapp-Sidik-Jonkman) use a {it:t} distribution by default.
 
 {pmore}
 See also the {opt citype()} option, which requests alternative confidence intervals for individual studies
@@ -377,7 +385,7 @@ but {ul:not} the pooled result.
 without altering the data in memory.
 
 {phang}
-{opt wgt(weightvar)} specifies user-defined weighting for any data type. You should only use this option if you are satisfied that the weights are meaningful.
+{opt wgt(varname)} specifies user-defined weighting for any data type. You should only use this option if you are satisfied that the weights are meaningful.
 
 {pmore}
 Regardless of whether a fixed- or random-effects model is specified, pooled effects are calculated as:
@@ -398,11 +406,12 @@ and for a random-effects model:
 {bf:Var(}{it:theta}{bf:)} = {bf:sum(}{it:w_i^2} ({it:v_i} + {it:tau}^2){bf:)} / {bf:sum(}{it:w_i}{bf:)}^2
 
 {pmore}
-where {it:v_i} are the individual study variances.
+where {it:v_i} are the individual study variances and {it:w_i} are the user-defined weights.
 
 {pmore}
 Note that the scale of user-defined weights is immaterial, since individual weights are normalised.
 Hence, once run, an analysis may be recreated using the option {cmd:wgt(_WT)}. This also applies to datasets created using {opt saving()}.
+(If the raw numbers stored in {it:varname} are important, they may be saved and displayed using the forest plot options {bf:lcols()} or {bf:rcols()}.)
 
 
 {dlgtab:Specific effect measures only}
@@ -527,17 +536,7 @@ This may be of use for multiple subgroup analyses; see also {opt stacklabel}.
 
 {phang}
 {cmd:saving(}{it:{help filename}} [{cmd:, replace} {cmd:stacklabel}]{cmd:)} saves the forestplot "results set" created by
-{cmd:ipdmetan} in a Stata data file for further use or manipulation. See {bf:{help forestplot}} for further details.
-
-{pmore}
-Note that, in addition to the variables discussed in the {help forestplot##description:Description} section of {bf:{help forestplot}},
-{cmd:admetan} also creates a variable named {bf:_EFFECT} containing a string-valued concatenation of the (formatted) effect size and confidence limits.
-This would typically appear in a column to the right of the plotted data in the forest plot.
-Its presence in the "results set" enables the user to add p-values or other information before running {bf:{help forestplot}}; but note that {bf:{help forestplot}}
-will by default ignore or overwrite it. The solution is to use the option {bf:rcols(_EFFECT)} in conjunction with {opt nostats};
-which tells {bf:{help forestplot}} it doesn't need to create (and hence overwrite) {bf:_EFFECT} itself, but instead should treat our modified variable
-as a standard column of data. (The weight variable {bf:_WT} will typically also need to be added to {opt rcols()}, along with the {opt nowt}
-option, to maintain the default ordering of data columns.)  See the final example of {bf:{help forestplot}}.
+{cmd:ipdmetan} in a Stata data file for further use or manipulation; see {help admetan##saved_datasets:saved datasets}.
 
 {pmore}
 {opt replace} overwrites {it:filename}
@@ -604,7 +603,7 @@ The following new variables may be added:
 {p2col 5 25 29 2: Macros}{p_end}
 {synopt:{cmd:r(citype)}}Method of constructing study-level confidence intervals{p_end}
 {synopt:{cmd:r(method)}}Method of constructing study-level effect estimates{p_end}
-{synopt:{cmd:r(re_model)}}Random-effects model used{p_end}
+{synopt:{cmd:r(model)}}Pooling method used (e.g. Mantel-Haenszel, fixed-effect, DerSimonian-Laird){p_end}
 {synopt:{cmd:r(measure)}}Name of effect measure{p_end}
 
 {synoptset 25 tabbed}{...}
@@ -639,6 +638,52 @@ The following results may also be saved, depending on the combination of effect 
 {synopt:{cmd:r(rc_tsq_uci)}}Whether tau-squared upper confidence limit converged successfully{p_end}
 {synopt:{cmd:r(rc_eff_lci)}}Whether effect estimate lower confidence limit converged successfully{p_end}
 {synopt:{cmd:r(rc_eff_uci)}}Whether effect estimate upper confidence limit converged successfully{p_end}
+
+
+{marker saved_datasets}{...}
+{title:Saved datasets}
+
+{pstd}
+In order to construct a forest plot, {cmd:admetan} manipulates the data originally in memory into a format that {cmd:forestplot} understands.
+This "forestplot results set" can be saved in a Stata data file using the {opt saving()} option, allowing the user to further manipulate it and
+hence create highly customised forest plots.
+
+{pstd}
+The structure of these "results sets" is such that each row of data will appear in the plot, in the same order (top to bottom).
+Variable labels will appear above columns of data within the {help region_options:plot region}; value labels and formats (including string justification)
+are honoured where possible. See {bf:{help forestplot}} for further details of how such data is interpreted, and for additional options.
+
+{pstd}
+Variables specified in {opt lcols()} or {opt rcols()} will have their variable names, labels and formats preserved within "results sets".
+Otherwise, variables are given standardised names, as follows:
+
+{p2col 5 20 24 2: Core variables}{p_end}
+{synopt:{cmd:_USE}}Indicates the type of content in each observation (e.g. study effect, pooled effect); see {bf:{help forestplot}}{p_end}
+{synopt:{cmd:_STUDY}}Value-labelled numeric variable identifying the studies{p_end}
+{synopt:{cmd:_LABELS}}String containing general information to be displayed on the left-hand side of the forestplot, including study names{p_end}
+{synopt:{cmd:_ES}}Effect size (ES) on the interval scale (see {help admetan##saved_results:saved results}){p_end}
+{synopt:{cmd:_seES}}Standard error of ES (see {help admetan##saved_results:saved results}){p_end}
+{synopt:{cmd:_LCI}}Lower confidence limit for ES (see {help admetan##saved_results:saved results}){p_end}
+{synopt:{cmd:_UCI}}Upper confidence limit for ES (see {help admetan##saved_results:saved results}){p_end}
+{synopt:{cmd:_NN}}Study sample size (see {help admetan##saved_results:saved results}){p_end}
+{synopt:{cmd:_WT}}Study percentage weight (see {help admetan##saved_results:saved results}){p_end}
+{synopt:{cmd:_EFFECT}}String containing the effect size and confidence limits together, on the display scale (i.e. exponentiated if specified){p_end}
+
+{p2col 5 20 24 2: Option-dependent variables}{p_end}
+{synopt:{cmd:_BY}}Value-labelled numeric variable identifying study subgroups (see {opt by()} option){p_end}
+{synopt:{cmd:_CC}}Marker of whether continuity correction was applied (see {opt cc} option){p_end}
+{synopt:{cmd:_counts1}}String containing "events/total" numbers in the research arm (see {opt counts} option){p_end}
+{synopt:{cmd:_counts0}}String containing "events/total" numbers in the control arm (see {opt counts} option){p_end}
+{synopt:{cmd:_counts1msd}}String containing "mean (SD)" in the research arm (see {opt counts} option){p_end}
+{synopt:{cmd:_counts0msd}}String containing "mean (SD)" in the control arm (see {opt counts} option){p_end}
+{synopt:{cmd:_OE}}Logrank {it:O-E} (see {opt logrank} option){p_end}
+{synopt:{cmd:_V}}Logrank {it:V} (see {opt logrank} option){p_end}
+{synopt:{cmd:_VE}}String containing vaccine efficacy and confidence limits (see {opt efficacy} option){p_end}
+{synopt:{cmd:_rfLCI}}Lower confidence limit of approximate predictive distribution (see {opt rfdist} option){p_end}
+{synopt:{cmd:_rfUCI}}Upper confidence limit of approximate predictive distribution (see {opt rfdist} option){p_end}
+
+{pstd}
+Some of these variables have associated characteristics; type {bf:{help char:char list}} to see these.
 
 
 {marker diffs_metan}{...}
@@ -777,8 +822,9 @@ forestplot( xlabel(0(10)100, force) null(50) title(Sensitivity, position(6)) ){p
 
 {pstd}
 User has analysed data with a non-standard technique. User-defined weights are supplied,
-and the "results set" is saved and loaded. User-defined effect estimates are then substituted
-for those generated by {cmd:admetan}, before finally generating the forest plot.
+and the "results set" is saved and loaded (see {help admetan##saved_datasets:saved datasets}).
+User-defined effect estimates are then substituted for those generated by {cmd:admetan},
+before finally generating the forest plot.
 
 {pstd}
 (Note that this example could be run in one line using {bf:{help metan}},
@@ -873,6 +919,11 @@ Statistical methods for examining heterogeneity and combining results from sever
 In Systematic Reviews in Health Care: Meta-analysis in Context, ed. Egger M, Davey Smith G, Altman DG, 2nd ed., 285-312. London: BMJ Books.
 
 {phang}
+DerSimonian R, Kacker R. 2007.
+Random-effects model for meta-analysis of clinical trials: An update.
+Contemporary Clinical Trials 28: 105-114. doi: 10.1016/j.cct.2006.04.004
+
+{phang}
 Doi SAR, Barendregt JJ, Khan S, Thalib L, Williams GM. 2015a.
 Advances in the meta-analysis of heterogeneous clinical trials I: The inverse variance heterogeneity model.
 Contemporary Clinical Trials 45: 130-138
@@ -886,6 +937,11 @@ Contemporary Clinical Trials 45: 123-129
 Fisher DJ. 2015.
 Two-stage individual participant data meta-analysis and generalized forest plots.
 Stata Journal 15: 369-396
+
+{phang}
+Guolo A. 2012.
+Higher-order likelihood inference in meta-analysis and meta-regression.
+Statistics in Medicine 31: 313-327. doi: 10.1002/sim.4451
 
 {phang}
 Hartung J, Makambi KH. 2003.
@@ -916,6 +972,11 @@ Statistics in Medicine. doi: 10.1002/sim.7589
 R{c o:}ver C, Knapp G, Friede T. 2015.
 Hartung-Knapp-Sidik-Jonkman approach and its modification for random-effects meta-analysis with few studies.
 BMC Medical Research Methodology 15: 99-105
+
+{phang}
+Sidik K, Jonkman JN. 2006.
+Robust variance estimation for random effects meta-analysis.
+Computational Statistics & Data Analysis 50: 3681-3701. doi: 10.1016/j.csda.2005.07.019
 
 {phang}
 Sweeting MJ, Sutton AJ, Lambert PC. 2004.
