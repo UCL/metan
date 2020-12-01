@@ -3,4 +3,4 @@
 # metan
 "4.0"
 
-#A Stata package to perform meta-analysis of aggregate (summary) data
+# A Stata package to perform meta-analysis of aggregate (summary) data
