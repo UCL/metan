@@ -22,6 +22,9 @@
 *! version 1.04  David Fisher 29jun2015
 * Reason: Major update to coincide with publication of Stata Journal article
 
+*! version 1.04.1  David Fisher 27jul2015
+*! (new beta version since update)
+
 * Aug 2014: fixed issue with _labels
 * updated SpreadTitle to accept null strings
 * added 'noBOX' option
@@ -155,7 +158,7 @@ syntax [namelist(min=3 max=5)] [if] [in] [, ///
 		}
 		markout `touse' `_USE'
 		if `"`overall'"'!=`""' {
-			replace `touse'=0 if inlist(`_USE', 4, 5)
+			replace `touse'=0 if inlist(`_USE', 4, 5)	// july 2015 - revisit use of _USE==4
 		}
 		replace `touse'=0 if `"`subgroup'"'!=`""' & `_USE' == 3
 		count if `touse'
@@ -163,6 +166,8 @@ syntax [namelist(min=3 max=5)] [if] [in] [, ///
 			nois disp as err "no observations"
 			exit 2000
 		}
+		return scalar N = r(N)
+		
 		tempvar touse2 allobs obs
 		gen long `allobs'=_n
 		bysort `touse' (`allobs') : gen long `obs' = _n if `touse'
@@ -409,6 +414,8 @@ syntax [namelist(min=3 max=5)] [if] [in] [, ///
 			local DXmax `2'
 		}
 		else {
+			// test july 2015 -- think about using -scalar- here, and more widely??
+			// [doesn't solve all float() problems though, e.g. offscale]
 			summ `_LCI' if `touse', meanonly
 			local DXmin = r(min)			// minimum confidence limit
 			summ `_UCI' if `touse', meanonly
@@ -565,7 +572,7 @@ syntax [namelist(min=3 max=5)] [if] [in] [, ///
 		}
 		// Final calculation of DXmin and DXmax (under "normal" circumstances)
 		if trim(`"`range'`force'`null'"') == `""' & `h0'==0 {
-			numlist "`xlablist' `xticklist' `DXmin' `DXmax'", sort
+			numlist "`xlablist' `xticklist' `DXmin' `DXmax'", sort		// July 2015: evaluate DXmin/max scalars
 			local n : word count `r(numlist)' 
 			local DXmin : word 1 of `r(numlist)'
 			local DXmax : word `n' of `r(numlist)'
@@ -691,7 +698,7 @@ syntax [namelist(min=3 max=5)] [if] [in] [, ///
 			summ `strwid', meanonly
 			local maxwid = r(max)		// max width of existing text
 			
-			local leftWD`i' = 0			// default
+			local leftWD`i' = 0			// initialize
 			if abs(`fmtlen') <= `maxlen' local leftWD`i' = `maxwid'				// exact width of `maxlen' string
 			else local leftWD`i' = abs(`fmtlen')*`digitwid'						// approx. max width (based on `digitwid')
 			if `fmtlen'>0 replace `lindent`i'' = `leftWD`i'' - `strwid' 		// indent if right-justified
@@ -701,7 +708,7 @@ syntax [namelist(min=3 max=5)] [if] [in] [, ///
 			replace `lastcol' = `i' if `strwid'>0								// identify (non study-name) rows with no data
 			drop `strlen' `strwid'
 		}		// end of forvalues i=1/`lcolsN'
-
+		
 		
 		** Right columns
 		local rightWDtot = 0
@@ -733,7 +740,7 @@ syntax [namelist(min=3 max=5)] [if] [in] [, ///
 			summ `strwid', meanonly		
 			local maxwid = r(max)		// max width of existing text
 
-			local rightWD`i' = 0		// default
+			local rightWD`i' = 0		// initialize
 			if abs(`fmtlen')<=`maxlen' local rightWD`i' = `maxwid'				// exact width of `maxlen' string
 			else local rightWD`i' = abs(`fmtlen')*`digitwid'					// approx. max width (based on `digitwid')
 		
@@ -764,18 +771,39 @@ syntax [namelist(min=3 max=5)] [if] [in] [, ///
 		}														// end of forvalues i=1/`rcols'
 		local rightWDtot = `rightWDtot' + 2*`digitwid'			// add an extra buffer at far right-hand side
 		
-		// Unless noadjust, compare width of text in subgroup/overall and header rows (`leftWDtot')
-		//  to the width *excluding* "long headers" (`leftWDtotNoTi')
+		// Unless noadjust, compare current width of left-hand-side text (`leftWDtot')
+		//  to the width *excluding* "long headers" (and het. text if on separate line, _USE==4) (`leftWDtotNoTi')
 		//  and work out how far into plot this text can extend without overwriting the graph data
 		// (N.B. this needs both the left and right columns to have already had their first processing, for which see previous lines)
 		if "`adjust'" == "" {
 		
 			// Re-calculate widths of `lcols' for observations *other* than study estimates (i.e. _USE==0, 3, 4, 5)
-			local leftWDtotNoTi = `leftWDtot'
+			local leftWDtotNoTi = 0			// initialize
 			forvalues i=1/`lcolsN' {
 				gen long `strlen' = length(`leftLB`i'')
+				summ `strlen' if inlist(`_USE', 1, 2), meanonly
+				local maxlen = r(max)		// max length of text for study estimates only
+
 				getWidth `leftLB`i'' `strwid'
+				summ `strwid' if inlist(`_USE', 1, 2), meanonly
+				local maxwid = r(max)		// max width of text for study estimates only
+			
+				local lcoli : word `i' of `lcols'
+				local f: format `lcoli'
+				tokenize `"`f'"', parse("%s.,")
+				local fmtlen `2'						// desired max no. of characters based on format	
+			
+				local leftWDnew`i' = 0			// initialize
+				if abs(`fmtlen') <= `maxlen' local leftWDnew`i' = `maxwid'				// exact width of `maxlen' string
+				else local leftWDnew`i' = abs(`fmtlen')*`digitwid'						// approx. max width (based on `digitwid')
+				if `fmtlen'>0 replace `lindentNoTi`i'' = `leftWDnew`i'' - `strwid' 		// indent if right-justified
+				local leftWDnew`i' = `leftWDnew`i'' + 2*`digitwid'						// having calculated the indent, add a buffer
+				local leftWDtotNoTi = `leftWDtotNoTi' + `leftWDnew`i''					// running calculation of total width (incl. buffer)
 				
+				drop `strlen' `strwid'
+			}
+				
+			/*
 				summ `strwid' if `touse' & inlist(`_USE', 0, 3, 4, 5) & `lastcol'>`i'
 				local maxNotLast = cond(r(N), r(max), 0)
 				summ `strwid' if `touse' & inlist(`_USE', 0, 3, 4, 5) & `lastcol'==`i'
@@ -801,7 +829,8 @@ syntax [namelist(min=3 max=5)] [if] [in] [, ///
 				}
 				drop `strlen' `strwid'
 			}
-			drop `lastcol'		// tidying up
+			cap drop `lastcol'		// tidying up ("cap" added July 2015)
+			*/
 		
 			// If appropriate, allow _USE=0,3,4,5 to extend into main plot by (lcimin-DXmin)/DXwidth
 			// (where `lcimin' is the left-most confidence limit among the "diamonds")
@@ -906,6 +935,10 @@ syntax [namelist(min=3 max=5)] [if] [in] [, ///
 			replace `left`i'' = `left`i'' + `lindent`i''*`textWD'
 			local leftWDruntot = `leftWDruntot' + `leftWD`i''
 		}
+		if `lcolsN' == 0 {		// Added July 2015
+			tempvar left1
+			gen `left1' = `DXmin' - 2*`digitwid'*`textWD'
+		}
 		if `rcolsN' {
 			gen double `right1' = `DXmax' + `rindent1'*`textWD'
 			local rightWDruntot = `rightWD1'
@@ -916,7 +949,8 @@ syntax [namelist(min=3 max=5)] [if] [in] [, ///
 		}
 		
 		// AXmin AXmax ARE THE OVERALL LEFT AND RIGHT COORDS
-		local AXmin = `left1'
+		summ `left1', meanonly
+		local AXmin = r(min)
 		local AXmax = `DXmax' + `rightWDtot'*`textWD'
 
 
@@ -993,26 +1027,46 @@ syntax [namelist(min=3 max=5)] [if] [in] [, ///
 		
 		local graphAspect = `ysize'/`xsize'		// aspect of graphregion (defaults to 4/5.5  = 0.727 unless specified)
 		
-		if `graphAspect' <= 1 & `plotAspect' <= `graphAspect' {
-			local textSize = 100 / (`xk' * `approxChars' * `graphAspect')
+		* July 2015
+		* If `usedims', `textSize' and `plotAspect' are fixed.  Use these to determine `xsize' (via `graphAspect').
+		* Else, use `graphAspect' and `plotAspect' to determine `textSize'.
+		if `"`usedims'"'!=`""' {
+			local textSize = `oldTextSize'		// tidy this up
+			
+			if `graphAspect' <= 1 & `plotAspect' <= `graphAspect' {
+				local graphAspect = 100 / (`xk' * `approxChars' * `textSize')
+			}
+			else if `graphAspect' > 1 & `plotAspect' > `graphAspect' {
+				local graphAspect = `textSize' * `yk' * `approxChars' * `plotAspect' / 100
+			}
+			local xsize = `ysize' / `graphAspect'
 		}
-		else if `graphAspect' <= 1 & `plotAspect' > `graphAspect' {
-			local textSize = 100 / (`yk' * `approxChars' * `plotAspect')
+		else {
+			if `graphAspect' <= 1 & `plotAspect' <= `graphAspect' {
+				local textSize = 100 / (`xk' * `approxChars' * `graphAspect')
+			}
+			else if `graphAspect' <= 1 & `plotAspect' > `graphAspect' {
+				local textSize = 100 / (`yk' * `approxChars' * `plotAspect')
+			}
+			else if `graphAspect' > 1 & `plotAspect' > `graphAspect' {
+				local textSize = (100 * `graphAspect') / (`yk' * `approxChars' * `plotAspect')
+			}
+			else if `graphAspect' > 1 & `plotAspect' <= `graphAspect' {
+				local textSize = 100 / (`xk' * `approxChars')
+			}
 		}
-		else if `graphAspect' > 1 & `plotAspect' > `graphAspect' {
-			local textSize = (100 * `graphAspect') / (`yk' * `approxChars' * `plotAspect')
-		}
-		else if `graphAspect' > 1 & `plotAspect' <= `graphAspect' {
-			local textSize = 100 / (`xk' * `approxChars')
-		}
-
-		// if new graph is "too wide" (i.e. textsize is smaller), increase xsize to compensate
+		/*
+		* OLD CODE
+		// if new graph is "too wide" to fit into graphregion (i.e. textsize is forced to shrink),
+		// increase plotregion and graphregion (`xsize') to compensate
 		if `"`usedims'"'!=`""' & float(`textSize') < float(`oldTextSize') {
+			local plotAspect = `plotAspect' * `textSize' / `oldTextSize'
+			local astext = `astext' * `oldTextSize' / `textSize'
 			local xsize = `xsize' * `oldTextSize' / `textSize'
-			local graphAspect = `ysize'/`xsize'
+			* local graphAspect = `ysize'/`xsize'
 			local textSize = `oldTextSize'
 		}
-		
+		*/
 		* Notes: for random-effects analyses, sample-size weights, or user-defined (will overwrite the first two)
 		if "`wtn'"!="" & `"`renote'"'==`""' local renote "NOTE: Point estimates are weighted by sample size"
 		if `"`renote'"'!=`""' & `"`note'"'==`""' {
@@ -1173,17 +1227,17 @@ syntax [namelist(min=3 max=5)] [if] [in] [, ///
 		if `"`cumulative'"'!=`""' replace _USE = 1 if _USE == 3		// June 2015
 		
 		** MAKE OFF-SCALE ARROWS -- fairly straightforward
+		// july 2015: is float() needed on both sides of inequality??
 		tempvar offscaleL offscaleR offLeftX offLeftX2 offRightX offRightX2 offYlo offYhi
 		gen byte `touse2' = `touse' * (`_USE' == 1)
-		gen byte `offscaleL' = `touse2' * (float(`_LCI') < `DXmin')
-		gen byte `offscaleR' = `touse2' * (float(`_UCI') > `DXmax')
-
-		replace `_LCI' = `DXmin' if `touse2' & float(`_LCI') < `DXmin'
-		replace `_UCI' = `DXmax' if `touse2' & float(`_UCI') > `DXmax'
-		replace `_LCI' = . if `touse2' & float(`_UCI') < `DXmin'
-		replace `_UCI' = . if `touse2' & float(`_LCI') > `DXmax'
-		replace `_ES' = . if `touse2' & float(`_ES') < `DXmin'
-		replace `_ES' = . if `touse2' & float(`_ES') > `DXmax'
+		gen byte `offscaleL' = `touse2' * (float(`_LCI') < float(`DXmin'))
+		gen byte `offscaleR' = `touse2' * (float(`_UCI') > float(`DXmax'))
+		replace `_LCI' = `DXmin' if `touse2' & float(`_LCI') < float(`DXmin')
+		replace `_UCI' = `DXmax' if `touse2' & float(`_UCI') > float(`DXmax')
+		replace `_LCI' = . if `touse2' & float(`_UCI') < float(`DXmin')
+		replace `_UCI' = . if `touse2' & float(`_LCI') > float(`DXmax')
+		replace `_ES' = . if `touse2' & float(`_ES') < float(`DXmin')
+		replace `_ES' = . if `touse2' & float(`_ES') > float(`DXmax')
 		drop `touse2'
 
 		

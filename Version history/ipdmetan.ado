@@ -83,7 +83,11 @@
 * May 2015: Work-around for bug in _prefix_command which fails with "if varname="label":lblname" syntax
 * June 2015: Corrected implementation of empirical Bayes random-effects model
 
+*! version 1.07.1 (beta)
+* TO DO: need to sort out `sgroup' error with admetan
+* need to define sgroup as being the last var in `keep'??  would this *always* be appropriate??
 
+* TO DO: if nooverall, don't recalculate CIs if supplied directly to admetan [cf metan behaviour]
 
 
 
@@ -109,7 +113,7 @@ program ipdmetan, rclass sortpreserve
 		CUMULative					/// cumulative meta-analysis
 		INTERaction					///
 		MEssages					///
-		KEEPALL						///
+		KEEPALL	KEEPORDER			/// JULY 2015 -- tidy up!
 		POOLvar(string)				/// "string" as may include equation names
 		IPDOVER	SMISSING BYMISSING	/// options passed through from ipdover (see ipdover.ado & help file)
 		/// Aggregate options
@@ -779,14 +783,15 @@ program ipdmetan, rclass sortpreserve
 	}
 	
 	* Store max "by" value and max study ID for ProcessAD (need to do this now, before dataset is changed)
+	local smax = 0					// initialise
+	local bymax = 1					// initialise
 	if `"`ad'"'!=`""' {
 		if `"`byIPD'"'!=`""' {
 			summ `byIPD' if `touse', meanonly
-			local bymax = r(max)
-			local bymaxopt `"bymax(`bymax')"'
+			local bymax = cond(r(max)!=., r(max), 1)		// JULY 2015
 		}
 		summ `study' if `touse', meanonly
-		local smaxopt `"smax(`r(max)')"'
+		local smax = cond(r(max)!=., r(max), 0)		// JULY 2015
 	}
 	
 	
@@ -888,8 +893,6 @@ program ipdmetan, rclass sortpreserve
 	
 	tempname totnpts	
 	scalar `totnpts' = 0
-	local userbreak=0		// initialise
-	local noconverge=0		// initialise
 	
 	if `"`cmdname'"'!=`""' {
 	
@@ -898,9 +901,8 @@ program ipdmetan, rclass sortpreserve
 		_estimates hold `est_hold', restore nullok
 		_prefix_clear, e r
 
-		local eclass=0
-		local nosortpreserve=0
-
+		local eclass=0				// initialise
+		local nosortpreserve=0		// initialise
 		
 		* Unless specified otherwise (`noTOTAL'), run command on entire dataset
 		// (to test validity, and also to find default poolvar and/or store overall returned stats if appropriate)
@@ -1057,6 +1059,9 @@ program ipdmetan, rclass sortpreserve
 		cap drop _rsample
 		qui gen byte _rsample=0			// this will show which observations were used
 
+		local userbreak=0				// initialise
+		local noconverge=0				// initialise
+		
 		local n=1						// matrix row counter
 		forvalues h=1/`overlen' {		// if over() not specified this will be 1/1
 										// else, make `sgroup' equal to (`h')th over variable
@@ -1374,10 +1379,18 @@ program ipdmetan, rclass sortpreserve
 		}
 		
 		sort `obsAD'
-		cap ProcessAD if `touse', `ADonly' vars(`vars') npts(`npts') keep(`lrcols' `sgroup') ztol(`ztol') level(`level') ///
-			study(`study') `smaxopt' studylab(``study'lab') by(`by') `bymaxopt' byad(`byad') bylab(`bylab') nby(`nby') ///
+		cap ProcessAD if `touse', `ADonly' vars(`vars') npts(`npts') lrcols(`lrcols') sgroup(`sgroup') ztol(`ztol') level(`level') ///
+			study(`study') smax(`smax') studylab(``study'lab') by(`by') `bymaxopt' byad(`byad') bylab(`bylab') nby(`nby') ///
 			`subgroup' `overall' `smissing' `bymissing'
-		* (N.B. `sgroup' in keep() is needed for admetan)
+		* (N.B. `sgroup' is needed for admetan)
+
+		if _rc & _rc!=2000 {
+			disp as err "Error encountered in AD subroutine:"
+			ProcessAD if `touse', `ADonly' vars(`vars') npts(`npts') lrcols(`lrcols') sgroup(`sgroup') ztol(`ztol') level(`level') ///
+				study(`study') smax(`smax') studylab(``study'lab') by(`by') `bymaxopt' byad(`byad') bylab(`bylab') nby(`nby') ///
+				`subgroup' `overall' `smissing' `bymissing'
+		}
+		
 		local notsample `"`r(notsample)'"'		// also for admetan
 		
 		local ADfail = (_rc==2000)
@@ -1896,7 +1909,8 @@ program ipdmetan, rclass sortpreserve
 		* Total number of patients
 		if `"`_NN'"'!=`""' {
 		
-			summ _NN if inlist(_USE, 1, 2), meanonly
+			* summ _NN if inlist(_USE, 1, 2), meanonly
+			summ _NN if _USE==1, meanonly		// July 2015 - see line 1797
 			assert `r(N)' == `K'				// June 2015: "capture" removed here
 			
 			// if not ipdover, can simply go by _USE==1
@@ -1906,7 +1920,7 @@ program ipdmetan, rclass sortpreserve
 				else if `"`subgroup'"'==`""' summ _NN if _USE==3, meanonly
 				else summ _NN if inlist(_USE, 1, 2), meanonly
 			}
-			else summ _NN if inlist(_USE, 1, 2), meanonly
+			else summ _NN if inlist(_USE, 1, 2), meanonly	// July 2015: "1 or 2" is correct for the actual count
 			
 			if !inlist(`totnpts', 0, .) assert `r(sum)'==`totnpts'
 			else scalar `totnpts' = r(sum)
@@ -1949,6 +1963,14 @@ program ipdmetan, rclass sortpreserve
 	tempvar use5
 	qui gen byte `use5' = (_USE==5)
 	qui gen byte `touse' = inlist(_USE, 1, 2)
+	* sort `use5' `_by' `_over' _USE `_source' `sgroup'
+
+	if `"`keepall'"'!=`""' & `"`keeporder'"'!=`""' {	// JULY 2015 -- TIDY UP!!
+		tempvar olduse
+		clonevar `olduse' = _USE
+		replace _USE = 1 if _USE==2		// keep "insufficient data" studies in original study order (default is to move to end)
+	}
+	* else local use2 `"_USE"'
 	sort `use5' `_by' `_over' _USE `_source' `sgroup'
 
 	// return matrix of coefficients
@@ -2080,13 +2102,14 @@ program ipdmetan, rclass sortpreserve
 	if `"`pcmdname'"'!=`""' {
 		disp as err _n "Caution: prefix command supplied to ipdmetan. Please check estimates carefully"
 	}
-	if `noconverge' {
-		disp as err _n "Caution: model did not converge for one or more studies. Pooled estimate may not be accurate"
+	if `"`cmdname'"'!=`""' {
+		if `noconverge' {
+			disp as err _n "Caution: model did not converge for one or more studies. Pooled estimate may not be accurate"
+		}
+		if `userbreak' {
+			disp as err _n "Caution: model fitting for one or more studies was stopped by user. Pooled estimate may not be accurate"
+		}
 	}
-	if `userbreak' {
-		disp as err _n "Caution: model fitting for one or more studies was stopped by user. Pooled estimate may not be accurate"
-	}
-
 	
 	
 	***************************
@@ -2234,6 +2257,7 @@ program ipdmetan, rclass sortpreserve
 			** Insert extra rows for headings, labels, spacings etc.
 			//  Note: in the following routines, "half" values of _USE are used temporarily to get correct order
 			//        and are then replaced with whole numbers at the end
+			//  Note (JULY 2015): _USE is replaced wholesale by `use2' in this section
 
 			* Subgroup headings and spacings ("by", "over", both)
 			if `"`_by'"'!=`""' | `"`_over'"'!=`""' {
@@ -2306,7 +2330,7 @@ program ipdmetan, rclass sortpreserve
 				}
 				label values _OVER _OVER
 			}
-			
+
 			// extra row to contain what would otherwise be the leftmost column heading if `stacklabel' specified
 			// (i.e. so that heading can be used for forestplot stacking)
 			else if `"`stacklabel'"' != `""' {
@@ -2316,7 +2340,7 @@ program ipdmetan, rclass sortpreserve
 				replace `use5' = -1 in `nobs1'
 				replace _LABELS = `"`varlab1'"' in `nobs1'
 			}
-
+			
 			// "overall" labels
 			if `"`overall'"'==`""' {
 				local ovlabel
@@ -2336,7 +2360,7 @@ program ipdmetan, rclass sortpreserve
 				}
 				replace _LABELS = "Overall `ovlabel'" if _USE==5
 			}
-			
+		
 			// subgroup ("by") headings & labels
 			if `"`_by'"'!=`""' {
 				forvalues i=1/`nby' {
@@ -2388,7 +2412,11 @@ program ipdmetan, rclass sortpreserve
 
 			replace _USE = 0 if _USE == -1
 			replace _USE = 6 if _USE == 4
-			replace _USE = 4 if inlist(_USE, -0.5, -1.5, 2.5, 3.5, 4.5, 5.5)
+			replace _USE = 4 if inlist(_USE, -0.5, -1.5, 2.5, 3.5, 4.5, 5.5)	// july 2015 - is "-1.5" needed here??
+			if `"`keepall'"'!=`""' & `"`keeporder'"'!=`""' {					// july 2015 - tidy up
+				replace _USE = 2 if _USE==1 & `olduse'==2
+				drop `olduse'
+			}
 
 			// having added "overall", het. info etc., re-format _LABELS using study names only
 			gen `strlen' = length(_LABELS)
@@ -2944,7 +2972,7 @@ prog define ProcessAD, rclass
 	syntax [if] /*[in]*/, VARS(varlist min=2 max=3 numeric) ZTOL(real) LEVEL(real) ///
 		STUDY(name) /*SORTBY(namelist)*/ [SMAX(integer 0) STUDYLAB(name) ///
 		ADONLY BY(name) BYAD(string) /*BYLIST(numlist integer miss)*/ BYMAX(integer 1) NBY(integer 1) BYLAB(name) ///
-		KEEP(namelist) NPTS(name) noSUBGROUP noOVERALL SMISSING BYMISSING]
+		LRCOLS(namelist) SGROUP(varname) NPTS(name) noSUBGROUP noOVERALL SMISSING BYMISSING]
 
 	marksample touse
 	cap confirm var `study'
@@ -3079,7 +3107,8 @@ prog define ProcessAD, rclass
 	* Form final dataset
 	qui ds
 	local allvars `"`r(varlist)'"'
-	local allvars : list allvars & keep		// vars passed from main routine
+	local keep `"`lrcols' `sgroup'"'		// `sgroup' needed for admetan
+	local allvars : list allvars & keep		// identify vars passed from main routine
 	
 	/*keep if `touse'*/
 	sort `obsAD'
