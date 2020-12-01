@@ -13,7 +13,7 @@ Updates include a wide range of random-effects models, cumulative and influence 
 
 Also included is an “immediate” command ‘metani’, which accepts numlists or matrices as input rather than variables in memory; and the ‘metannt’ program for binary data, which displays estimated intervention effects in terms of the absolute reduction in risk and number needed to treat.  Other graphical commands produce funnel plots to assess small study effects, and L’Abbe plots to examine whether the assumption of a common odds ratio, risk ratio or risk difference is reasonable.
 
-A description of available Stata meta-analysis commands may be found at  http://www.stata.com/support/faqs/stat/meta.html.”
+A description of available Stata meta-analysis commands may be found at  http://www.stata.com/support/faqs/stat/meta.html.
 
 # installation
 
