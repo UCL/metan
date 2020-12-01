@@ -91,12 +91,16 @@
 //      lcols/rcols varnames without varlabels (the "must specify at least one of target or maxwidth" error)
 //      use of char(160) to represent non-breaking spaces (the "dagger" error)
 
-*! version 2.0  David Fisher  11may2017
+* version 2.0  David Fisher  11may2017
 * Major update to extend functionality beyond estimation commands; now has most of the functionality of -metan-
 //  - Reworked so that ipdmetan.ado does command processing and looping, and admetan.ado does RE estimation (including -metan- functionality)
 //  - Hence, ipdover calls ipdmetan (but never admetan); ipdmetan calls admetan (if not called by ipdover); admetan can be run alone.
 //      Any of the three may call forestplot, which of course can also be run alone.
 //  - See admetan.ado for further notes
+
+*! version 2.1  David Fisher  14sep2017
+// various bug fixes; improvements to wgt() option
+
 
 
 program define ipdmetan, rclass
@@ -163,7 +167,6 @@ program define ipdmetan, rclass
 		
 		* Use "_parse expand" to isolate fe_equation, and to identify first `if' and `in'
 		
-		// Updated 24th March 2017 so that `if', `in', `wt', `opts' are extracted from `stub1' *and* `stub2'
 		// Assume `if', `in', `wt', `opts' are *global* in terms of ipdmetan
 		// This in turn implies that multiple `if', `in' or `wt' should not be allowed; therefore test for this here.
 		// We can't wait until running the command itself, since the options will have been shuffled around by then, possibly obscuring the error.
@@ -310,7 +313,7 @@ program define ipdmetan, rclass
 	// Quickly extract `study' varname from option
 	local studyopt `study'							// full, original option for sending to admetan.ado
 	local 0 `study'
-	syntax varlist [, Missing]
+	syntax [varlist(default=none)] [, Missing]
 	local smissing `missing'
 	local study `varlist'
 	cap confirm var `study'
@@ -463,6 +466,7 @@ program define ipdmetan, rclass
 		SAVING(string)            /// specify filename in which to save results set
 		noRSample                 /// don't leave behind "_rsample" [analog of e(sample), used here as ipdmetan.ado is not e-class]
 		SGWt SGWEIGHT             /// if `by', weight by subgroup rather than overall
+		WGT(string)               /// specify weights, via a (numeric) varname or a returned statistic
 		noOVerall noSUbgroup      /// suppress reporting of by-sugbroup or overall pooled effects
 		/// Options relevant to particular subroutines
 		INTERaction noTOTal       /// mainly relevant to ProcessCommand but also needed beforehand
@@ -534,64 +538,8 @@ program define ipdmetan, rclass
 		local options_ipdm `"`macval(options)'"'
 	}
 
-	
-	* Parse `plotid'
-	// (but keep original contents to pass to forestplot for later re-parsing)
-	//  - allow "_LEVEL", "_BY", "_OVER" with ipdover (because data manipulation means can't specify a single current varname)
-	//  - else allow "_BYAD" in case of byad, but otherwise must be a variable in memory (in either IPD or AD, if relevant)
-	local 0 `plotid'
-	syntax [name(name=plname)] [, *]
-	local plotidopts = cond(`"`options'"'==`""', `""', `", `options'"')
-	
-	if `"`ipdover'"'!=`""' {
-		if "`plname'" != "" {
-			if !inlist("`plname'", "_BY", "_OVER", "_LEVEL", "_n") {
-				nois disp as err `"{bf:plotid()} with {bf:ipdover} must contain one of {bf:_BY}, {bf:_OVER}, {bf:_LEVEL} or {bf:_n}"'
-				exit 198
-			}
-			if "`plname'"=="_BY" & "`by'"=="" {
-				nois disp as err `"Note: {bf:plotid(_BY)} cannot be specified without {bf:by()} and will be ignored"'
-				local plotid		// remove entire `plotid' option
-			}
-			local plname		// ...but in any case, don't need plname further in -ipdmetan-
-		}
-	}
-	else {
-		if "`plname'"=="_BYAD" | ("`plname'"=="`by'" & "`by'"!="" & `by_rc') {		// either BYAD or `by' in AD only
-			if "`plname'"=="_BYAD" & "`ad'"=="" {
-				nois disp as err `"Note: {bf:plotid(_BYAD)} cannot be specified without aggregate data and will be ignored"'
-				local plotid
-			}
-			local plname		// i.e. don't use further in -ipdmetan- (but plotid() will be used in -admetan-)
-		}
-		else if "`plname'"=="`by'" & "`by'"!="" & !`by_rc' local plotid `"_BY`plotidopts'"'
-		else if "`plname'"=="`study'" local plotid `"_STUDY`plotidopts'"'
-		else if "`plname'"!="" {
-			cap confirm var `plname'				// if `plname' contains a variable name other than _STUDY/_BY
-			if _rc {								// check to see if it is in current memory
-				if "`ad'"=="" {
-					nois disp as err `"variable {bf:`plname'} not found in option {bf:plotid()}"'
-					exit _rc
-				}
-				local ad `"`ad' adplotvar(`plname')"'		// if not found in IPD, add to ad() option to check in AD data
-				local plname								// don't need anymore in -ipdmetan-
-			}
-			else {
-				local cclist `"(firstnm) `plname'"'		// for -collapse-
-				
-				cap confirm numeric var `plname'
-				if !_rc local coldnames `"`plname'"'	// for LogRankHR, if numeric...
-				else local csoldnames `"`plname'"'		// ...else if string
-			}
-		}
-	}
-	if `"`plotid'"'!=`""' {																		// `plotid' not needed anymore in -ipdmetan- ...
-		if `"`ipdover'"'==`""' local options_ipdm `"`macval(options_ipdm)' plotid(`plotid')"'	// if passing to `admetan', add to `options_ipdm'...
-		else                   local fplotopts       `"`macval(fplotopts)' plotid(`plotid')"'	// ... else, add to `fplotopts'
-	}
-	
-	
-	* Sort out subgroup identifier (BY) and labels
+
+	** Sort out subgroup identifier (BY) and labels
 	// (N.B. `by' might only exist in an external (aggregate) dataset)
 	local bystr=0
 	tempvar bytemp
@@ -688,7 +636,8 @@ program define ipdmetan, rclass
 	}
 	tempvar obs
 
-	* Sort out study ID (or 'over' vars)
+	
+	** Sort out study ID (or `over' vars)
 	// - if IPD/AD meta-analysis (i.e. not ipdover), create subgroup ID based on order of first occurrence
 	// - decode any string variables
 	cap nois ProcessIDs if `touse', study(`studyopt') studyid(`StudyID') by(`by_in_IPD') obs(`obs') ///
@@ -731,18 +680,9 @@ program define ipdmetan, rclass
 	local _STUDY = cond(`"`ipdover'"'!=`""', "_LEVEL", "_STUDY")
 	local het = cond(`"`ipdover'"'==`""', `"`het'"', `"nohet"')
 	
-	* If citype is other than normal, or if cumulative and using dlt/KR, will need a column for df
-	//  sort out citype here, as that requires the returned stat e(df_r).
-	//  we will sort out dlt/KR later on.
-	local citype = cond(inlist(`"`citype'"', `""', `"z"'), `"normal"', `"`citype'"')	// default is citype(normal)
-	if `"`citype'"'!=`"normal"' {
-		tempvar _df
-		local rcols `"`_df' = (e(df_r)) `rcols'"'	// use tempvar; if user wishes to see it, they can specify it in l/rcols as usual using e(df_r)
-	}												//  (N.B. validity, e.g. e-class etc., will be tested later)
-	
 	if trim(`"`lcols'`rcols'"')==`""' | (`"`saving'"'==`""' & `"`graph'"'!=`""' & `"`citype'"'==`"normal"') {
 		// if lcols/rcols will not be used,
-		// (either because not specified, or because no savefile and no graph and no need for _df)
+		// (either because not specified, or because no savefile and no graph and no need for _df)  JULY 2017 citype here???
 		// clear the macros
 		local lcols
 		local rcols
@@ -764,59 +704,184 @@ program define ipdmetan, rclass
 		local fmts       `"`r(fmts)'"'			// formats
 		local cclist = trim(`"`cclist' `r(cclist)'"')	// clist of expressions for -collapse- (may already contain `"(firstnm) `plname'"')
 		local statsr     `"`r(rstatlist)'"'		// list of "as-is" returned stats		
-		local sidelist   `"`r(sidelist)'"'		// list of "sides"; left=0, right=1
-		local csoldnames = trim(`"`csoldnames' `r(csoldnames)'"')	// list of original varnames for strings (may already contain `plname')
-		local coldnames = trim(`"`coldnames' `r(coldnames)'"')		// list of original varnames for -collapse- (may already contain `plname')
+		local sidelist   `"`r(sidelist)'"'		// list of "sides"; temp=0; left=1, right=2
+		local csoldnames = trim(`"`csoldnames' `r(csoldnames)'"')	// list of original varnames for strings    (may already contain `plname')
+		local coldnames  = trim(`"`coldnames'  `r(coldnames)'"')	// list of original varnames for -collapse- (may already contain `plname')
 		local lrcols     `"`r(newnames)'"'		// item names (valid Stata names)
-		
-		* Test validity of names -- cannot be any of the names ipdmetan uses for other things
-		local badnames `"_BY _STUDY _OVER _LEVEL _ES _seES _WT _NN"'
-		if `"`counts'"'!=`""' local badnames `"`badnames' _counts1 _counts1msd _counts0 _counts0msd"'
-		if `"`oev'"'!=`""'    local badnames `"`badnames' _OE _V"'
-		local badnames : list lrcols & badnames
-		if `"`badnames'"'!=`""' {
-			local badname1 : word 1 of `badnames'
-			nois disp as err `"Variable name {bf:`badname1'} in lcols() or rcols() is reserved for use by {bf:ipdmetan}"'
-			nois disp as err `"Please choose an alternative {it:target_varname} for this variable (see {help collapse})"'
-			exit 101
-		}
-		
+	
 		* Get total number of "items" and loop, perfoming housekeeping tasks for each item
 		local ni : word count `itypes'
 		forvalues i=1/`ni' {
+			local coli : word `i' of `lrcols'
 		
-			// form new `lcols' and `rcols', just containing new varnames
-			if !`: word `i' of `sidelist'' local lcols `"`lcols' `: word `i' of `lrcols''"'
-			else                           local rcols `"`rcols' `: word `i' of `lrcols''"' 
+			// form new `lcols' and `rcols', just containing new varnames (to pass to forestplot via admetan/ipdover)
+			// also retrieve `tempcols'
+			local side : word `i' of `sidelist'
+			if !`side' local lcols `lcols' `coli'
+			else       local rcols `rcols' `coli'
 	
 			// separate lists of names for the different itypes
-			if "`: word `i' of `itypes''"=="a" {						// a: AD-only vars, not currently in memory
+			local itype : word `i' of `itypes'
+			if "`itype'"=="a" {								// a: AD-only vars, not currently in memory
 				local ++na
-				local namesa `"`namesa' `: word `i' of `lrcols''"'		// AD varlist, to be passed on to -admetan-
+				local namesa `namesa' `coli'				// AD varlist, to be passed on to -admetan-
 			}
-			else if "`: word `i' of `itypes''"=="c" {					// c: Numeric vars to collapse
+			else if "`itype'"=="c" {						// c: Numeric vars to collapse
 				local ++nc
-				local namesc `"`namesc' `: word `i' of `lrcols''"'
+				local namesc `namesc' `coli'
 				local nclab`nc' `"`r(cvarlab`nc')'"'
 			}
-			else if "`: word `i' of `itypes''"=="cs" {					// cs: String vars to "collapse"
+			else if "`itype'"=="cs" {						// cs: String vars to "collapse"
 				local ++ncs
-				local svars `"`svars' `: word `i' of `lrcols''"'
+				local svars `svars' `coli'
 				local ncslab`ncs' `"`r(csvarlab`ncs')'"'
 			}
-			else if "`: word `i' of `itypes''"=="r" {					// r: Returned stats (e-class or r-class)
-				local ++nr												// (validity to be tested later)
-				local namesr `"`namesr' `: word `i' of `lrcols''"'
+			else if "`itype'"=="r" {						// r: Returned stats (e-class or r-class)
+				local ++nr									// (validity to be tested later)
+				local namesr `namesr' `coli'
 				local nrlab`nr' `"`r(rvarlab`nr')'"'
 			}
-			if `"`het'"'==`""' & inlist("`: word `i' of `itypes''", "c", "r") & !`: word `i' of `sidelist'' {
-				local extraline "extraline"				// if "c" or "r" in "lcols" then a new line will be needed for forestplots (for het etc.)
+			if `"`het'"'==`""' & inlist("`itype'", "c", "r") & !`side' {
+				local extraline "extraline"					// if "c" or "r" in "lcols" then a new line will be needed for forestplots (for het etc.)
 			}
 		}		// end forvalues i=1/`ni'
 		
-		if `"`namesa'"'!=`""' local ad `"`ad' adcolvars(`namesa'))"'
-		
+		if `"`namesa'"'!=`""' {
+			if `"`ad'"'==`""' {
+				nois disp as err `"variable {bf:`: word 1 of `namesa''} not found in {bf:lcols()} or {bf:rcols()}"'
+				exit 111
+			}
+			local ad `"`ad' adcolvars(`namesa'))"'
+		}
+
+		* Test validity of names -- cannot be any of the names ipdmetan uses for other things
+		local lrcols `lcols' `rcols'
+		local badnames _BY _STUDY _OVER _LEVEL _ES _seES _WT _NN
+		if `"`counts'"'!=`""' local badnames `badnames' _counts1 _counts1msd _counts0 _counts0msd
+		if `"`oev'"'!=`""'    local badnames `badnames' _OE _V
+		local badnames : list lrcols & badnames
+		if `"`badnames'"'!=`""' {
+			local badname1 : word 1 of `badnames'
+			nois disp as err `"Variable name {bf:`badname1'} in {bf:lcols()} or {bf:rcols()} is reserved for use by {bf:ipdmetan}"'
+			nois disp as err `"Please choose an alternative {it:target_varname} for this variable (see {help collapse})"'
+			exit 101
+		}
+
 	}		// end else (i.e. if not trim(`"`lcols'`rcols'"')==`""' | (`"`saving'"'==`""' & `"`graph'"'!=`""'))
+
+	
+	** In addition to user-defined columns (to be displayed on the forestplot and/or saved in the dataset),
+	// we may find it useful to define additional "columns" e.g. for calculation purposes,
+	// which may or may not appear on the forestplot or in the saved dataset.
+	
+	// N.B. Content of a "column" is uniquely defined by:
+	// [if returned stat] - the rstat name alone
+	// [if clist element] - the (stat) name plus the variable in memory to apply it to.
+	
+	
+	* (1) If citype is other than normal, or if cumulative and using dlt/KR, will need a column for df
+	//  sort out citype here, as that requires the returned stat e(df_r).
+	//  we will sort out dlt/KR later on.
+	local citype = cond(inlist(`"`citype'"', `""', `"z"'), `"normal"', `"`citype'"')	// default is citype(normal)
+	if `"`citype'"'!=`"normal"' {
+		local pos : list posof `"(e(df_r))"' in `statsr'
+		if `pos' {
+			local _df : word `pos' of `namesr'
+		}
+		else {
+			tempvar _df
+			local statsr `"`statsr' e(df_r)"' 
+			local namesr `"`namesr' `_df'"'
+		}
+	}
+	
+	// 11th June 2017
+	* (2) User-defined weights
+	// May be:
+	// (a) _NN, _ES or _seES  (either syntax)
+	// (b)  a collapse-style `clist' (Syntax 1 only)
+	// (c)  or an expression involving a returned statistic (Syntax 2 only)
+	if `"`wgt'"'!=`""' {
+		if "`cmdstruc'"=="specific" {
+			GetOpStat stat wgtvar : "mean" `"`wgt'"'
+			if !inlist(`"`wgtvar'"', `"_NN"', `"_ES"', `"_seES"') {
+				cap confirm numeric variable `wgtvar'
+				if _rc {
+					disp as err "Error in option {bf:wgt()}"
+					confirm numeric variable `wgtvar'
+				}
+				local cclist `"`cclist' (`stat') `wgtvar'"'		// `wgt' is a numeric variable; pass to -collapse-
+			}
+		}
+
+		// Syntax 2: assume `wgt' is a returned statistic
+		else {
+			// first, check that it is enclosed in brackets, or _prefix_expand will complain
+			gettoken wgt : wgt, bind match(par)
+			local wgttitle `"`wgt'"'						// create variable label from "unbracketed" expression
+			local wgt = "(" + trim(`"`wgt'"') + ")"			// re-bracket
+			
+			tempvar wgtvar
+			local statsr `"`statsr' `wgt'"'
+			local namesr `"`namesr' `wgtvar'"'
+		}
+	}
+	
+	// Moved downwards 17th July 2017
+	* (3) Parse `plotid'
+	// (but keep original contents to pass to forestplot for later re-parsing)
+	//  - allow "_LEVEL", "_BY", "_OVER" with ipdover (because data manipulation means can't specify a single current varname)
+	//  - else allow "_BYAD" in case of byad, but otherwise must be a variable in memory (in either IPD or AD, if relevant)
+	local 0 `plotid'
+	syntax [name(name=plname)] [, *]
+	local plotidopts = cond(`"`options'"'==`""', `""', `", `options'"')
+	
+	if `"`ipdover'"'!=`""' {
+		if "`plname'" != "" {
+			if !inlist("`plname'", "_BY", "_OVER", "_LEVEL", "_n") {
+				nois disp as err `"{bf:plotid()} with {bf:ipdover} must contain one of {bf:_BY}, {bf:_OVER}, {bf:_LEVEL} or {bf:_n}"'
+				exit 198
+			}
+			if "`plname'"=="_BY" & "`by'"=="" {
+				nois disp as err `"Note: {bf:plotid(_BY)} cannot be specified without {bf:by()} and will be ignored"'
+				local plotid		// remove entire `plotid' option
+			}
+			local plname		// ...but in any case, don't need plname further in -ipdmetan-
+		}
+	}
+	else {
+		if "`plname'"=="_BYAD" | ("`plname'"=="`by'" & "`by'"!="" & `by_rc') {		// either _BYAD, or `by' in AD only
+			if "`plname'"=="_BYAD" & "`ad'"=="" {
+				nois disp as err `"Note: {bf:plotid(_BYAD)} cannot be specified without aggregate data and will be ignored"'
+				local plotid
+			}
+			local plname		// i.e. don't use further in -ipdmetan- (but plotid() will be used in -admetan-)
+		}
+		else if "`plname'"=="`by'" & "`by'"!="" & !`by_rc' local plotid `"_BY`plotidopts'"'
+		else if "`plname'"=="`study'" local plotid `"_STUDY`plotidopts'"'
+		else if "`plname'"!="" {
+			cap confirm var `plname'				// if `plname' contains a variable name other than _STUDY/_BY
+			if _rc {								// check to see if it is in current memory
+				if "`ad'"=="" {
+					nois disp as err `"variable {bf:`plname'} not found in option {bf:plotid()}"'
+					exit _rc
+				}
+				local ad `"`ad' adplotvar(`plname')"'		// if not found in IPD, add to ad() option to check in AD data
+				local plname								// don't need anymore in -ipdmetan-
+			}
+			else {
+				local cclist `"`cclist' (firstnm) `plname'"'		// for -collapse-
+				
+				cap confirm numeric var `plname'
+				if !_rc local coldnames `"`coldnames' `plname'"'	// for LogRankHR, if numeric...
+				else local csoldnames  `"`csoldnames' `plname'"'	// ...else if string
+			}
+		}
+	}
+	if `"`plotid'"'!=`""' {																		// `plotid' not needed anymore in -ipdmetan- ...
+		if `"`ipdover'"'==`""' local options_ipdm `"`macval(options_ipdm)' plotid(`plotid')"'	// if passing to `admetan', add to `options_ipdm'...
+		else                   local fplotopts    `"`macval(fplotopts)'    plotid(`plotid')"'	// ... else, add to `fplotopts'
+	}
 
 	
 	
@@ -850,8 +915,7 @@ program define ipdmetan, rclass
 			pcommand(`pcommand') cmdname(`cmdname') cmdargs(`cmdargs') cmdopts(`cmdopts') cmdrest(`cmdrest') ///
 			sortby(`obs') study(`study', `smissing') studyid(`studyidopt') ipdfile(`ipdfile') poolvar(`poolvar') ///
 			by(`by_in_IPD', `bymissing') `ipdover' `interaction' `overallopt' `subgroup' `total' `rsample' ///
-			overlen(`overlen') nr(`nr') statsr(`statsr') namesr(`namesr') nrs(`nrs') nrn(`nrn') level(`level') `messages' `ztol' ///
-			`strata_opt'
+			overlen(`overlen') statsr(`statsr') namesr(`namesr') level(`level') `messages' `ztol' `strata_opt'
 			
 		if _rc {
 			if _rc==1 nois disp as err `"User break in {bf:ipdmetan.ProcessCommand}"'
@@ -975,7 +1039,7 @@ program define ipdmetan, rclass
 		qui keep if `touse'
 		if `"`logrank'"'!=`""' local stvars `"_st _d _t0 _t"'
 
-		keep `touse' `study' `StudyID' `invlist' `by_in_IPD' `stvars' `strata' `coldnames'
+		keep `touse' `study' `StudyID' `invlist' `by_in_IPD' `stvars' `strata' `coldnames' `wgtvar'
 
 		
 		* Setup `outvlist' ("output" varlist, to become the *input* into -admetan-, or to be returned to -ipdover-)
@@ -1247,6 +1311,7 @@ program define ipdmetan, rclass
 			label var `temp' `"`nrlab`i''"'
 		}
 	}
+	if `"`wgttitle'"'!=`""' label var `wgtvar' `"`wgttitle'"'
 		
 	// apply formats to lcols/rcols
 	if `"`fmts'"'!=`""' {
@@ -1291,15 +1356,8 @@ program define ipdmetan, rclass
 		// _NN for logrank
 		else if "`logrank'"!="" {
 			qui gen long _NN = `n0' + `n1'		// total numbers of patients by study
-			// local npts "_NN"					// N.B. (logrank) HR now implies existence of _NN (if Syntax 2)
-		}
+		}										// N.B. (logrank) HR now implies existence of _NN (if Syntax 2)
 	}
-	/*
-	else {
-		summ _NN, meanonly
-		local npts = cond(r(N), `"_NN"', "")
-	}
-	*/
 
 	
 	
@@ -1323,17 +1381,19 @@ program define ipdmetan, rclass
 		label copy `vallab1' _STUDY			// standardise value label name
 		label values _STUDY _STUDY
 		label var _STUDY `"`svarlab'"'
-
+		
+		/*
 		// Remove `_df' from rcols
 		if `"`_df'"'!=`""' {
 			gettoken tok rest : rcols
 			assert `"`tok'"'==`"`_df'"'		// it should be the first token
 			local rcols `rest'
 		}
+		*/
 		
 		// N.B. `touse', `bymissing' `smissing' not necessary; assume that ALL observations are to be used.
 		cap nois admetan `outvlist', study(`studyopt') by(`byopt') citype(`citype') `interaction' ///
-			effect(`effect') /*`logrank' npts(`npts')*/ df(`_df') `eform' `log' ///
+			effect(`effect') /*`logrank' npts(`npts')*/ df(`_df') wgt(`wgtvar') `eform' `log' ///
 			`graph' `overall' `subgroup' `keepall' `keeporder' `het' ///
 			forestplot(`fplotopts') lcols(`lcols') rcols(`rcols') saving(`saving') `ztol' level(`level') ///
 			ipdmetan(`ipdmetan') ad(`ad') `options_ipdm'
@@ -1550,6 +1610,7 @@ program define ProcessIDs, rclass sortpreserve
 			local overtemp : word `h' of `tvlist'
 			qui encode `overh' if `stouse', gen(`overtemp') label(`vallab`h'')
 			local study : subinstr local study `"`overh'"' `"`overtemp'"', all word
+			local lablist `"`lablist' `vallab`h''"'
 		}
 		else {
 			cap assert `overh'==round(`overh')
@@ -1559,18 +1620,21 @@ program define ProcessIDs, rclass sortpreserve
 				nois disp as err `"`errtext' must be integer-valued or string"'
 				exit 198
 			}
-			qui levelsof `overh' if `stouse', missing local(levels)
+			
+			qui levelsof `overh' if `stouse', `missing' local(levels)
 			if `"`levels'"'!=`""' {
+				local countx = 0
 				foreach x of local levels {
-					if `x'!=. {
+					if `x' != . {				// cannot label "."
 						local labname : label (`overh') `x'
 						label define `vallab`h'' `x' `"`labname'"', add
+						local ++countx
 					}
 				}
+				if `countx' local lablist `"`lablist' `vallab`h''"'
 			}
 		}
-		assert `"`vallab`h''"' != `""'
-		local lablist `"`lablist' `vallab`h''"'
+
 	}	// end forvalues h=1/`overlen'
 
 	if `"`lablist'"'!=`""' {
@@ -1779,17 +1843,21 @@ program define ProcessCommand, rclass sortpreserve
 	
 	syntax [anything(name=exp_list equalok)] [if] [in] [fw aw pw iw], IPDFILE(string) CMDNAME(string) STUDY(string) STUDYID(name) ///
 		[PCOMMAND(string) CMDARGS(string) CMDOPTS(string) CMDREST(string) noOVERALL noSUBGROUP noTOTAL noRSample ///
-		BY(string) SORTBY(varname numeric) POOLVAR(string) INTERACTION ///
-		IPDOVER OVERLEN(integer 1) LEVEL(passthru) ZTOL(real 1e-6) EFORM ADopt ///
-		NR(integer 0) STATSR(string) NAMESR(string) NRS(integer 0) NRN(integer 0) MESSAGES ]
+		BY(string) SORTBY(varname numeric) POOLVAR(string) INTERACTION STATSR(string) NAMESR(string) MESSAGES ///
+		IPDOVER OVERLEN(integer 1) LEVEL(passthru) ZTOL(real 1e-6) EFORM ADopt ]
 	
 	// Save any existing estimation results, and clear return & ereturn
 	tempname est_hold
 	_estimates hold `est_hold', restore nullok
 	_prefix_clear, e r
 
-	local eclass=0				// initialise
-	local nosortpreserve=0		// initialise
+	// initialise macros
+	local eclass=0
+	local nosortpreserve=0
+	local nr : word count `statsr'
+	local nrn = 0
+	local nrs = 0
+	
 	
 	* Unless specified otherwise (`noTOTAL'), run command on entire dataset
 	// (to test validity, and also to find default poolvar and/or store overall returned stats if appropriate)
@@ -1828,26 +1896,33 @@ program define ProcessCommand, rclass sortpreserve
 		// check for string-valued returned stats (`statsrs'), and separate them out
 		forvalues j=1/`nr' {
 			local statsrj : word `j' of `statsr'
-			local val = `statsrj'
+			
+			// "confirm number" returns r(7) if sysmiss (".") or extended miss (".a" etc.)
+			// so first test if "`statsrj'" = ".", ".a", ...
+			local val = `statsrj'				// evaluate statistic
+			local miss = "`val'"=="."
+			foreach el in `c(alpha)' {
+				local miss = max(`miss', "`val'"==".`el'")
+			}
 			cap confirm number `val'
-			if _rc & `"`val'"'!=`"."' {					// if ".", assume numeric missing
+			if _rc & !`miss' {								// if string
 				local namesrj : word `j' of `namesr'
-				local namesrs `"`namesrs' `namesrj'"'
-				local statsrs `"`statsrs' `statsrj'"'
+				local namesrs `"`namesrs' `namesrj'"'		// list of string-valued varnames for postfile
+				local statsrs `"`statsrs' `statsrj'"'		// list of string-valued stat (item) names
 			}
 		}
-		if `"`statsrs'"'!=`""' {
-			local statsrn : list statsr - statsrs
+		if `"`statsrs'"'!=`""' {							// if there are any string-valued stats,
+			local statsrn : list statsr - statsrs			// remove them from original list "statsr" to form new lists "statsrn" and "statsrs"
 			local namesrn : list namesr - namesrs
 			local nrn     : word count `statsrn'
 			local nrs     : word count `statsrs'
 		}
-		else {
+		else {												// otherwise, just rename "statsr" to "statsrn".
 			local statsrn : copy local statsr
 			local namesrn : copy local namesr
 			local nrn = `nr'
 		}
-			
+
 		// identify estvar
 		cap nois FindEstVar `exp_list', eclass(`eclass') statsrn(`statsrn') nrn(`nrn') poolvar(`poolvar') `interaction'
 		if _rc exit _rc
@@ -1918,7 +1993,7 @@ program define ProcessCommand, rclass sortpreserve
 			local postexp `"(.) (5) (`beta') (`sebeta') (`nbeta')"'		// only post non-pooled overall stats if ipdover
 			return scalar n = `nbeta'
 		}
-		else local postexp `"(.) (5) `postreps'"'						// total of 5 expressions
+		else local postexp `"(.) (5) `postreps'"'						// total of five expressions
 		if `overlen'>1 local postexp `"(.) `postexp'"'					// add a sixth if _OVER required
 		if `"`by'"'!=`""' local postexp `"(.) `postexp'"'				// add a sixth/seventh if _BY required
 
@@ -1986,8 +2061,10 @@ program define ProcessCommand, rclass sortpreserve
 			//  then add (original) study ID (which might be the same as StudyID; that is, `i')
 			local val = `overh'[`r(min)']
 			local poststudy `"(`val')"'
-			local trlabi : label (`overh') `val'
-			if `"`messages'"'!=`""' disp as text  "Fitting model for `overh' = `trlabi' ... " _c				
+			if `"`messages'"'!=`""' {
+				local trlabi : label (`overh') `val'
+				disp as text  "Fitting model for `overh' = `trlabi' ... " _c
+			}
 			cap `version' `pcommand' `cmdname' `cmdargs' if `touse' & `studyid'==`i' `cmdopts' `cmdrest'
 			local rc = c(rc)
 			
@@ -2015,16 +2092,13 @@ program define ProcessCommand, rclass sortpreserve
 						local nocvtext " (convergence not achieved)"
 					}
 				}
+				
 				if `eclass' & (!`: list estvar in colna' | (`"`estvareq'"'!=`""' & !`: list estvareq in coleq')) {
-					if `"`messages'"'!=`""' {
-						nois disp as err "Coefficent could not be estimated"
-					}
+					if `"`messages'"'!=`""' nois disp as err "Coefficent could not be estimated"
 					local postcoeffs `"(2) (.) (.) (`nbeta')"'
 				}
 				else if missing(`beta'/`sebeta') | (abs(`beta')>=`ztol' & abs(`beta'/`sebeta')<`ztol') {	// improved Mar 2017
-					if `"`messages'"'!=`""' {
-						nois disp as err "Coefficent could not be estimated"
-					}
+					if `"`messages'"'!=`""' nois disp as err "Coefficent could not be estimated"
 					local postcoeffs `"(2) (.) (.) (`nbeta')"'
 				}
 				else {
@@ -2039,6 +2113,7 @@ program define ProcessCommand, rclass sortpreserve
 						else qui replace _rsample=1 if `touse' & `studyid'==`i'		// if non e-class
 					}
 				}
+				
 				forvalues j=1/`nrn' {
 					local postcoeffs `"`postcoeffs' (`us_`j'')"'
 				}
@@ -2058,40 +2133,99 @@ program define ProcessCommand, rclass sortpreserve
 		}	// end forvalues i=1/`ns'
 	}		// end forvalues h=1/`overlen'
 
-	* If appropriate, generate blank subgroup observations
+	
+	** If appropriate, generate blank subgroup observations
 	//   and fill in with user-requested statistics (and, if ipdover, non-pooled effect estimates)
 	if `"`by'"'!=`""' & `"`subgroup'"'==`""' {
 		foreach byi of local bylist {
 			local blank=0
+			local postexp `"(.) (3) (.) (.) (.)"'	// missing study; _USE=3; beta; se; npts
 			
 			if (`"`ipdover'"'!=`""' | `nr') {
+				if `"`ipdover'"'!=`""' & `"`messages'"'!=`""' {
+					local bylabi : label (`by') `byi'
+					disp as text  "Fitting model for `by' = `bylabi' ... " _c
+				}
 				cap `version' `pcommand' `cmdname' `cmdargs' if `by'==`byi' & `touse' `cmdopts' `cmdrest'
-				if !_rc {
-					local postexp `"(.) (3) (`beta') (`sebeta') (`nbeta')"'
-					if `nr' & `"`ad'"'==`""' {
+				local rc = c(rc)
+				
+				if `rc' {	// if unsuccessful, insert blanks
+					if `"`ipdover'"'!=`""' & `"`messages'"'!=`""' {
+						nois disp as err "Error: " _c
+						if `rc'==1 {
+							nois disp as err "user break"
+						}
+						else cap noisily error _rc
+					}
+					local blank=1
+				}				
+				
+				else {
+				
+					// only post coefficients if ipdover
+					if `"`ipdover'"'!=`""' {
+				
+						// if model was fitted successfully but desired coefficient was not estimated
+						if `eclass' {
+							local colna : colnames e(b)
+							local coleq : coleq e(b)
+							if e(converged)==0 {
+								local noconverge=1
+								local nocvtext " (convergence not achieved)"
+							}
+						}
+						
+						if `eclass' & (!`: list estvar in colna' | (`"`estvareq'"'!=`""' & !`: list estvareq in coleq')) {
+							if `"`messages'"'!=`""' nois disp as err "Coefficent could not be estimated"
+							local postexp `"(.) (3) (.) (.) (`nbeta')"'
+						}
+						else if missing(`beta'/`sebeta') | (abs(`beta')>=`ztol' & abs(`beta'/`sebeta')<`ztol') {	// improved Mar 2017
+							if `"`messages'"'!=`""' nois disp as err "Coefficent could not be estimated"
+							local postexp `"(.) (3) (.) (.) (`nbeta')"'
+						}
+						else {
+							local postexp `"(.) (3) (`beta') (`sebeta') (`nbeta')"'
+							if `"`messages'"'!=`""' disp as res "Done`nocvtext'"
+							if !`eclass' & `"`total'"'!=`""' {
+								cap mat list e(b)
+								local eclass = (!_rc)
+							}
+							if "`rsample'"=="" {
+								if `eclass' qui replace _rsample=1 if e(sample)				// if e-class
+								else qui replace _rsample=1 if `touse' & `by'==`byi'		// if non e-class
+							}
+						}
+					}			// end if `"`ipdover'"'!=`""'
+						
+					// post user-requested statistics
+					if `nr' & `"`ad'"'==`""' {				// Aug 2017: why `ad'==""???
 						forvalues j=1/`nrn' {
 							local postexp `"`postexp' (`us_`j'')"'
 						}
 						local postexp `"`postexp' `statsrs'"'
 					}
+
+					local nocvtext		// clear macro
 				}
-				else local blank=1
 			}
 			else local blank=1
+			
 			if `blank' {
-				local reps = 3 + `nrn'
-				local postrepsn : di _dup(`reps') `" (.)"'			// returned numeric stats
+				local postrepsn : di _dup(`nrn') `" (.)"'			// returned numeric stats
 				local postrepss : di _dup(`nrs') `" ()"'			// returned strings
-				local postexp `"(.) (3) `postrepsn' `postrepss'"'
+				local postexp `"`postexp' `postrepsn' `postrepss'"'
 			}
+			
 			if `overlen' > 1 local postexp `"(.) `postexp'"'
 			local postexp `"(.) (`byi') `postexp'"'
+			
 			post `postname' `postexp'
 
 		}		// end foreach byi of local bylist
 	}		// end if `"`by'"'!=`""' & `"`subgroup'"'==`""'
 	
 	postclose `postname'
+
 
 	// Warning messages
 	if `"`total'"'!=`""' {
@@ -2556,7 +2690,7 @@ program define ParseCols, rclass
 						nois disp as err `"check that expressions are enclosed in parentheses"'
 						exit _rc
 					}
-					else if _rc confirm name `lhs'
+					else if _rc confirm name `lhs'		// exit with error
 				}
 				else {
 					local ++nr
@@ -2817,7 +2951,7 @@ program define FindEstVar, rclass
 		local i = `nexp' + `j'
 		return local us_`j' `"`s(exp`i')'"'
 	}
-	
+
 	// Identify estvar
 	if !`eclass' {							// not using e(b)
 		local beta `"`s(exp1)'"'
@@ -2865,7 +2999,8 @@ program define FindEstVar, rclass
 										( inlist(`"`name1'"',`"`rname1'"',`"`rname2'"') ///
 										| inlist(`"`name2'"',`"`rname1'"',`"`rname2'"') )) ///
 									| (`"`interaction'"'==`""' & inlist(`"`estvar'"',`"`rname1'"',`"`rname2'"')) {
-									nois disp as err "Automated identification of {it:estvar} failed; please supply {bf:poolvar()} or {it:exp_list}"'
+									nois disp as err `"Automated identification of {it:estvar} failed; conflict detected in expanded factor-variable notation"'
+									nois disp as err `"Please use either {bf:poolvar()} or {it:exp_list}"'
 									exit 198
 								}
 							}
@@ -2874,7 +3009,8 @@ program define FindEstVar, rclass
 
 								if (`"`interaction'"'!=`""' & inlist(`"`rname'"',`"`name1'"',`"`name2'"')) ///
 									| (`"`interaction'"'==`""' & `"`rname'"'==`"`estvar'"') {
-									nois disp as err "Automated identification of {it:estvar} failed; please supply {bf:poolvar()} or {it:exp_list}"'
+									nois disp as err `"Automated identification of {it:estvar} failed; conflict detected in expanded factor-variable notation"'
+									nois disp as err `"Please use either {bf:poolvar()} or {it:exp_list}"'
 									exit 198
 								}
 							}
@@ -2898,7 +3034,8 @@ program define FindEstVar, rclass
 			}		// end forvalues i=1/`nexp'
 
 			if `"`estvar'"'==`""' {
-				nois disp as err "Automated identification of {it:estvar} failed; please supply {bf:poolvar()} or {it:exp_list}"'
+				nois disp as err `"Automated identification of {it:estvar} failed; no suitable variable could be found"'
+				nois disp as err `"Please use either {bf:poolvar()} or {it:exp_list}"'
 				exit 198
 			}
 			

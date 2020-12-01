@@ -5,11 +5,12 @@
 
 * version 1.0  David Fisher  31jan2014
 
-*! version 2.0  David Fisher  11may2017
+* version 2.0  David Fisher  11may2017
 * Major update to extend functionality beyond estimation commands; now has most of the functionality of -metan-
 //  - Reworked so that ipdmetan.ado does command processing and looping, and admetan.ado does RE estimation (including -metan- functionality)
 //  - Hence, ipdover calls ipdmetan (but never admetan); ipdmetan calls admetan (if not called by ipdover); admetan can be run alone.
 //      Any of the three may call forestplot, which of course can also be run alone.
+
 
 * Notes on version 2.0:
 
@@ -48,6 +49,12 @@
 //    due to assumptions based on me mostly using ratio statistics, where tausq < 1, and not mean differences where tausq can be any magnitude.
 
 
+*! version 2.1  David Fisher  14sep2017
+// various bug fixes
+// Note: for harmonisation with metan/metaan, Isq input and output is now in the range 0 to 100, rather than 0 to 1.
+
+
+
 program define admetan, rclass
 
 	version 11.0
@@ -55,7 +62,7 @@ program define admetan, rclass
 	
 	syntax varlist(min=2 max=6 numeric) [if] [in] [, ///
 		STUDY(string) LABEL(string) BY(string) BYAD SORTBY(passthru) NPTS(varname numeric) ///
-		CItype(string) /*INTERaction*/ WGT(varname numeric) ZTOL(passthru) ///
+		CItype(name) WGT(varname numeric) ZTOL(passthru) ///
 		noKEEPVars noRSample noINTeger FORESTplot(string asis) ///
 		AD(string asis) * ]
 	
@@ -63,8 +70,8 @@ program define admetan, rclass
 	local params : word count `invlist'
 	
 	marksample touse, novarlist		// `novarlist' option so that entirely missing/nonexistent studies/subgroups may be included
-	
 
+	
 	** Process outcome measure summary statistics (summstat) and methods of deriving _ES and _seES
 	if `"`options'"'!=`""' {
 
@@ -88,10 +95,11 @@ program define admetan, rclass
 			local cc = cond(`"`cc'"'!=`""', `"cc(0)"', cond(`"`yescc'"'!=`""', `"cc(`yescc')"', `""'))	// "`cc'"=="" if not supplied by user
 		}																								// will default to 0.5 later, if appropriate
 	
-		// METHODS of analysis for AD (*can* be passed from ipdmetan)
+		// METHODS of analysis for AD (*can* be passed from -ipdmetan-)
 		// (N.B. random-effects methods are dealt with in MainRoutine)
 		local 0 `", `options'"'
 		syntax [, FE IV LOGRank MH PETO COHen GLAss HEDges noSTANdard BREslow COCHranq IVQ CHI2 CORnfield EXact WOolf * ]
+		local options_adm `options'
 		
 		// for clarity: `chi2opt' is the option (on/off); `chi2' will later hold the value itself
 		local chi2opt `chi2'
@@ -101,10 +109,25 @@ program define admetan, rclass
 		// (more detailed checking, and assigning of defaults if necessary, will be done later by ProcessInputVarlist)
 		local iv = cond("`fe'`ivq'`cochranq'"!="", "iv", "`iv'")			// synonyms
 		opts_exclusive `"`iv' `mh' `peto' `cohen' `glass' `hedges' `standard'"' `""' 184
-		local method `"`iv'`mh'`peto'`cohen'`glass'`hedges'`standard'"'
+		local method `iv'`mh'`peto'`cohen'`glass'`hedges'`standard'
 		
-		macro drop fe iv /*mh*/ peto cohen glass hedges standard cochranq ivq
-		// N.B. don't drop `mh' yet; needed later to test for M-H and RE being simultaneously requested by user
+		* Same for "citype" options
+		// cornfield, exact, woolf were main options to -metan- so are also allowed here
+		//  however the preferred -admetan- syntax is citype(...)
+		opts_exclusive `"`cornfield' `exact' `woolf'"' `""' 184
+		local cimainopt `cornfield'`exact'`woolf'					// marker as whether supplied as a "main" option (cf -metan-)
+		local 0 `", `citype'"'
+		syntax [, CORnfield EXact WOolf * ]
+		cap assert `: word count `cimainopt' `cornfield' `exact' `woolf' `options'' <= 1
+		if _rc {
+			disp as err `"Conflict between options {bf:citype(`citype')} and {bf:`cimainopt'}"'
+			exit _rc
+		}
+		local citype `citype' `cimainopt'
+		// local citype = cond(inlist(`"`citype'"', `""', `"z"'), `"normal"', `"`citype'"')
+		local cimainopt = cond(`"`cimainopt'"'==`""', `""', `"cimainopt"')
+		
+		local options `options_adm'
 	}
 	
 	
@@ -197,8 +220,8 @@ program define admetan, rclass
 		// (though don't include any options that may be modified before MainRoutine is run!)
 		// (i.e. the options below just need to be *consulted* in the meantime.)
 		local options_adm = trim(`"`macval(options)' `cumulative' `efficacy' `influence' `interaction' `rfdist' `sgwt'"')
-		if `"`lcols'"'!=`""' local options_adm `"`macval(options_adm)' lcols(`lcols')"'
-		if `"`rcols'"'!=`""' local options_adm `"`macval(options_adm)' rcols(`rcols')"'
+		if `"`lcols'"'!=`""'  local options_adm `"`macval(options_adm)' lcols(`lcols')"'
+		if `"`rcols'"'!=`""'  local options_adm `"`macval(options_adm)' rcols(`rcols')"'
 		if `"`saving'"'!=`""' local options_adm `"`macval(options_adm)' saving(`saving')"'
 		
 				
@@ -363,7 +386,7 @@ program define admetan, rclass
 
 		// Now process the `invlist' to finalise `summstat' and `method'
 		cap nois ProcessInputVarlist `_USE' `invlist' if `touse', summstat(`summstat') method(`method') ///
-			`log' `logrank' `breslow' `cc' `chi2opt' `cornfield' `exact' `woolf' `integer' `level' `ztol'
+			`log' `logrank' `breslow' `cc' `chi2opt' citype(`citype') `cimainopt' `integer' `level' `ztol'
 
 		if _rc {
 			if _rc==2000 nois disp as err "No studies found with sufficient data to be analysed"
@@ -374,8 +397,9 @@ program define admetan, rclass
 		}
 
 		local seffect = cond(`"`seffect'"'!=`""', `"`seffect'"', `"`r(effect)'"')	// don't override user-specified value
-		local summstat `"`r(summstat)'"'
-		local method   `"`r(method)'"'
+		local summstat  `"`r(summstat)'"'
+		local method    `"`r(method)'"'
+		local citype    `"`r(citype)'"'
 		local switchoff `"`r(switchoff)'"'
 		
 		// If `params'==4, default to eform unless Risk Diff.
@@ -386,7 +410,7 @@ program define admetan, rclass
 		// (N.B. "varname numeric" already established)
 		if `"`npts'"'!=`""' {
 			if `params' > 3 {
-				nois disp as err `"Note: {bf:npts(}{it:varname}{bf:)} syntax only valid with generic inverse-variance model or with logrank (O-E & V) HR"'
+				nois disp as err `"{bf:npts(}{it:varname}{bf:)} syntax only valid with generic inverse-variance model or with logrank (O-E & V) HR"'
 				exit 198
 			}
 			else {
@@ -401,13 +425,9 @@ program define admetan, rclass
 				local options_adm `"`macval(options_adm)' npts"' 	// send simple on/off option to MainRotuine
 			}														// (for saved dataset and/or forestplot)
 		}
-					
+
 		// Generate _rsample (unless `norsample'): this is the only permanent change to the data in this section of code
-		local oldrsample = 111
 		if "`rsample'"==`""' {
-			cap confirm var _rsample
-			local oldrsample = _rc					// whether or not a variable named _rsample already existed
-		
 			cap drop _rsample
 			qui gen long _rsample = `_USE'==1		// this will show which observations were used
 		}
@@ -477,7 +497,7 @@ program define admetan, rclass
 		}
 		else {		// N.B. no need for if `touse' since already processed by -ipdmetan-
 			cap nois ProcessInputVarlist `_USE' `invlist', summstat(`summstat') method(`method') ///
-				`log' `logrank' `breslow' `cc' `chi2opt' `cornfield' `exact' `woolf' `integer' `level' `ztol'
+				`log' `logrank' `breslow' `cc' `chi2opt' citype(`citype') `cimainopt' `integer' `level' `ztol'
 			
 			if _rc {
 				if _rc==2000 nois disp as err "No studies found with sufficient data to be analysed"
@@ -489,6 +509,7 @@ program define admetan, rclass
 			
 			local summstat  `"`r(summstat)'"'
 			local method    `"`r(method)'"'
+			local citype    `"`r(citype)'"'
 			local switchoff `"`r(switchoff)'"'
 
 		}	// end else (i.e. if "`cmdstruc'"=="specific")
@@ -514,7 +535,7 @@ program define admetan, rclass
 			exit 198
 		}
 		
-		// Declare tempvars, if required:
+		// Declare tempvars:
 		//  - `adtouse' (need to get this back from ProcessAD in order to reset main `touse' if necessary)
 		//  - recycle previously-declared tempvars `newstudy' and `newby' for use with AD
 		//  - use _SOURCE to store source of data (IPD or AD).
@@ -523,7 +544,7 @@ program define admetan, rclass
 		local uselist `"`_USE' `_STUDY' `_BY'"'
 
 		cap nois ProcessAD if `touse', ad(`ad') adtouse(`adtouse') ipdfile(`ipdfile') wgt(`wgt') `eform' `log' `sortby' ///
-			summstat(`summstat') method(`method') `mh' `logrank' `breslow' `cc' `cornfield' `exact' `woolf' `integer' `chi2opt' `ztol' ///
+			summstat(`summstat') method(`method') `mh' `logrank' `breslow' `cc' citype(`citype') `cimainopt' `integer' `chi2opt' `ztol' ///
 			by(`by') `byad' study(`study') invlist(`invlist') uselist(`uselist') npts(`npts') tvlist(`tvlist') lrcols(`lcols' `rcols')
 		
 		if _rc {
@@ -574,7 +595,7 @@ program define admetan, rclass
 		local options_adm `"`macval(options_adm)' source(`_SOURCE')"'		
 		
 	}	// end if `"`ad'"'!=`""'
-	
+
 	// Switch off incompatible options
 	if trim(`"`switchoff'"')!=`""' {
 		foreach opt of local switchoff {
@@ -585,8 +606,8 @@ program define admetan, rclass
 		foreach opt of local adswitchoff {
 			local `opt'
 		}
-	}
-	
+	}	
+
 	// Validity of names in lcols/rcols -- cannot be any of the names admetan.ado uses for other things
 	// (N.B. already done by -ipdmetan- if `"`ipdfile'"'!=`""')
 	if `"`ipdfile'"'==`""' & trim(`"`lcols'`rcols'"')!=`""' & `"`saving'"'!=`""' {
@@ -616,15 +637,16 @@ program define admetan, rclass
 			if `"`lrlab'"'!=`""' {
 			
 				// allowed to have same value label name *only if* a clone in terms of observations
+				// modified 13th July 2017; double check!!
 				local check
 				if `"`_BY'"'!=`""' {
-					local check = (`v'==_BY     & `"`lrlab'"'==`"`: value label `_BY''"')
+					local check = (`v'==`_BY'     & `"`lrlab'"'==`"`: value label `_BY''"')
 				}
 				if `"`check'"'==`""' & `"`_STUDY'"'!=`""' {
-					local check = (`v'==_STUDY  & `"`lrlab'"'==`"`: value label `_STUDY''"')
+					local check = (`v'==`_STUDY'  & `"`lrlab'"'==`"`: value label `_STUDY''"')
 				}
 				if `"`check'"'==`""' & `"`_SOURCE'"'!=`""' {
-					local check = (`v'==_SOURCE & `"`lrlab'"'==`"`: value label `_SOURCE''"')
+					local check = (`v'==`_SOURCE' & `"`lrlab'"'==`"`: value label `_SOURCE''"')
 				}
 				
 				if `check' {
@@ -673,7 +695,7 @@ program define admetan, rclass
 			}
 			else local tvlist `"_seES"'						// ...else `_seES' needs to be created
 		}
-		if `adparams'>3 & "`_NN'"=="" local tvlist `"`tvlist' _NN"'	// if AD not I-V/logrank, _NN will be available; hence create var if necessary
+		if `adparams'>3 & "`_NN'"=="" local tvlist `"`tvlist' _NN"'	// if AD not I-V/logrank, _NN will be available; hence create variable if necessary
 	}
 		
 	// Else, if IPD is not I-V, check whether AD is
@@ -687,7 +709,7 @@ program define admetan, rclass
 			args _ES _seES					// `_seES' supplied by AD
 			local tvlist `"_LCI _UCI"'		// ...and `_LCI', `_UCI' need to be created
 		}
-		if `params'>3 & "`_NN'"=="" local tvlist `"`tvlist' _NN"'	// if IPD not I-V/logrank, _NN will be available; hence create var if necessary
+		if `params'>3 & "`_NN'"=="" local tvlist `"`tvlist' _NN"'	// if IPD not I-V/logrank, _NN will be available; hence create variable if necessary
 	}
 
 	// else, neither are I-V, so must be compatible (either `params'>3 or logrank)
@@ -717,7 +739,7 @@ program define admetan, rclass
 		qui replace `adtouse' = `adtouse' * (`touse'!=1)	// no overlap
 		qui count if `adtouse'
 		if !r(N) {
-			disp as err `"Note: No valid observations in aggregate dataset; {bf:ad()} will be ignored"'
+			disp as err `"Note: No valid additional observations in aggregate dataset; {bf:ad()} will be ignored"'
 			local ad
 		}
 		else {	
@@ -743,7 +765,7 @@ program define admetan, rclass
 	if `"`interaction'"'!=`""' local effect `"Interact. `effect'"'
 	
 	// Finalise citype
-	if `"`citype'"'==`""' local citype `cornfield'`exact'`woolf'
+	// if `"`citype'"'==`""' local citype `cornfield'`exact'`woolf'
 	local citype = cond(inlist(`"`citype'"', `""', `"z"'), `"normal"', `"`citype'"')
 	return local citype `"`citype'"'
 	
@@ -795,8 +817,16 @@ program define admetan, rclass
 				cap confirm var _rsample
 				if !_rc {
 					disp as err _n `"Warning: option {bf:norsample} specified, but "stored" variable {bf:_rsample} already exists"'
-					disp as err  "Note that this variable is therefore NOT associated with the most recent analysis."
+					local rsrc = _rc
 				}
+				local rc = 111
+				foreach v in _ES _seES _LCI _UCI _WT _NN {
+					cap confirm var `v'
+					local rc = min(`rc', _rc)
+				}
+				if !_rc disp as err `"as do one or more of {bf:_ES}, {bf:_seES}, {bf:_LCI}, {bf:_UCI}, {bf:_WT} or {bf:_NN}"'
+				local plural = cond(_rc, "these variables are", "this variable is")
+				if !`rsrc' | !_rc disp as err `"Note that `plural' therefore NOT associated with the most recent analysis."'
 			}
 			
 			else {
@@ -805,11 +835,13 @@ program define admetan, rclass
 					cap confirm var `v'
 					local rc = min(`rc', _rc)
 				}
-				local rc = min(`rc', `oldrsample')
+				// local rc = min(`rc', `oldrsample')		// amended 4th July 2017
 				if !`rc' {
 					disp as err _n `"Warning: option {bf:nokeepvars} specified, but one or more "stored" variables already exist"'
-					disp as err  "(i.e. one or more of {bf:_ES}, {bf:_seES}, {bf:_LCI}, {bf:_UCI}, {bf:_WT}, {bf:_NN} or {bf:_rsample})"
-					disp as err  "Note that these variables are therefore no longer associated with the most recent analysis."
+					// disp as err  "(i.e. one or more of {bf:_ES}, {bf:_seES}, {bf:_LCI}, {bf:_UCI}, {bf:_WT}, {bf:_NN} or {bf:_rsample})"
+					disp as err `"(i.e. one or more of {bf:_ES}, {bf:_seES}, {bf:_LCI}, {bf:_UCI}, {bf:_WT} or {bf:_NN})"'
+					disp as err `"Note that these variables are therefore no longer associated with the most recent analysis"'
+					disp as err `"(although {bf:_rsample} {ul:is})."'
 				}
 			}
 		}
@@ -1020,11 +1052,12 @@ program define MainRoutine, rclass sortpreserve
 		
 			// Parse RE models and synonyms
 			local t_old `t'
-			local 0 `"`random'"'
+			local 0 `random'
 			syntax [anything(name=re_model id="random-effects model")] ///
 				[, T Gamma BS BT HKsj IVHet QE(varname numeric) KR EIM OIM ///
-				ITOL(passthru) MAXTausq(passthru) REPS(passthru) MAXITer(passthru) QUADPTS(passthru) ISQ(real 80) noTRUNCate ]
-
+				ITOL(passthru) MAXTausq(passthru) REPS(passthru) MAXITer(passthru) QUADPTS(passthru) ISQ(string) TAUSQ(string) noTRUNCate ]
+			// tausq() option added 24th July 2017
+			
 			// DerSimonian-Laird is default
 			if inlist("`re_model'", "", "r", "random", "rand", "re", "dl") local re_model "dl"
 
@@ -1139,55 +1172,96 @@ program define MainRoutine, rclass sortpreserve
 					exit 499
 				}
 			}
-		}
-		local random			// clear macro
-
-		if "`re_model'"=="sa" {
-			if "`by'"!="" {
-				nois disp as err `"Sensitivity analysis cannot be used with {bf:by()}"'
-				exit 198
-			}
-			if `isq'<0 | `isq'>=100 {
-				nois disp as err `"I{c 178} value for sensitivity analysis must be at least 0% and less than 100%"'
-				exit 198
-			}
-		}
-		else {
-			if !inlist("`isq'", "", "80") {
-				nois disp as err `"{bf:isq()} may only be specified when requesting a sensitivity analysis model"'
-				exit 198
-			}
-		}
-		
-		// observed/expected information matrix for Kenward-Roger
-		if `"`eim'`oim'"'!=`""' {
-			if "`vce_model'"!="kr" {
-				nois disp as err `"Note: Options {bf:eim} and {bf:oim} are only relevant to the Kenward-Roger variance estimator and will be ignored"' 
-			}
-			else {
-				cap assert `: word count `eim' `oim'' == 1
-				if _rc {
-					nois disp as err `"May only specify one of {bf:eim} or {bf:oim}, not both"'
-					exit _rc
+			
+			// sensitivity analysis
+			if "`re_model'"=="sa" {
+				if "`by'"!="" {
+					nois disp as err `"Sensitivity analysis cannot be used with {bf:by()}"'
+					exit 198
+				}
+				if `"`tausq'"'!=`""' {
+					cap confirm number `=`tausq''	// evaluate, in case scalar etc. is supplied
+					if _rc {
+						disp as err `"Error in {bf:tausq()} suboption to {bf:re()}; a single number was expected"'
+						exit _rc
+					}
+					if `=`tausq''<0 {
+						nois disp as err `"tau{c 178} value for sensitivity analysis cannot be negative"'
+						exit 198
+					}
+					local tsqsa = `=`tausq''			// rename to differentiate from calculated tausq
+					local tsqsa_opt `"tsqsa(`tsqsa')"'
+				}
+				else {
+					if `"`isq'"'==`""' local isqsa = 80
+					else {
+						cap confirm number `=`isq''		// evaluate, in case scalar etc. is supplied
+						if _rc {
+							disp as err `"Error in {bf:isq()} suboption to {bf:re()}; a single number was expected"'
+							exit _rc
+						}
+						if `=`isq''<0 | `=`isq''>=100 {
+							nois disp as err `"I{c 178} value for sensitivity analysis must be at least 0% and less than 100%"'
+							exit 198
+						}
+						local isqsa = `=`isq''			// rename to differentiate from calculated Isq
+					}
+					local isqsa_opt `"isqsa(`isqsa')"'
+				}
+				
+				if `: word count `tsqsa' `isqsa'' >=2 {
+					nois disp as err `"Only one of {bf:isq()} or {bf:tausq()} may be supplied as suboptions to {bf:re()}"'
+					exit 184
 				}
 			}
-		}
-		else if "`vce_model'"=="kr" local eim "eim"
-		
-		// M-H and chi2 not compatible with random effects
-		if "`mh'"!="" {
-			nois disp as err "Cannot specify both Mantel-Haenszel and random-effects"
-			exit 198
-		}
-		if "`chi2opt'"!="" {
-			nois disp as err "Note: chi-squared test is not compatible with random-effects and will be ignored"
-			local chi2opt
-		}
+			
+			// if NOT sensitivity analysis
+			else {
+				if `"`isq'"'!=`""' {
+					nois disp as err `"{bf:isq()} may only be specified when requesting a sensitivity analysis model"'
+					exit 198
+				}
+				if `"`tausq'"'!=`""' {
+					nois disp as err `"{bf:tausq()} may only be specified when requesting a sensitivity analysis model"'
+					exit 198
+				}
+			}
+			// local isq					// clear macro
+			// local tausq					// clear macro
+			
+			// observed/expected information matrix for Kenward-Roger
+			if `"`eim'`oim'"'!=`""' {
+				if "`vce_model'"!="kr" {
+					nois disp as err `"Note: Options {bf:eim} and {bf:oim} are only relevant to the Kenward-Roger variance estimator and will be ignored"' 
+				}
+				else {
+					cap assert `: word count `eim' `oim'' == 1
+					if _rc {
+						nois disp as err `"May only specify one of {bf:eim} or {bf:oim}, not both"'
+						exit _rc
+					}
+				}
+			}
+			else if "`vce_model'"=="kr" local eim "eim"
+			
+			// M-H and chi2 not compatible with random effects
+			if "`mh'"!="" {
+				nois disp as err "Cannot specify both Mantel-Haenszel and random-effects"
+				exit 198
+			}
+			if "`chi2opt'"!="" {
+				nois disp as err "Note: chi-squared test is not compatible with random-effects and will be ignored"
+				local chi2opt
+			}
+			
+			// options
+			local options_re `"vcemodel(`vce_model') `isqsa_opt' `tsqsa_opt' qe(`qe') `itol' `maxtausq' `reps' `maxiter' `quadpts' `eim' `oim' `truncate'"'
+
+		}						// end if `"`random'"'!=`""'
+		local random			// clear macro
+
 	}			// end if `"`options'"'!=`""'
 	
-	local isqsa = cond(`"`isq'"'!=`""', `"`isq'"', `"80"')		// rename to differentiate from calculated Isq
-	local isq													// clear macro	
-	local options_re `"vcemodel(`vce_model') isqsa(`isqsa') qe(`qe') `itol' `maxtausq' `reps' `maxiter' `quadpts' `eim' `oim' `truncate'"'
 	
 	// Finalise method of POOLING (M-H; fixed IV; random IV)
 	// (N.B. those are the only three possibilities, since Peto, logrank, SMD/WMD are all IV.)
@@ -1240,7 +1314,7 @@ program define MainRoutine, rclass sortpreserve
 	if `"`cumulative'`influence'"'!=`""' {
 		local tofind `"_ES _seES"'
 		if `"`: list tofind & invlist'"'!=`""' {
-			nois disp as err `"Caution: {bf:_ES} and {bf:_seES} are altered by {bf:admetan}; results will be unstable if analysis is repeated"'
+			nois disp as err `"Caution: variables {bf:_ES} and {bf:_seES} are altered by {bf:admetan}; results will be unstable if analysis is repeated"'
 		}
 		
 		tempvar use3
@@ -1450,7 +1524,9 @@ program define MainRoutine, rclass sortpreserve
 		
 		// tausq-related stuff (incl. Qr) is meaningless for M-H, and also for Peto or Breslow unless RE
 		// (N.B. although this *does* include sensitivity analysis)
-		if "`re_model'"!="mh" & !("`re_model'"=="fe" & ("`method'"=="peto" | "`breslow'"!=""))  {
+		// (N.B.2 for user-defined weights, we define Qr but everything else here is meaningless)
+		if "`wgt'"!="" return scalar Qr = r(Qr)
+		else if "`re_model'"!="mh" & !("`re_model'"=="fe" & ("`method'"=="peto" | "`breslow'"!=""))  {
 
 			// tausq, sigmasq, Qr
 			return scalar sigmasq = r(sigmasq)
@@ -1460,17 +1536,37 @@ program define MainRoutine, rclass sortpreserve
 		
 			// calculations involving Cochran's Q only (since it alone is defined in terms of tausq)
 			tempname Isq HsqM
-			scalar `Isq' = cond("`re_model'"=="sa", `isqsa'/100, ///	// sensitivity analysis
-				cond(missing(r(tausq)), (r(Qc)-`k'+1)/r(Qc), ///		// non inverse-variance (or missing tausq)
-					r(tausq)/(r(tausq) + r(sigmasq))))					// inverse-variance (non-missing tausq)
-			return scalar Isq = `Isq'
+			if "`re_model'"=="sa" {								// sensitivity analysis
+				if `"`tsqsa'"'==`""' {
+					// scalar `Isq'  = `isqsa'/100				// altered Sep 2017 for v2.1 to align with metan/metaan behaviour
+					scalar `Isq'  = `isqsa'
+					scalar `HsqM' = `isqsa'/(100 - `isqsa')
+					return scalar Isq = `Isq'
+					return scalar HsqM = float(`HsqM')			// If user-defined I^2 is a round(ish) number, so should H^2 be
+				}
+				else {
+					// scalar `Isq' = `tsqsa'/(`tsqsa' + r(sigmasq))		// altered Sep 2017 for v2.1 to align with metan/metaan behaviour
+					scalar `Isq' = 100*`tsqsa'/(`tsqsa' + r(sigmasq))
+					scalar `HsqM' = `tsqsa'/r(sigmasq)
+					return scalar Isq = `Isq'
+					return scalar HsqM = `HsqM'
+				}
+			}
+			else {
+				/*
+				scalar `Isq' = cond(missing(r(tausq)), (r(Qc)-`k'+1)/r(Qc), ///		// altered Sep 2017 for v2.1 to align with metan/metaan behaviour
+					r(tausq)/(r(tausq) + r(sigmasq)))
+				*/
+				scalar `Isq' = 100*cond(missing(r(tausq)), (r(Qc)-`k'+1)/r(Qc), ///		// non inverse-variance (or missing tausq)
+					r(tausq)/(r(tausq) + r(sigmasq)))									// inverse-variance (non-missing tausq)					
+				return scalar Isq = `Isq'
+					
+				scalar `HsqM' = cond(missing(r(tausq)), (r(Qc)-`k'+1)/(`k'-1), ///		// non inverse-variance
+					r(tausq)/r(sigmasq))												// inverse-variance
+				return scalar HsqM = `HsqM'
+			}		
+			
 			local Isqlist `"`=`Isq''"'
-			
-			scalar `HsqM' = cond("`re_model'"=="sa", `isqsa'/(100 - `isqsa'), ///	// sensitivity analysis
-				cond(missing(r(tausq)), (r(Qc)-`k'+1)/(`k'-1), ///						// non inverse-variance
-					r(tausq)/r(sigmasq)))												// inverse-variance
-			
-			return scalar HsqM = cond("`re_model'"=="sa", float(`HsqM'), `HsqM')		// If user-defined I^2 is a round(ish) number, so should H^2 be
 			local Hsqlist `"`=`HsqM''"'
 		
 			// confidence limits for tausq, Isq and Hsq, plus error codes & messages
@@ -1485,7 +1581,9 @@ program define MainRoutine, rclass sortpreserve
 				return scalar tsq_uci = r(tsq_uci)
 				local tsqlist `"`tsqlist' `r(tsq_lci)' `r(tsq_uci)'"'
 				local Hsqlist `"`Hsqlist' `=`r(tsq_lci)'/`r(sigmasq)'' `=`r(tsq_uci)'/`r(sigmasq)''"'
-				local Isqlist `"`Isqlist' `=`r(tsq_lci)'/(`r(tsq_lci)' + `r(sigmasq)')' `=`r(tsq_uci)'/(`r(tsq_uci)' + `r(sigmasq)')'"'
+				// local Isqlist `"`Isqlist' `=`r(tsq_lci)'/(`r(tsq_lci)' + `r(sigmasq)')' `=`r(tsq_uci)'/(`r(tsq_uci)' + `r(sigmasq)')'"'
+				// altered Sep 2017 for v2.1 to align with metan/metaan behaviour
+				local Isqlist `"`Isqlist' `=100*`r(tsq_lci)'/(`r(tsq_lci)' + `r(sigmasq)')' `=100*`r(tsq_uci)'/(`r(tsq_uci)' + `r(sigmasq)')'"'
 				
 				if `"`re_model'"'!="dlb" & `"`vce_model'"'!="gamma" {
 					if r(rc_tausq)==1 nois disp as err `"Note: tau{c 178} point estimate failed to converge within `maxiter' iterations"'
@@ -1780,8 +1878,15 @@ program define MainRoutine, rclass sortpreserve
 			local continue = cond("`vce_model'"=="", "", "_c")
 			if "`re_model'"!="sa" disp as text "with " as res "`tsqtext'" as text " estimate of tau{c 178} " `continue'
 			else {
-				disp as text "Sensitivity analysis with user-defined I{c 178} = " as res "`isqsa'%"
-				if `"`warning'"'==`""' local fpnote `"Sensitivity analysis with user-defined I{c 178}"'
+				disp as text "Sensitivity analysis with user-defined " _c
+				if `"`tsqsa'"'==`""' {
+					disp "I{c 178} = " as res "`isqsa'%"
+					if `"`warning'"'==`""' local fpnote `"Sensitivity analysis with user-defined I{c 178}"'
+				}
+				else {
+					disp "tau{c 178} = " as res "`tsqsa'"
+					if `"`warning'"'==`""' local fpnote `"Sensitivity analysis with user-defined tau{c 178}"'
+				}
 			}
 		}
 	}
@@ -1815,7 +1920,16 @@ program define MainRoutine, rclass sortpreserve
 
 	// user-defined weights
 	if "`wgt'" != "" {
-		disp as text "and with user-defined weights " as res "`wgt'"
+	
+		// 17th July 2017
+		// if processed by -ipdmetan-, use title (in case returned statistic)
+		// o/w just use variable name
+		if `"`ipdfile'"'!=`""' {
+			local wgttitle : variable label `wgt'
+			if `"`wgttitle'"'==`""' local wgttitle `wgt'
+		}
+		else local wgttitle `wgt'
+		disp as text "and with user-defined weights " as res "`wgttitle'"
 		if `"`warning'"'==`""' local fpnote `"NOTE: Weights are user-defined"'
 	}
 	else if `"`fpnote'"'!=`""' local fpnote `"NOTE: Weights are from `fpnote'"'
@@ -1949,7 +2063,7 @@ program define MainRoutine, rclass sortpreserve
 			// Would like to use _prefix_saving here,
 			//  but ipdmetan's 'saving' option has additional sub-options
 			//  so have to parse manually
-			local 0 `saving'
+			local 0 `"`saving'"'				// added double-quotes July 2017 in case filename is already encased in quotes
 			cap nois syntax anything(id="file name" name=filename) [, STACKlabel REPLACE *]
 			if !_rc {
 				if "`replace'" == "" {
@@ -1961,7 +2075,7 @@ program define MainRoutine, rclass sortpreserve
 				di as err "invalid saving() option"
 				exit _rc
 			}
-			local saving `"`"`filename'"', `replace' `options'"'
+			local saving `"`filename', `replace' `options'"'	// removed double-quotes from around `filename', July 2017
 			
 			// if intention is to save, we may as well preserve/keep now
 			// but keep `touse' itself for now to make subsequent coding easier
@@ -2348,7 +2462,12 @@ program define MainRoutine, rclass sortpreserve
 			** Now insert label info into new rows
 			
 			// "ovstat" is a synonym for "hetstat"
+			// N.B. tausq-related stuff (incl. Qr) is meaningless for M-H, and also for Peto or Breslow unless RE
+			// (although this *does* include sensitivity analysis)
+			// (also if user-defined weights, tausq-related stuff is meaningless *except* for Qr -- added Sep 2017 for v2.1)
 			local hetstat = cond(`"`hetstat'"'==`""', `"`ovstat'"', `"`hetstat'"')
+			local hetstat = cond("`wgt'"!="" | "`re_model'"=="mh" | ("`re_model'"=="fe" & ("`method'"=="peto" | "`breslow'"!="")) ///
+				, "q", "`hetstat'")
 			
 			// "overall" labels
 			if `"`overall'"'==`""' {
@@ -2358,12 +2477,12 @@ program define MainRoutine, rclass sortpreserve
 					
 					// tausq-related stuff (incl. Qr) is meaningless for M-H, and also for Peto or Breslow unless RE
 					// (N.B. although this *does* include sensitivity analysis)
-					if "`hetstat'"=="q" | "`re_model'"=="mh" ///
-						| ("`re_model'"=="fe" & ("`method'"=="peto" | "`breslow'"!="")) {
-							local ovlabel "(Q = " + string(`Q', "%5.2f") + " on `Qdf' df)"
+					if "`hetstat'"=="q" {
+						local ovlabel "(Q = " + string(`Q', "%5.2f") + " on `Qdf' df)"
 					}
 					else {
-						local ovlabel "(I-squared = " + string(100*`Isq', "%5.1f")+ "%)"
+						// local ovlabel "(I-squared = " + string(100*`Isq', "%5.1f")+ "%)"		// altered Sep 2017 for v2.1, to match with metan/metaan behaviour
+						local ovlabel "(I-squared = " + string(`Isq', "%5.1f")+ "%)"
 					}
 					
 					// Overall heterogeneity - extra row if lcols
@@ -2387,8 +2506,7 @@ program define MainRoutine, rclass sortpreserve
 
 				// tausq-related stuff (incl. Qr) is meaningless for M-H, and also for Peto or Breslow unless RE
 				// (N.B. although this *does* include sensitivity analysis)
-				if "`hetstat'"!="q" & "`re_model'"!="mh" ///
-					& !("`re_model'"=="fe" & ("`method'"=="peto" | "`breslow'"!="")) {
+				if "`hetstat'"!="q" {
 
 					tempname Isqmat
 					local nr = rowsof(`bystats')
@@ -2398,7 +2516,7 @@ program define MainRoutine, rclass sortpreserve
 					local tausqcol   = colnumb(`bystats', "tausq")
 						
 					forvalues r = 1/`nr' {
-						mat `Isqmat'[`r', 1] = `bystats'[`r', `tausqcol'] / (`bystats'[`r', `tausqcol'] + `bystats'[`r', `sigmasqcol'])
+						mat `Isqmat'[`r', 1] = 100*`bystats'[`r', `tausqcol'] / (`bystats'[`r', `tausqcol'] + `bystats'[`r', `sigmasqcol'])
 					}
 				}
 			
@@ -2421,8 +2539,7 @@ program define MainRoutine, rclass sortpreserve
 						
 							// tausq-related stuff (incl. Qr) is meaningless for M-H, and also for Peto or Breslow unless RE
 							// (N.B. although this *does* include sensitivity analysis)
-							if "`hetstat'"=="q" | "`re_model'"=="mh" ///
-								| ("`re_model'"=="fe" & ("`method'"=="peto" | "`breslow'"!="")) {
+							if "`hetstat'"=="q" {
 									
 								local Qi  = `bystats'[`i', `=colnumb(`bystats', "Q")']
 								local dfi = `bystats'[`i', `=colnumb(`bystats', "k")'] - 1
@@ -2430,7 +2547,8 @@ program define MainRoutine, rclass sortpreserve
 							}
 							else {
 								local Isqi = `Isqmat'[`i', 1]
-								local sghetlab = "(I-squared = " + string(100*`Isqi', "%5.1f")+ "%)"
+								// local sghetlab = "(I-squared = " + string(100*`Isqi', "%5.1f")+ "%)"		// altered Sep 2017 for v2.1 to match with metan/metaan behaviour
+								local sghetlab = "(I-squared = " + string(`Isqi', "%5.1f")+ "%)"
 							}
 							if `"`extraline'"'!=`""' {
 								replace `_LABELS' = "`sghetlab'" if `_USE'==3.75 & `_BY'==`byi'
@@ -2528,7 +2646,7 @@ program define MainRoutine, rclass sortpreserve
 				drop `use3'
 			}
 			if "`summaryonly'"!="" {
-				qui replace `touse'= 0 if inlist(`_USE', 1, 2)
+				qui replace `touse' = 0 if inlist(`_USE', 1, 2)
 			}
 		
 			// cumulative/influence notes for forestplot
@@ -2556,12 +2674,6 @@ program define MainRoutine, rclass sortpreserve
 			}
 			
 			return add
-			/*
-			// we are under -preserve- here, but forestplot.ado may have added some observations;
-			// remove these before saving or returning control to ipdmetan.ado
-			qui drop if missing(`touse')
-			cap assert inrange(`_USE', 0, 6)
-			*/
 		}
 		
 
@@ -2699,10 +2811,12 @@ program define PerformMetaAnalysis, rclass sortpreserve
 	local pvlist = cond(`"`r(pvlist)'"'!=`""', `"`r(pvlist)'"', `"`_ES' `_seES'"')		// "pooling" varlist
 
 
+	* Other special cases:
 	// Generate `_seES' in the special case where `_ES', `_LCI' and `_UCI' are provided; assume normal distribution
 	qui replace `_seES' = (`_UCI' - `_LCI') / (2*invnormal(.5 + `level'/200)) if `touse' & `_USE'==1 ///
 		& missing(`_seES') & !missing(`_UCI', `_LCI')
-	
+
+		
 	// We should now have _ES and _seES defined throughout.
 	// Quick double-check that studies with insufficient data are identified ("`_USE'==2")
 	// (should already have been done by either -ipdmetan- or -ProcessInputVarlist-)
@@ -2793,9 +2907,14 @@ program define PerformMetaAnalysis, rclass sortpreserve
 					c_local err "noerr"		// tell admetan not to also report an "error in PerformMetaAnalysis"
 					exit _rc
 				}
+				else if !inlist(_rc, 2000, 2002) {
+					if `"`err'"'==`""' nois disp as err `"Error in {bf:admetan.MetaAnalysisLoop}"'
+					c_local err "noerr"		// tell admetan not to also report an "error in PerformMetaAnalysis"
+					exit _rc
+				}
 				else if !`nrc' {			// only display the error once!
 					if _rc==2000 nois disp as err "Note: insufficient data in one or more subgroups" 
-					else nois disp as err "Note: pooling failed in one or more subgroups" 
+					else if _rc==2002 nois disp as err "Note: pooling failed in one or more subgroups"		// 7th July 2017
 					local nrc = 1
 				}
 			}
@@ -3182,7 +3301,8 @@ program define GenConfInts
 				}
 				tempvar df
 				qui gen `: type `_NN'' `df' = `_NN' - 2			// use npts-2 as df for t distribution of df not explicitly given
-				nois disp as err `"Note: Degrees of freedom for {bf:`citype'}-based confidence intervals not supplied; using {it:n-2} as default"'
+				local disperr `"nois disp as err `"Note: Degrees of freedom for {bf:`citype'}-based confidence intervals not supplied; using {it:n-2} as default"'"'
+				// delay error message until after checking _ES is between 0 and 1 for logit
 			}
 			else {
 				nois disp as err `"Neither degrees-of-freedom nor participant numbers available;"'
@@ -3219,11 +3339,14 @@ program define GenConfInts
 		sort `obs'													// so this sorting should not affect the original data
 		summ `obs' if `touse', meanonly
 		forvalues j = 1/`r(max)' {
-			nois cci `=`a'[`j']' `=`b'[`j']' `=`c'[`j']' `=`d'[`j']', `citype'
-			qui replace `_LCI' = log(`r(lb_or)' in `j'
-			qui replace `_UCI' = log(`r(ub_or)' in `j'
+			qui cci `=`a'[`j']' `=`b'[`j']' `=`c'[`j']' `=`d'[`j']', `citype'
+			qui replace `_LCI' = log(`r(lb_or)') in `j'
+			qui replace `_UCI' = log(`r(ub_or)') in `j'
 		}
 	}
+	
+	// Now display delayed error message if appropriate
+	`disperr'
 
 end
 
@@ -3356,6 +3479,9 @@ program define MetaAnalysisLoop, rclass
 			c_local err "noerr"		// tell admetan not to also report an "error in MetaAnalysisLoop"
 			exit _rc
 		}
+		
+		// pooling failed (may not have caused an actual error)
+		if missing(r(eff), r(se_eff), r(totwt)) exit 2002
 		
 		// Now re-define `touse2' for *output* (i.e. where to store the results of the meta-analysis)
 		qui replace `touse2' = `touse' * (`obsj'==`j')
@@ -3498,7 +3624,7 @@ program define PerformPooling, rclass
 		METHOD(string) REMODEL(string) ///
 		[SUMMSTAT(string) LEVEL(real 95) WTVAR(varname numeric) NPTS(varname numeric) WGT(varname numeric) ///
 		CHI2vars(varlist numeric) AERVARS(varlist numeric) BREslow noINTeger QVLIST(varlist numeric) ///
-		VCEMODEL(string) ISQSA(real 80) QE(varname numeric) ///
+		VCEMODEL(string) ISQSA(real 80) TSQSA(real -99) QE(varname numeric) ///
 		ITOL(real 1e-8) MAXTausq(real -9) REPS(real 1000) MAXITer(real 1000) QUADPTS(real 40) noTRUNCate EIM OIM DF(varname numeric) ]
 	
 	marksample touse
@@ -3601,6 +3727,9 @@ program define PerformPooling, rclass
 				scalar `QS' = cond(r(N), r(sum), .)
 				scalar `selogOR' = sqrt( (`PR'/(`R'*`R') + (`PS'+`QR')/(`R'*`S') + `QS'/(`S'*`S')) /2 )
 
+				// check for successful pooling
+				if missing(`OR', `selogOR') exit 2002
+				
 				// return scalars
 				return scalar OR = `OR'
 				return scalar eff = ln(`OR')
@@ -3686,7 +3815,10 @@ program define PerformPooling, rclass
 				sum `p' if `touse', meanonly
 				scalar `P' = cond(r(N), r(sum), .)
 				scalar `selogRR' = sqrt(`P'/(`R'*`S'))
-			
+
+				// check for successful pooling
+				if missing(`RR', `selogRR') exit 2002
+				
 				// return scalars
 				return scalar RR = `RR'
 				return scalar eff = ln(`RR')
@@ -3729,6 +3861,9 @@ program define PerformPooling, rclass
 				sum `vnum' if `touse', meanonly
 				scalar `seRD' = sqrt( r(sum) /(`W'*`W') )		// SE of pooled rd
 				
+				// check for successful pooling
+				if missing(`RD', `seRD') exit 2002
+
 				// return scalars
 				return scalar eff = `RD'
 				return scalar se_eff = `seRD'
@@ -3803,16 +3938,25 @@ program define PerformPooling, rclass
 		// User-defined weights
 		if `"`wgt'"'!=`""' {
 			qui replace `wtvar' = `wgt' if `touse'
+			
 			summ `_ES' [aw=`wtvar'] if `touse', meanonly
 			scalar `eff' = r(mean)
-			scalar `se_eff' = 1/sqrt(r(sum_w))						// re-weighted ES & SE			
+			
+			// corrected Aug 2017 for v2.1
+			tempvar wtvce
+			summ `wtvar' if `touse', meanonly
+			qui gen double `wtvce' = (`_seES' * `wtvar' / r(sum))^2
+			summ `wtvce' if `touse', meanonly
+			scalar `se_eff' = sqrt(r(sum))
 		}
+		
 		
 		** Non-iterative estimates of tausq
 		else if inlist("`re_model'", "dl", "sa", "vc", "sj2s", "b0", "bp") {
 		
-			if "`re_model'"=="sa" {			// Sensitivity analysis: use given Isq and sigmasq to generate tausq
-				scalar `tausq' = `isqsa'*`sigmasq'/(100 - `isqsa')
+			if "`re_model'"=="sa" {			// Sensitivity analysis: use given Isq/tausq and sigmasq to generate tausq/Isq
+				if `tsqsa'==-99 scalar `tausq' = `isqsa'*`sigmasq'/(100 - `isqsa')
+				else scalar `tausq' = `tsqsa'
 			}
 			else if inlist("`re_model'", "vc", "sj2s", "b0", "bp") {
 				tempvar v
@@ -3860,7 +4004,7 @@ program define PerformPooling, rclass
 				local sumtauqe = r(sum)
 
 				summ `newqe' if `touse', meanonly
-				if r(min) < 1 {
+				if r(min) < 1 {				// additional correction if any `newqe' are < 1, to avoid neg. weights
 					tempvar newqe_adj
 					qui gen double `newqe_adj' = `newqe' + r(sum)*`tauqe'/(`sumtauqe'*(`k'-1))
 					summ `newqe_adj' if `touse', meanonly
@@ -3981,13 +4125,20 @@ program define PerformPooling, rclass
 		// "Generalised" (random-effects) version of Cochran's Q
 		if !inlist("`vce_model'", "ivh", "qe") {
 			local Qr `Qc'
+			
 			if "`re_model'"!="fe" | "`wgt'"!="" {		// if fe, Qr = Qc; if Doi's models then Qr is meaningless
+			
+				// August 2017 (for v2.1)
+				// if user-defined weights then use approx. (inverse) variances back-derived from `wtvce'
+				local Qwt = cond("`wgt'"!="", `"(`wtvce' / (`se_eff'^4))"', "`wtvar'")
+				
 				tempname Qr
-				qui replace `qhet' = `wtvar'*((`_ES' - `eff')^2)
+				qui replace `qhet' = `Qwt'*((`_ES' - `eff')^2)
 				summ `qhet' if `touse', meanonly
 				scalar `Qr' = cond(r(N), r(sum), .)	
 			}
 		}
+		cap drop `wtvce'	// tidying up
 		
 		
 		** "Variance inflation" or "overdispersion" methods
@@ -4087,9 +4238,12 @@ program define PerformPooling, rclass
 		}
 		
 		// return Qr (following sj2s reset)
-		if "`re_model'"!="fe" & !inlist("`vce_model'", "ivh", "qe") {
+		if ("`re_model'"!="fe" & !inlist("`vce_model'", "ivh", "qe")) | "`wgt'"!="" {
 			return scalar Qr = `Qr'
 		}
+		
+		// check for successful pooling
+		if missing(`eff', `se_eff') exit 2002
 		
 		// return scalars
 		return scalar eff = `eff'
@@ -4099,10 +4253,11 @@ program define PerformPooling, rclass
 
 	}	// end inverse-variance
 	
-	// return scalars:
+	// return scalars
 	return scalar k = `k'	// k = number of studies
 	return scalar Q = `Q'	// generic heterogeneity statistic (incl. Peto, M-H, Breslow-Day)
 
+	// return weights
 	summ `wtvar' if `touse', meanonly
 	return scalar totwt = cond(r(N), r(sum), .)		// sum of (non-normalised) weights
 	
@@ -4120,7 +4275,7 @@ program define ProcessAD, rclass
 
 	syntax [if] [in], AD(string asis) ADTOUSE(name) ///
 		[IPDFILE(string asis) SORTBY(varname) WGT(varname numeric) SUMMSTAT(string) METHOD(string) MH ///
-		EFORM LOG LOGRank BREslow CC(passthru) CORnfield EXact WOolf noINTeger CHI2opt LRCOLS(namelist) ZTOL(passthru) ///
+		EFORM LOG LOGRank BREslow CC(passthru) CITYPE(name) CIMAINOPT noINTeger CHI2opt LRCOLS(namelist) ZTOL(passthru) ///
 		BY(string asis) BYAD Study(string asis) INVLIST(varlist numeric) USELIST(varlist numeric) NPTS(varname numeric) TVLIST(namelist) ]
 
 	// obtain current variable & value labels from `_STUDY' and (optionally) `_BY'
@@ -4205,14 +4360,14 @@ program define ProcessAD, rclass
 	// Now apply syntax
 	local 0 `"`lhs' `rhs'"'
 	cap syntax [if] [in] [, BYAD VARS(varlist numeric min=2 max=6) NPTS(varname numeric) LOGRank RELabel ///
-		ADCOLVARS(namelist) ADPLOTVAR(name) ADSORTBY(name) IPDSTR ]
+		ADCOLVARS(namelist) ADPLOTVAR(name) ADSORTBY(name) IPDSTR /*IPDSE(name) VARiance*/ ]
 			
 	if _rc {
 		if `rc' & !inlist(`"`ADfile'"', "in", "if") & substr(`"`ADfile'"', 1, 1)!="[" {
 			use `"`ADfile'"', clear				// this will (purposefully) result in error 601 "file not found" or "invalid file specification"
 		}
 		else syntax [if] [in] [, BYAD VARS(varlist numeric min=2 max=6) NPTS(varname numeric) LOGRank RELabel ///
-		ADCOLVARS(namelist) ADPLOTVAR(name) ADSORTBY(name) IPDSTR ]		// if `ADfile' not detected, run -syntax- again to (purposefully) exit with error
+		ADCOLVARS(namelist) ADPLOTVAR(name) ADSORTBY(name) IPDSTR /*IPDSE(varname numeric) VARiance*/ ]	// if `ADfile' not detected, run -syntax- again to (purposefully) exit with error
 	}
 	else if `rc' local ADfile					// clear `ADfile' macro for later existence testing	
 	
@@ -4428,7 +4583,7 @@ program define ProcessAD, rclass
 		if `adparams'<=3 & "`integer'"=="" {
 			cap assert int(`adnpts')==`adnpts' if `touse'
 			if _rc {
-				nois disp as err `"Non-integer counts found in {bf:npts()} option"'
+				nois disp as err `"Non-integer counts found in {bf:npts()} suboption to {bf:ad()}"'
 				exit _rc
 			}
 		}
@@ -4446,7 +4601,7 @@ program define ProcessAD, rclass
 		}
 		else return local npts `adnpts'		// else, tell admetan that npts now exists
 	}
-	
+
 	// For AD, if count data (`adparams'==4) or logrank HR (`adlogrank') and no further info
 	// then default to *log* (rather than to *eform* as for IPD)
 	if `adparams'==4 {
@@ -4484,7 +4639,7 @@ program define ProcessAD, rclass
 	local ad_iv = cond(inlist(`adparams', 2, 3) & "`adlogrank'"=="", "ad_iv", "")
 	
 	cap nois ProcessInputVarlist `_USE' `adinvlist' if `touse', ad `mh' summstat(`summstat') method(`method') ///
-		`breslow' `cc' `chi2opt' `cornfield' `exact' `woolf' `adlogrank' `level' `ztol'
+		`breslow' `cc' `chi2opt' citype(`citype') `cimainopt' `adlogrank' `level' `ztol'
 
 	// N.B. Here, some validity checks result in an error 184 (options X and Y may not be combined; i.e. IPD and AD incompatibility)
 	//  which can be -capture-d and dealt with below (if `rc').
@@ -4510,8 +4665,9 @@ program define ProcessAD, rclass
 	else if ("`ad_iv'"!="" & "`ipd_iv'"!="") | (`adparams'==`params' & "`adlogrank'"=="`ipdlogrank'") {
 
 		assert `"`r(switchoff)'"'=="`switchoff'"
-		assert `"`r(method)'"'=="`method'"
-		assert `"`r(summstat)'"'=="`summstat'"
+		assert `"`r(method)'"'   =="`method'"
+		assert `"`r(citype)'"'   =="`citype'"
+		assert `"`r(summstat)'"' =="`summstat'"
 
 		// If data structures match, rename advarlist to match with IPD
 		if `adparams'==`params' & "`adlogrank'"=="`ipdlogrank'" {
@@ -4519,7 +4675,7 @@ program define ProcessAD, rclass
 			local i = 1
 			foreach adv of varlist `adinvlist' {
 				local ipdv : word `i' of `invlist'
-				if `"`adv'"'!=`"`ipdv'"' qui rename `adv' `ipdv'
+				if `"`adv'"'!=`"`ipdv'"' cap rename `adv' `ipdv'
 				local rc = `rc' + _rc
 				local ++i
 			}
@@ -4661,6 +4817,7 @@ program define ProcessAD, rclass
 	return local method   `method'
 	return local overall  `overall'
 	return local summstat `summstat'
+	return local citype   `citype'
 	
 end
 	
@@ -5039,8 +5196,8 @@ e) generic inverse-variance with CI instead of SE (3 vars):
 program define ProcessInputVarlist, rclass
 	
 	syntax varlist(min=2 max=8 default=none numeric) [if] [in], ///
-		[SUMMSTAT(string) METHOD(string) BREslow ///
-		AD MH CC(string) CORnfield EXact WOolf noINTeger CHI2opt LOG LOGRank ZTOL(real 1e-6)]
+		[SUMMSTAT(string) METHOD(string) CItype(string) CIMAINOPT BREslow ///
+		AD MH CC(string) noINTeger CHI2opt LOG LOGRank ZTOL(real 1e-6)]
 
 	marksample touse
 	
@@ -5077,7 +5234,7 @@ program define ProcessInputVarlist, rclass
 					exit 184
 				}
 				
-				local summstat "hr"
+				local summstat hr
 				local effect `"Haz. Ratio"'
 				local method = cond("`method'"!="", "`method'", "peto")
 			}
@@ -5091,19 +5248,29 @@ program define ProcessInputVarlist, rclass
 				}
 				if "`ad'"!="" & inlist("`method'", "mh", "peto") {
 					if "`mh'"!="" nois disp as err `"Note: specified method {bf:`method'} is incompatible with the aggregate data and will be ignored"'
-					local method "iv"
+					local method iv
 				}
 				local method = cond("`method'"!="", "`method'", "iv")
 			}
 			
 			// switch off incompatible options
-			foreach opt in breslow cc chi2opt cornfield exact woolf {
+			foreach opt in breslow cc chi2opt {
 				cap assert `"``opt''"' == `""'
 				if _rc {
 					nois disp as err `"Note: Option {bf:`opt'} is not appropriate without 2x2 count data and will be ignored"' 
-					local switchoff `"`switchoff' `opt'"'
+					local switchoff `switchoff' `opt'
 				}
-			}			
+			}
+	
+			// citype
+			cap assert !inlist("`citype'", "cornfield", "exact", "woolf")
+			if _rc {
+				if `"`cimainopt'"'!=`""' {
+					nois disp as err `"Option {bf:`citype'} is not appropriate without 2x2 count data and will be ignored"'
+				}
+				else nois disp as err `"Note: {bf:citype(`citype')} is not appropriate without 2x2 count data and will be ignored"'
+				local citype normal
+			}	
 			
 			// Identify studies with insufficient data (`_USE'==2)
 			if "`3'"=="" { 	// input is ES + SE
@@ -5165,7 +5332,7 @@ program define ProcessInputVarlist, rclass
 				// ensure continuity correction is valid
 				if "`method'"=="peto" & !`cc' {
 					nois disp as err "Note: continuity correction is incompatible with Peto method and will be ignored"
-					local switchoff `"`switchoff' cc"'
+					local switchoff `switchoff' cc
 				}
 				else {
 					cap assert `cc'>=0 & `cc'<1
@@ -5179,32 +5346,33 @@ program define ProcessInputVarlist, rclass
 			if "`chi2'"!="" {
 				if !inlist("`summstat'", "or", "") {
 					nois disp as err `"Note: {bf:chi2} is only compatible with odds ratios; option will be ignored"' 
-					local switchoff `"`switchoff' chi2opt"'
+					local switchoff `switchoff' chi2opt
 				}
 				else if "`summstat'"=="" {
 					nois disp as err `"Note: Chi-squared option specified; odds ratios assumed"' 
-					local summstat "or"
+					local summstat or
 				}
 			}
 			
-			opts_exclusive `"`cornfield' `exact' `woolf'"' `""' 184
-			local opt `cornfield'`exact'`woolf'
-			if `"`opt'"'!=`""' {
+			// citype
+			cap assert !inlist("`citype'", "cornfield", "exact", "woolf")
+			if _rc {			
 				if !inlist("`summstat'", "or", "") {
-					nois disp as err "Note: {bf:`opt'} is only compatible with odds ratios; option will be ignored"' 
-					local switchoff `"`switchoff' `opt'"'
+					if `"`cimainopt'"'!=`""' {
+						nois disp as err `"Note: {bf:`citype'} is only compatible with odds ratios; option will be ignored"'
+					}
+					else nois disp as err `"Note: {bf:citype(`citype')} is only compatible with odds ratios; option will be ignored"' 
+					local citype normal
 				}
 				else if "`summstat'"=="" {
-					if "`opt'"=="cornfield" {
+					if "`citype'"=="cornfield" {
 						nois disp as err `"Note: Cornfield-type confidence intervals specified; odds ratios assumed"'
 					}
-					else if "`opt'"=="exact" {
+					else if "`citype'"=="exact" {
 						nois disp as err `"Note: Exact confidence intervals specified; odds ratios assumed"'
 					}
-					else {
-						nois disp as err `"Note: Woolf-type confidence intervals specified; odds ratios assumed"'
-					}
-					local summstat "or"
+					else nois disp as err `"Note: Woolf-type confidence intervals specified; odds ratios assumed"'
+					local summstat or
 				}
 			}
 			
@@ -5223,7 +5391,7 @@ program define ProcessInputVarlist, rclass
 						local summstat or
 						local effect `"Odds Ratio"'
 					}
-					local method  = cond("`method'"!="",  "`method'",  "mh")
+					local method = cond("`method'"!="",  "`method'",  "mh")
 				}
 			}
 			
@@ -5248,7 +5416,7 @@ program define ProcessInputVarlist, rclass
 				}
 				else if "`summstat'"=="" {
 					nois disp as err `"Note: Peto method specified; odds ratios assumed"' 
-					local summstat "or"
+					local summstat or
 				}
 			}
 			
@@ -5273,7 +5441,7 @@ program define ProcessInputVarlist, rclass
 		// log only allowed if OR, RR, IRR, RRR, HR, SHR, TR
 		if "`log'"!="" & !inlist("`summstat'", "or", "rr", "irr", "rrr", "hr", "shr", "tr") {
 			nois disp as err `"{bf:log} may only be specified with 2x2 count data or log-rank HR; option will be ignored"'
-			local switchoff `"`switchoff' log"'
+			local switchoff `switchoff' log
 		}			
 		
 	} // end of all non-6 variable setup
@@ -5283,7 +5451,7 @@ program define ProcessInputVarlist, rclass
 		// log not allowed
 		if "`log'"!="" {
 			nois disp as err `"{bf:log} may only be specified with 2x2 count data or log-rank HR; option will be ignored"'
-			local switchoff `"`switchoff' log"'
+			local switchoff `switchoff' log
 		}			
 
 		args n1 mean1 sd1 n0 mean0 sd0
@@ -5302,12 +5470,22 @@ program define ProcessInputVarlist, rclass
 			exit _rc
 		}
 		
-		foreach opt in breslow cc chi2 cornfield exact woolf {
+		foreach opt in breslow cc chi2 {
 			cap assert `"``opt''"' == `""'
 			if _rc {
 				nois disp as err `"Option {bf:`opt'} is not appropriate without 2x2 count data and will be ignored"' 
-				local switchoff `"`switchoff' `opt'"'
+				local switchoff `switchoff' `opt'
 			}
+		}
+
+		// citype
+		cap assert !inlist("`citype'", "cornfield", "exact", "woolf")
+		if _rc {
+			if `"`cimainopt'"'!=`""' {
+				nois disp as err `"Option {bf:`citype'} is not appropriate without 2x2 count data and will be ignored"'
+			}
+			else nois disp as err `"Note: {bf:citype(`citype')} is not appropriate without 2x2 count data and will be ignored"' 
+			local citype normal
 		}
 
 		if "`method'"=="nostandard" & "`summstat'"=="smd" {
@@ -5339,7 +5517,7 @@ program define ProcessInputVarlist, rclass
 				local effect `"SMD"'
 			}
 		}
-		local method  = cond(inlist("`method'", "", "iv"), "cohen", "`method'")		//   ...by the method of Cohen
+		local method = cond(inlist("`method'", "", "iv"), "cohen", "`method'")		//   ...by the method of Cohen
 
 		// Find studies with insufficient data (`_USE'==2)
 		qui replace `_USE' = 2 if `touse' & `_USE'==1 & missing(`n1', `mean1', `sd1', `n0', `mean0', `sd0')
@@ -5353,6 +5531,7 @@ program define ProcessInputVarlist, rclass
 	return local summstat  `"`summstat'"'
 	return local effect    `"`effect'"'
 	return local method    `"`method'"'
+	return local citype    `"`citype'"'
 	return local switchoff `"`switchoff'"'		// need to switch off in the main routine, not here
 	
 end
@@ -5711,7 +5890,8 @@ program define DrawTableAD, rclass sortpreserve
 					as res %7.2f `q' "{col `=`swidth'+16'}" %3.0f `df_ov' "{col `=`swidth'+23'}" %7.3f `qpval'
 			}
 			if `: word count `tausq''==1 {
-				di as text "I{c 178} (%) {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" as res %7.1f 100*`isq' "%"
+				// di as text "I{c 178} (%) {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" as res %7.1f 100*`isq' "%"		// altered Sep 2017 for v2.1 to match with metan/metaan behaviour
+				di as text "I{c 178} (%) {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" as res %7.1f `isq' "%"
 				di as text "Modified H{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" as res %7.3f `hsq'
 				di as text "tau{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" as res %8.4f `tausq'
 			}
@@ -5724,9 +5904,16 @@ program define DrawTableAD, rclass sortpreserve
 				di as text _n "{hline `swidth'}{c TT}{hline 35}"
 				di as text "{col `=`swidth'+1'}{c |}{col `=`swidth'+7'}Value{col `=`swidth'+15'}[`level'% Conf. Interval]"
 				di as text "{hline `swidth'}{c +}{hline 35}"
+				/*
 				di as text "I{c 178} (%) {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" ///
 					as res %7.1f 100*`isq_est' "%{col `=`swidth'+14'}" ///
 					as res %7.1f 100*`isq_lci' "%{col `=`swidth'+24'}" %7.1f 100*`isq_uci' "%"
+				*/
+				// altered Sep 2017 for v2.1 to match with metan/metaan behaviour
+				di as text "I{c 178} (%) {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" ///
+					as res %7.1f `isq_est' "%{col `=`swidth'+14'}" ///
+					as res %7.1f `isq_lci' "%{col `=`swidth'+24'}" %7.1f `isq_uci' "%"
+				
 				di as text "Modified H{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
 					as res %7.3f `hsq_est' "{col `=`swidth'+15'}" ///
 					as res %7.3f `hsq_lci' "{col `=`swidth'+25'}" %7.3f `hsq_uci'
@@ -5808,6 +5995,7 @@ end
 // Copied directly to updated version of admetan.ado September 2015 without modification
 // August 2016: identical program now used here, in forestplot.ado, and in ipdover.ado 
 // May 2017: updated to accept substrings delineated by quotes (c.f. multi-line axis titles)
+// August 2017: updated for better handling of maxlines()
 
 program define SpreadTitle, rclass
 
@@ -5815,7 +6003,7 @@ program define SpreadTitle, rclass
 	* Target = aim for this width, but allow expansion if alternative is wrapping "too early" (i.e before line is adequately filled)
 	//         (may be replaced by `titlelen'/`maxlines' if `maxlines' and `notruncate' are also specified)
 	* Maxwidth = absolute maximum width
-	* Maxlines = maximum no. lines
+	* Maxlines = maximum no. lines (default 3)
 	* noTruncate = don't truncate final line if "too long" (even if greater than `maxwidth')
 	//             (also allows `maxlines' to adjust `target' upwards if necessary)
 
@@ -5823,11 +6011,6 @@ program define SpreadTitle, rclass
 		return scalar nlines = 0
 		return scalar maxwidth = 0
 		exit
-	}
-	
-	if !`target' & !`maxwidth' & !`maxlines' {
-		nois disp as err `"must specify at least one of {bf:target()}, {bf:maxwidth()} or {bf:maxlines()}"'
-		exit 198
 	}
 	
 	if `maxwidth' & !`maxlines' {
@@ -5839,20 +6022,13 @@ program define SpreadTitle, rclass
 	}
 	
 	// Finalise `target' and calculate `spread'
+	local maxlines_def = cond(`maxlines', `maxlines', 3)	// use a default value for `maxlines' of 3 in these calculations
 	local titlelen = length(`title')
-	
-	local target = cond(`target', ///
-		cond(`maxlines' & "`truncate'"!="", max(`target', `titlelen'/`maxlines'), `target'), ///
-		cond(`maxlines', `titlelen'/`maxlines', cond(`maxwidth', `maxwidth', .)))
-	
-	if missing(`target') {
-		nois disp as err `"must specify at least one of {bf:target()}, {bf:maxwidth()} or {bf:maxlines()}"'
-		exit 198
-	}	
-	
-	local spread = cond(`maxlines', `maxlines', int(`titlelen'/`target') + 1)
+	local target = cond(`target', `target', ///
+		cond(`maxwidth', min(`maxwidth', `titlelen'/`maxlines_def'), `titlelen'/`maxlines_def'))
+	local spread = min(int(`titlelen'/`target') + 1, `maxlines_def')
 
-		
+
 	** If substrings are present, delineated by quotes, treat this as a line-break
 	// Hence, need to first process each substring separately and obtain parameters,
 	// then select the most appropriate overall parameters given the user-specified options,

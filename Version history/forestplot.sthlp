@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 2.0  David Fisher  11may2017}{...}
+{* *! version 2.1  David Fisher  14sep2017}{...}
 {vieweralsosee "admetan" "help admetan"}{...}
 {vieweralsosee "admetani" "help admetani"}{...}
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
@@ -47,6 +47,7 @@ where {it:varlist} is:
 {synopt :{opt nostat:s}, {opt nowt}}suppress display of effect estimates and/or weights in right-hand columns{p_end}
 {synopt :{cmd:plotid(}{it:varname} [{cmd:, {ul:l}ist {ul:nogr}aph}]{cmd:)}}define groups of observations in which
 to apply specific plot rendition options{p_end}
+{synopt :{opt rfdist(varlist)}}display confidence intervals for predictive distributions{p_end}
 {synopt :{it:{help twoway_options}}}other Stata twoway graph options, as appropriate{p_end}
 
 {syntab: Fine-tuning}
@@ -54,7 +55,7 @@ to apply specific plot rendition options{p_end}
 {synopt :{opt ast:ext(#)}}percentage of plot width to be taken up by columns of text{p_end}
 {synopt :{opt box:scale(#)}}box size scaling{p_end}
 {synopt :{cmdab:ra:nge(}[{it:numlist}] [{bf:min}] [{bf:max}]{bf:)}}x-axis limits of data plotting area{p_end}
-{synopt :{opt cira:nge(numlist)}}x-axis limits of plotted confidence intervals{p_end}
+{synopt :{cmdab:cira:nge(}[{it:numlist}] [{bf:min}] [{bf:max}]{bf:)}}x-axis limits of plotted confidence intervals{p_end}
 {synopt :{opt savedims(matname)}, {opt usedims(matname)}}save and load sets of dimensional parameters for forest plot{p_end}
 {synopt :{opt sp:acing(#)}}vertical gap between lines of text in the plot{p_end}
 {synopt :{cmdab:xlab:el(}{it:numlist}{cmd:, force} [{it:suboptions}]{bf:)}}specify x-axis labelling, and optionally force
@@ -63,16 +64,19 @@ x-axis limits within which confidence intervals and effect sizes appear{p_end}
 {syntab: Plot rendition}
 {synopt :{it:plot}{cmd:{ul:op}ts(}{it:plot_options}{cmd:)}}affect rendition of all observations{p_end}
 {synopt :{it:plot{ul:#}}{cmd:opts(}{it:plot_options}{cmd:)}}affect rendition of observations in {it:#}th {cmd:plotid} group{p_end}
+{synopt :{cmdab:nlineop:ts(}{it:plot_options}{cmd:)}}affect rendition of null line{p_end}
 {synopt :{opt nobox}}suppress weighted boxes; markers for point estimates only are shown, as in {bf:{help metan}}{p_end}
 {synopt :{opt classic}}use "classic" set of plot options, as in {bf:{help metan}}{p_end}
 {synopt :{opt interaction}}use "interaction" set of plot options{p_end}
 {synoptline}
 
 {pstd}
-where {it:plot} may be {cmd:{ul:box}}, {cmd:{ul:ci}}, {cmd:{ul:diam}}, {cmd:{ul:oline}}, {cmd:{ul:point}}, {cmd:{ul:pci}} or {cmd:{ul:ppoint}}
+where {it:plot} may be {cmd:{ul:box}}, {cmd:{ul:ci}}, {cmd:{ul:diam}}, {cmd:{ul:oline}}, {cmd:{ul:point}}, {cmd:{ul:pci}}, {cmd:{ul:ppoint}} or {cmd:{ul:rf}}
 
 {pstd}
-and {it:plot_options} are either {it:{help marker_options}} or {it:{help line_options}}, as appropriate.
+and {it:plot_options} are either {it:{help marker_options}} or {it:{help line_options}} as appropriate,
+with some additional options as described below.
+
 
 {p2colreset}{...}
 {p 4 6 2}
@@ -192,8 +196,9 @@ Note: These options have a different syntax when specified to {bf:{help ipdmetan
 {opt leftjustify} left-justifies all string-valued variables in {opt lcols()} or {opt rcols()}.
 
 {phang2}
-Note: Numeric-valued variables in {opt lcols()} or {opt rcols()} may be justified (and {help format}ted generally) either within the dataset before
-running {bf:forestplot} or {bf:{help admetan}}, or within the {help ipdmetan##cols_info:{it:cols_info}} syntax if using {bf:ipdmetan}.
+Note: Individual variables in {opt lcols()} or {opt rcols()}, whether numeric or string, may be {help format}ted
+either within the dataset before running {bf:forestplot} or {bf:{help admetan}},
+or within the {help ipdmetan##cols_info:{it:cols_info}} syntax if using {bf:ipdmetan}.
 
 {phang}
 {opt nonull} and {opt null(#)} affect the null hypothesis line.
@@ -214,6 +219,14 @@ this may be achieved using the {bf:nograph} option.
 
 {pmore}
 Note that {opt plotid} does not alter the placement or ordering of data within the plot.
+
+{phang}
+{opt rfdist(varlist)} specifies two variables containing the lower and upper limits of prediction intervals
+associated with pooled estimates.  As such, observations containing prediction interval data should have {it:use} = 3 or 5.
+See the {bf:{help admetan}} option {bf:rfdist} for more information.
+
+{pmore}
+Rendering of prediction intervals may be controlled using the {cmd:rfopts()} and {cmd:rf}{it:#}{cmd:opts()} options.
 
 
 {dlgtab:Fine-tuning}
@@ -243,12 +256,13 @@ or decreased as such (e.g., 80 or 120 for 20% smaller or larger respectively).
 This option is carried over from {bf:{help metan}}.
 
 {phang}
-{cmd:range(}[{it:numlist}] [{bf:min}] [{bf:max}]{bf:)}, {opt cirange(numlist)} give finer control over the
+{opt range()}, {opt cirange()} give finer control over the
 range of the x-axis within which the graph is constructed, and within which the data is plotted.
 These may be thought of as roughly analogous to the concepts of "graph region" and "plot region"
 used by {help twoway} (see {help region_options}).
-These options may be used, for instance, to reduce or create blank space between the data and either the
+These options may be used, for instance, to create or reduce blank space between the data and either the
 left or right columns of text or data.
+(Note that blank space may also be created or reduced by appropriate {help format}ting of column variables.)
 
 {phang2}
 {cmd:range(}[{it:numlist}] [{bf:min}] [{bf:max}]{bf:)} specifies the boundary between the part of the x-axis
@@ -256,8 +270,13 @@ within which the graph will appear, and the parts containing columns of text or 
 {bf:min} and {bf:max} are shorthand for the smallest and largest values among the data to be plotted.
 
 {phang2}
-{opt cirange(numlist)} specifies the plotted limits of study confidence intervals and effect sizes.
+{cmd:cirange(}[{it:numlist}] [{bf:min}] [{bf:max}]{bf:)} specifies the plotted limits of study confidence intervals and effect sizes.
 Data outside this range will be represented by off-scale arrows.
+{bf:min} and {bf:max} are shorthand for the smallest and largest values among the data to be plotted.
+
+{pmore}
+Note that {opt range()} implies {opt cirange()}, but not {it:vice versa}.
+{opt range()} also implies {opt noadjust}, unless {bf:min} is one of the supplied elements.
 
 {phang}
 {opt savedims(matname)} saves certain values ("dimensions") associated with the current forest plot in a matrix,
@@ -290,27 +309,39 @@ For example, diamonds are plotted using the {help twoway_pcspike} command, so {i
 but not {opt horizontal} or {opt vertical}.
 These options are carried over from {bf:{help metan}}, but with modifications.
 
-{pmore}
+{phang2}
 {cmd:boxopts(}{it:{help marker_options}}{cmd:)} and {cmd:box}{it:#}{cmd:opts(}{it:{help marker_options}}{cmd:)}
 affect the rendition of weighted boxes representing point estimates
 and use options for a weighted marker (e.g., shape, colour; but not size).
 
-{pmore}
+{phang2}
 {cmd:ciopts(}{it:{help line_options}} [{cmd:rcap}]{cmd:)} and {cmd:ci}{it:#}{cmd:opts(}{it:{help line_options}} [{cmd:rcap}]{cmd:)}
 affect the rendition of confidence intervals. The additional option {cmd:rcap} requests capped spikes.
 
-{pmore}
+{phang2}
 {cmd:diamopts(}{it:{help line_options}}{cmd:)} and {cmd:diam}{it:#}{cmd:opts(}{it:{help line_options}}{cmd:)}
 affect the rendition of diamonds representing pooled estimates.
 
-{pmore}
+{phang2}
+{cmd:nlineopts(}{it:{help line_options}}{cmd:)} affects the rendition of the null hypothesis line.
+
+{phang2}
 {cmd:olineopts(}{it:{help line_options}}{cmd:)} and {cmd:oline}{it:#}{cmd:opts(}{it:{help line_options}}{cmd:)}
 affect the rendition of overall effect lines.
 
-{pmore}
+{phang2}
 {cmd:pointopts(}{it:{help marker_options}}{cmd:)} and {cmd:point}{it:#}{cmd:opts(}{it:{help marker_options}}{cmd:)}
 affect the rendition of (unweighted) point estimate markers
 (e.g. to clarify the precise point within a larger weighted box).
+
+{phang2}
+{cmd:rfopts(}{it:{help line_options}} [{cmd:overlay}] [{cmd:rcap}]{cmd:)}
+and {cmd:rf}{it:#}{cmd:opts(}{it:{help line_options}} [{cmd:overlay}] [{cmd:rcap}]{cmd:)}
+affect the rendition of prediction interval lines as defined by {opt rfdist(varlist)}.
+The additional option {cmd:overlay} results in the prediction interval being plotted as a single line,
+continuing through the confidence interval and point estimate.
+(The default is for separate lines to be plotted either side of the confidence interval.)
+The additional option {cmd:rcap} requests capped spikes.
 
 {pstd}
 If it is desired that pooled estimates not be represented by diamonds,
@@ -385,7 +416,7 @@ First {bf:{help admetan}} example again, demonstrating use of {opt cirange()} an
 {cmd:rd random label(namevar=id, yearvar=year) counts }
 {p_end}
 {pmore2}
-{cmd:forestplot(xlabel(-.25 .25) cirange(-.35 .35) range(-.5 .5))}
+{cmd:forestplot(xlabel(-.25 0 .25) cirange(-.35 .35) range(-.5 .5))}
 {p_end}
 
 

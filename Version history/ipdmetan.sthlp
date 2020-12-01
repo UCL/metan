@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 2.0  David Fisher  11may2017}{...}
+{* *! version 2.1  David Fisher  14sep2017}{...}
 {vieweralsosee "admetan" "help admetan"}{...}
 {vieweralsosee "admetani" "help admetani"}{...}
 {vieweralsosee "ipdover" "help ipdover"}{...}
@@ -63,6 +63,10 @@ hence in the remainder of the {cmd:ipdmetan} documentation the terms "Syntax 1" 
 {synopt :{opt inter:action}}automatically identify and pool a treatment-covariate interaction{p_end}
 {synopt :{opt pool:var(model_coefficient)}}specify explicitly the coefficient to pool{p_end}
 {synopt :{opt notot:al}}suppress initial fitting of {it:command} to the entire dataset{p_end}
+{synopt :{opt wgt(exp)}}user-defined weights{p_end}
+
+{syntab :Syntax 2 only}
+{synopt :{cmd:wgt(}[{opt (stat)}] {it:varname}{cmd:)}}user-defined weights{p_end}
 
 {syntab :Syntax 2 with {opt logrank} only}
 {synopt :{opt st:rata}}specify further variables by which to stratify the log-rank calculations{p_end}
@@ -188,6 +192,18 @@ To use equations, use the format {cmd:poolvar(}{it:eqname}{cmd::}{it:varname}{cm
 {phang}
 {opt strata(varlist)} (Syntax 2 with {opt logrank} only) specifies further variables to be used in log-rank calculations
 but not be presented in the output.
+
+{phang}
+{opt wgt()} specifies user-defined weights. With Syntax 1, {opt wgt()} expects an expression involving returned statistics.
+For example, to weight on the number of observations, you might specify {bf:wgt(e(N))}.
+With Syntax 2, {opt wgt()} expects a {bf:{help collapse}}-based syntax.
+Hence, again, to weight on the number of observations, you might specify {bf:wgt((sum) cons)} where {bf:cons} is a variable containing 1
+for all observations.
+
+{pmore}
+Note that the scale of user-defined weights is immaterial, since individual weights are normalised,
+and the variance of the pooled effect is calculated as sum( var({it:y_i}) * {it:wgt_i}^2 ) / sum({it:wgt_i})^2
+where var({it:y_i}) is the variance of the {it:i}th study.
 
 
 {dlgtab:Combined IPD/aggregate data analysis}

@@ -22,9 +22,6 @@
 * version 1.04  David Fisher 29jun2015
 // Reason: Major update to coincide with publication of Stata Journal article
 
-* version 1.04.1  David Fisher 27jul2015
-// (new beta version since update)
-
 * Aug 2014: fixed issue with _labels
 * updated SpreadTitle to accept null strings
 * added 'noBOX' option
@@ -51,12 +48,18 @@
 * _USE == 3  subgroup effects
 * _USE == 4  between-subgroup heterogeneity info
 * _USE == 5  overall effect
-* _USE == 6  blank lines
+* _USE == 6  blank lines/anything else
 * _USE == 9  titles
 
-*! version 2.0  David Fisher  11may2017
+* version 2.0  David Fisher  11may2017
 // Not updated nearly as much as -admetan-, -ipdmetan- and -ipdover-
 // but up-versioned to match
+
+*! version 2.1  David Fisher  14sep2017
+// various bug fixes
+// improvements to range() and cirange()
+// improvements to rfopts
+
 
 
 program define forestplot, sortpreserve rclass
@@ -73,19 +76,28 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 	ADMETAN IPDOVER /// /* these two options indicate that forestplot has not been run stand-alone)
 	/// /* x-axis options */
 	XLABel(passthru) XTICk(passthru) XTItle(string asis) RAnge(passthru) CIRAnge(passthru) FAVours(string asis) FP(real -9) ///
+	/// /* left/right column options (to pass through to ProcessColumns; all undocumented, except noadjust) */
+	noADJust TArget(passthru) MAXWidth(passthru) MAXLines(passthru) noTRUNCate ///
 	/// /* other "fine-tuning" options */
-	ADDHeight(real 0) /*(undocumented)*/ noADJust ASPECT(real -9) ASText(real -9) BOXscale(real 100.0) CAPTION(string asis) ///
-	MAXLines(passthru) SPacing(real -9) SUBtitle(string asis) /*TEXTscale(real 100.0)*/ TItle(string asis) XSIZe(real -9) YSIZe(real -9) ///
+	ADDHeight(real 0) /*(undocumented)*/ ASPECT(real -9) ASText(real -9) BOXscale(real 100.0) CAPTION(string asis) ///
+	SPacing(real -9) SUBtitle(string asis) /*TEXTscale(real 100.0)*/ TItle(string asis) XSIZe(real -9) YSIZe(real -9) ///
 	NOTE(string asis) SAVEDIMS(name) USEDIMS(name) ///
 	* ]
 	
 	// if forestplot is being run "stand-alone" (i.e. not called from admetan/ipdover), parse eform option
 	if trim("`admetan'`ipdover'") == "" {
-		_get_eformopts, soptions eformopts(`eform' `options') allowed(__all__)
-		local options `"`s(options)'"'
-		local eform = cond(`"`s(eform)'"'=="", "", "eform")
+		cap nois MyGetEFormOpts, `options' `eform'
+		if _rc {
+			if _rc==1 disp as err "User break"
+			else disp as err `"Error in {bf:forestplot.MyGetEFormOpts}"'
+			c_local err "noerr"		// tell calling subroutine not to also report an error
+			exit _rc
+		}
+		local eform = cond(`"`r(eform)'"'!=`""', "eform", "")	// convert to simple on/off option
+		local options `"`r(options)'"'
+
 		if `"`effect'"'==`""' {
-			local effect = cond(`"`s(str)'"'=="", "Effect", `"`s(str)'"')
+			local effect = cond(`"`r(effect)'"'=="", "Effect", `"`r(effect)'"')
 			if `"`interaction'"'!=`""' local effect `"Interact. `effect'"'
 		}
 	}
@@ -325,16 +337,24 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 		//  by default, rcols 1 and 2 are effect sizes and weights
 		//  `stats' and `wt' turn these optionally off.
 		if `"`eform'"'!=`""' local xexp "exp"
-		if `"`stats'"'!=`""' {
-			if `"`rfdist'"'!=`""' {
-				nois disp as err `"Note: {bf:rfdist()} specified with {bf:nostats}; {bf:rfdist()} will be ignored"'
-				local rfdist
+		if `"`rfdist'"'!=`""' {
+			tokenize `rfdist'
+			args _rfLCI _rfUCI
+			cap {
+				assert `_rfLCI' <= `_LCI' if !missing(`_rfLCI', `_LCI')
+				assert `_rfUCI' >= `_UCI' if !missing(`_rfUCI', `_UCI')
+			}
+			if _rc {
+				nois disp as err "Error in prediction interval data"
+				exit _rc
 			}
 		}
-		else  {
+
+		if `"`stats'"'==`""' {
+		
 			// determine format
 			summ `_UCI' if `touse', meanonly
-			local fmtx = ceil(log10(abs(`xexp'(r(max))))) + 1 + `dp'
+			local fmtx = max(1, ceil(log10(abs(`xexp'(r(max)))))) + 1 + `dp'
 		
 			tempvar estText
 			gen str `estText' = string(`xexp'(`_ES'), "%`fmtx'.`dp'f") if !missing(`_ES')
@@ -356,19 +376,19 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 			label var `estText' `"`effect' (`c(level)'% CI)"'
 			if "`wt'" != "" local rcols = trim(`"`estText' `rcols'"')
 			
-			// if rfdist, check that it appears in the correct places
+			// if rfdist and passed from -admetan-, check that it appears in the correct places
 			if `"`rfdist'"'!=`""' {
-				tokenize `rfdist'
-				args _rfLCI _rfUCI
-				cap {
-					assert  missing(`_ES')       if inlist(`_USE', 3, 5) & float(`_rfLCI')==float(`_LCI') & float(`_rfUCI')==float(`_UCI')
-					assert !missing(`_ES'[_n-1]) if inlist(`_USE', 3, 5) & float(`_rfLCI')==float(`_LCI') & float(`_rfUCI')==float(`_UCI')
+				if `"`admetan'"'!=`""' {
+					cap {
+						assert  missing(`_ES')       if inlist(`_USE', 3, 5) & float(`_rfLCI')==float(`_LCI') & float(`_rfUCI')==float(`_UCI')
+						assert !missing(`_ES'[_n-1]) if inlist(`_USE', 3, 5) & float(`_rfLCI')==float(`_LCI') & float(`_rfUCI')==float(`_UCI')
+					}
+					if _rc {
+						nois disp as err "Error in prediction interval data"
+						exit _rc
+					}
 				}
-				if _rc {
-					nois disp as err "Error in prediction interval data"
-					exit _rc
-				}
-				
+					
 				// Generate `rfdindent' to send to ProcessXLabs
 				// strwid is width of "_ES[_n-1]" as formatted by "%`fmtx'.`dp'f" so it lines up	
 				tempvar rfindent
@@ -467,10 +487,17 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 	
 	// Now find DXmin, DXmax; xticklist, xlablist, xlablim1
 	summ `_LCI' if `touse', meanonly
-	local DXmin = r(min)				// minimum confidence limit (N.B. will include `_rfLCI' values if present)
+	local DXmin = r(min)				// minimum confidence limit (N.B. if passed thru from -admetan-, will include `_rfLCI' values if present)
 	summ `_UCI' if `touse', meanonly
-	local DXmax = r(max)				// maximum confidence limit (N.B. will include `_rfUCI' values if present)
+	local DXmax = r(max)				// maximum confidence limit (N.B. if passed thru from -admetan-, will include `_rfUCI' values if present)
 
+	if `"`admetan'"'==`""' & `"`rfdist'"'!=`""' {	// o/w, may not include rfdist values so need to do separately
+		summ `_rfLCI' if `touse', meanonly
+		local DXmin = min(`DXmin', r(min))
+		summ `_rfUCI' if `touse', meanonly
+		local DXmax = max(`DXmax', r(max))
+	}
+	
 	cap nois ProcessXLabs `DXmin' `DXmax', `xlabel' `xtick' `range' `cirange' `eform' h0(`h0') `null'
 	if _rc {
 		if _rc==1 nois disp as err `"User break in {bf:forestplot.ProcessXLabs}"'
@@ -484,16 +511,23 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 	local DXmax = r(DXmax)
 	local xtitleval = r(xtitleval)
 	local xticklist `"`r(xticklist)'"'
+	local xtickopts `"`r(xtickopts)'"'
 	local xlablist  `"`r(xlablist)'"'
 	local xlabcmd   `"`r(xlabcmd)'"'
 	local xlabopts  `"`r(xlabopts)'"'
 	local null      `"`r(null)'"'
+	
+	// 6th Sep 2017 for v2.1
+	// If `range' is specified, "noadjust" is implied
+	// (unless range uses "min", i.e. only the RHS is to be altered)
+	local adjust = cond(`"`range'"'==`""', `"`adjust'"', `"`r(adjust)'"')
+
 	// END OF TICKS AND LABELS
 
 	
 	** Need to make changes to pre-existing data now, plus adding new obs to the dataset
 	//  so use -preserve- before continuing
-	/*if "`preserve'" == ""*/ preserve
+	preserve
 		
 	// if multiple plotids, or if dataid(varname, newwt) specified,
 	// create dummy obs with global min & max weights, to maintain correct weighting throughout
@@ -517,7 +551,8 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 				by `touse' `dataid': gen double `maxwt' = `_WT'[_N] if `touse'
 			}
 			local oldN = _N
-			set obs `=`oldN' + 2*`nd'*`np''		// N.B. `nd' indexes `dataid'; `np' indexes `plotid'
+			local newN = `oldN' + 2*`nd'*`np'	// N.B. `nd' indexes `dataid'; `np' indexes `plotid'
+			set obs `newN'
 			forvalues i=1/`nd' {
 				forvalues j=1/`np' {
 					local k = `oldN' + (`i'-1)*2*`np' + 2*`j'
@@ -526,9 +561,9 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 					replace `_WT' = `maxwt' in `k'
 				}
 			}
-			replace `_USE'   = 1 in `=`oldN' + 1' / `=`oldN' + (2*`nd'*`np')'
-			replace `touse'  = 0 in `=`oldN' + 1' / `=`oldN' + (2*`nd'*`np')'
-			replace `toused' = 1 in `=`oldN' + 1' / `=`oldN' + (2*`nd'*`np')'
+			replace `_USE'   = 1 in `=`oldN' + 1' / `newN'
+			replace `touse'  = 0 in `=`oldN' + 1' / `newN'
+			replace `toused' = 1 in `=`oldN' + 1' / `newN'
 		}	// end quietly
 	}
 	// these dummy obs are identifiable by "`toused' & !`touse'"
@@ -559,13 +594,14 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 			capture confirm string var ``x'coli'
 			if !_rc {						// if string
 				local `xx'LB`i' : copy local `x'coli
-				
-				// 14th March 2017
 				if `"`leftjustify'"'!=`""' local flen = -abs(`flen')
 			}
 			else {							// if numeric
 				tempvar `xx'LB`i'
-				qui gen str ``xx'LB`i'' = string(``x'coli', "`f'")
+				if `"`: value label ``x'coli''"'!=`""' {	// if labelled (10th July 2017)
+					qui decode ``x'coli', gen(``xx'LB`i'')
+				}
+				else qui gen str ``xx'LB`i'' = string(``x'coli', "`f'")
 				qui replace ``xx'LB`i'' = "" if ``xx'LB`i'' == "."
 				
 				local colName: variable label ``x'coli'
@@ -596,15 +632,21 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 	tempvar lci2
 	qui gen `lci2' = cond(`"`null'"'==`""', cond(`_LCI'>`h0', `h0', ///
 		cond(`_LCI'>`CXmin', `_LCI', `CXmin')), cond(`_LCI'>`CXmin', `_LCI', `CXmin'))
+		
+	if `"`admetan'"'==`""' & `"`rfdist'"'!=`""' {	// in this case _LCI may not include rfdist values so need to do separately
+		qui replace `lci2' = cond(`"`null'"'==`""', cond(`_rfLCI'>`h0', `h0', ///
+			cond(`_rfLCI'>`CXmin', `_rfLCI', `CXmin')), cond(`_rfLCI'>`CXmin', `_rfLCI', `CXmin'))
+	}
+		
 	summ `lci2' if `touse' & inlist(`_USE', 3, 5), meanonly
-	local lcimin = r(min)
+	local lcimin = cond(r(N), r(min), cond(`"`null'"'==`""', `h0', `CXmin'))		// modified 28th June 2017
 	drop `lci2'
 
 	local oldN = _N
 	cap nois ProcessColumns `_USE' if `touse', lrcolsn(`lcolsN' `rcolsN') lcimin(`lcimin') dx(`DXmin' `DXmax') ///
 		lvallist(`lvallist') llablist(`llablist') lfmtlist(`lfmtlist') ///
 		rvallist(`rvallist') rlablist(`rlablist') rfmtlist(`rfmtlist') rfindent(`rfindent') rfcol(`rfcol') ///
-		`dxwidcopt' `astextopt' `adjust' `maxlines'
+		`dxwidcopt' `astextopt' `adjust' `target' `maxwidth' `maxlines' `truncate'
 	if _rc {
 		if _rc==1 nois disp as err `"User break in {bf:forestplot.ProcessColumns}"'
 		else nois disp as err `"Error in {bf:forestplot.ProcessColumns}"'
@@ -981,7 +1023,6 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 	}	// END QUIETLY
 
 
-
 	
 	***************************************
 	* Get options and build plot commands *
@@ -991,29 +1032,49 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 	local 0 `", `graphopts'"'
 	syntax [, ///
 		/// /* standard options */
-		BOXOPts(string asis) DIAMOPts(string asis) POINTOPts(string asis) CIOPts(string asis) OLINEOPts(string asis) ///
-		/// /* non-diamond options */
-		PPOINTOPts(string asis) PCIOPts(string asis) NLINEOPts(string asis) * ]
+		BOXOPts(string asis) DIAMOPts(string asis) POINTOPts(string asis) CIOPts(string asis) OLINEOPts(string asis) NLINEOPts(string asis) ///
+		/// /* non-diamond and prediction interval options */
+		PPOINTOPts(string asis) PCIOPts(string asis) RFOPts(string asis) * ]
 
 	local rest `"`options'"'
 	
 	
-	* MAKE OFF-SCALE ARROWS -- fairly straightforward
-	// (include 3 & 5 in case of non-obvious use case)
+	* SETUP OFF-SCALE ARROWS -- fairly straightforward
+	// (include use==3, 5 in case of pciopts/rfopts)
 	qui {
-		gen byte `touse2' = `touse' * inlist(`_USE', 1, 3, 5)
-
 		tempvar offscaleL offscaleR
-		gen byte `offscaleL' = `touse2' * (float(`_LCI') < float(`CXmin'))
-		gen byte `offscaleR' = `touse2' * (float(`_UCI') > float(`CXmax') & !missing(`_UCI'))
+		gen byte `offscaleL' = inlist(`_USE', 1, 3, 5) * (float(`_LCI') < float(`CXmin'))
+		gen byte `offscaleR' = inlist(`_USE', 1, 3, 5) * (float(`_UCI') > float(`CXmax') & !missing(`_UCI'))
 	
+		// rfdist: only applies to use==3, 5
+		// BUT may need up to four tempvars in niche cases (e.g. only part of the rfCI is visible)
+		// ==> to save on tempvars, only use them if more than one; o/w use local macros
 		if `"`rfdist'"'!=`""' {
-			tempvar rfoffscaleL rfoffscaleR
-			gen byte `rfoffscaleL' = `touse2' * (float(`_rfLCI') < float(`CXmin'))
-			gen byte `rfoffscaleR' = `touse2' * (float(`_rfUCI') > float(`CXmax') & !missing(`_rfUCI'))
+			local touse3 `"`touse' & inlist(`_USE', 3, 5)"'
+			qui count if `touse3'
+			if r(N) > 1 {
+				tempvar rfLoffscaleL rfRoffscaleR
+				gen byte `rfLoffscaleL' = `touse3' * (float(`_rfLCI') < float(`CXmin'))
+				gen byte `rfRoffscaleR' = `touse3' * (float(`_rfUCI') > float(`CXmax') & !missing(`_rfUCI'))
+				
+				qui count if `touse3' & float(`_UCI') < float(`CXmin')
+				if r(N) {
+					tempvar rfRoffscaleL
+					gen byte `rfRoffscaleL' = `touse3' * (float(`_UCI') < float(`CXmin'))
+				}
+				qui count if `touse3' & float(`_LCI') > float(`CXmax') & !missing(`_LCI')
+				if r(N) {
+					tempvar rfLoffscaleR
+					gen byte `rfLoffscaleR' = `touse3' * (float(`_LCI') > float(`CXmax') & !missing(`_LCI'))
+				}
+			}
+			else if r(N) {
+				local rfLoffscaleL `"`touse3' & float(`_rfLCI') < float(`CXmin')"'
+				local rfRoffscaleR `"`touse3' & float(`_rfUCI') > float(`CXmax') & !missing(`_rfUCI')"'
+				local rfRoffscaleL `"`touse3' & float(`_LCI') > float(`CXmax') & !missing(`_LCI')"'
+				local rfLoffscaleR `"`touse3' & float(`_UCI') < float(`CXmin')"'
+			}
 		}
-
-		drop `touse2'
 	}
 	
 
@@ -1041,9 +1102,9 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 			gen float `DiamLeftY1' = cond(`offscaleL', `id' + 0.4*( abs((`CXmin'-`_LCI')/(`_ES'-`_LCI')) ), `id') if `touse2' & float(`_ES') >= float(`CXmin')
 			gen float `DiamLeftY2' = cond(`offscaleL', `id' - 0.4*( abs((`CXmin'-`_LCI')/(`_ES'-`_LCI')) ), `id') if `touse2' & float(`_ES') >= float(`CXmin')
 			
-			gen float `DiamRightX'  = cond(`offscaleR', `CXmax', `_UCI') if `touse2' & float(`_ES') >= float(`CXmin')
-			gen float `DiamRightY1' = cond(`offscaleR', `id' + 0.4*( abs((`_UCI'-`CXmax')/(`_UCI'-`_ES')) ), `id') if `touse2' & float(`_ES') >= float(`CXmin')
-			gen float `DiamRightY2' = cond(`offscaleR', `id' - 0.4*( abs((`_UCI'-`CXmax')/(`_UCI'-`_ES')) ), `id') if `touse2' & float(`_ES') >= float(`CXmin')
+			gen float `DiamRightX'  = cond(`offscaleR', `CXmax', `_UCI') if `touse2' & float(`_ES') <= float(`CXmax')
+			gen float `DiamRightY1' = cond(`offscaleR', `id' + 0.4*( abs((`_UCI'-`CXmax')/(`_UCI'-`_ES')) ), `id') if `touse2' & float(`_ES') <= float(`CXmax')
+			gen float `DiamRightY2' = cond(`offscaleR', `id' - 0.4*( abs((`_UCI'-`CXmax')/(`_UCI'-`_ES')) ), `id') if `touse2' & float(`_ES') <= float(`CXmax')
 			
 			gen float `DiamBottomY' = `id' - 0.4 if `touse2'
 			replace   `DiamBottomY' = `id' - 0.4*( abs((`_UCI'-`CXmin')/(`_UCI'-`_ES')) ) if `touse2' & float(`_ES') < float(`CXmin')
@@ -1062,11 +1123,11 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 			drop `touse2'
 		}
 	}
-
+	
 	* Now truncate CIs at CXmin/CXmax
 	qui {
 		gen byte `touse2' = `touse' * inlist(`_USE', 1, 3, 5)
-		
+
 		replace `_LCI' = `CXmin' if `offscaleL'
 		replace `_UCI' = `CXmax' if `offscaleR'
 		replace `_LCI' = . if `touse2' & float(`_UCI') < float(`CXmin')
@@ -1075,57 +1136,117 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 		replace `_ES'  = . if `touse2' & float(`_ES')  > float(`CXmax')
 
 		if `"`rfdist'"'!=`""' {
-			replace `_rfLCI' = `CXmin' if `rfoffscaleL'
-			replace `_rfUCI' = `CXmax' if `rfoffscaleR'
-			replace `_rfLCI' = . if `touse2' & (`offscaleL' | float(`_rfUCI') < float(`CXmin'))
-			replace `_rfUCI' = . if `touse2' & (`offscaleR' | float(`_rfLCI') > float(`CXmax'))
+			
+			// Standard case:
+			tempvar rflci2
+			clonevar `rflci2' = `_rfLCI'
+			replace `_rfLCI' = . if `touse2' & (`offscaleL' | float(`_rfLCI') < float(`CXmin'))
+			replace `_rfUCI' = . if `touse2' & (`offscaleR' | (float(`rflci2') > float(`CXmax') & !missing(`rflci2')))
+			drop `rflci2'
+			
+			replace `_rfLCI' = `CXmin' if `rfLoffscaleL'
+			replace `_rfUCI' = `CXmax' if `rfRoffscaleR'
+		
+			// Niche case:
+			// If one end of both CI and rfCI are offscale in same direction,
+			// and the other end of the CI is *also* outside the CXmin/CXmax limits (albeit not marked as offscale)
+			// (i.e. the only visible piece will be *part of one end* of the rfCI)
+			// then that piece of the rfCI needs an arrow pointing *towards* _ES.
+			// (This will need checking for again when it comes to constructing the rfplot)
+			cap confirm numeric var `rfRoffscaleL'
+			if !_rc {
+				replace `_rfLCI' = `CXmin' if `touse2' & `rfRoffscaleL'
+				replace `_UCI'   = `CXmin' if `touse2' & `rfRoffscaleL'
+			}
+			else local rfRoffscaleL = 0
+			
+			cap confirm numeric var `rfLoffscaleR'
+			if !_rc {
+				replace `_rfUCI' = `CXmax' if `touse2' & `rfLoffscaleR'
+				replace `_LCI'   = `CXmax' if `touse2' & `rfLoffscaleR'
+			}
+			else local rfLoffscaleR = 0
 		}
 		drop `touse2'
 	}
 
-
-	* Global CI style (bare lines or capped lines)
-	* (Also test for disallowed options during same parse)
-	local 0 `", `ciopts'"'
-	syntax [, HORizontal VERTical Connect(string asis) RCAP * ]
-	if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
-		nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:ciopts()}"'
-		exit 198
-	}			
-	if `"`connect'"' != `""' {
-		nois disp as err `"suboption {bf:connect()} not allowed in option {bf:ciopts()}"'
-		exit 198
-	}
-	local ciopts `"`options'"'
-	local CIPlotType = cond("`rcap'"=="", "rspike", "rcap")
-	local pCIPlotType `CIPlotType'								// "pooled" CI (alternative to diamond)
-	local RFPlotType `CIPlotType'								// prediction interval
-
+		
 	* "Default" options
-	local dispShape = cond("`interaction'"!="", "circle", "square")
-	local DefColor = cond("`classic'"!="", "black", "180 180 180")
-	local DefBoxopts = `"mcolor("`DefColor'") msymbol(`dispShape') msize(`boxSize')"'
-	if `"`oldbox'"'!=`""' local DefBoxopts `"msymbol(none)"'	// -metan- "nobox" option
-	local DefCIopts `"lcolor(black) mcolor(black)"'				// includes "mcolor" for arrows (doesn't affect rspike/rcap)
-	local DefPointopts `"msymbol(diamond) mcolor(black) msize(vsmall)"'
-	local DefOlineopts `"lwidth(thin) lcolor(maroon) lpattern(shortdash)"'
-	local DefDiamopts `"lcolor("0 0 100")"'
-	local DefPPointopts `"msymbol("`dispShape'") mlcolor("0 0 100") mfcolor("none")"'	// "pooled" point options (alternative to diamond)
-	local DefPCIopts `"lcolor("0 0 100") mcolor("0 0 100")"'							// "pooled" CI options (alternative to diamond)
-	local DefRFopts `"`DefPCIopts'"'													// prediction interval options (includes "mcolor" for arrows)
+	local defShape = cond("`interaction'"!="", "circle", "square")
+	local defColor = cond("`classic'"!="", "black", "180 180 180")
+	local defBoxOpts = `"mcolor("`defColor'") msymbol(`defShape') msize(`boxSize')"'
+	if `"`oldbox'"'!=`""' local defBoxOpts `"msymbol(none)"'	// -metan- "nobox" option
+	local defCIOpts `"lcolor(black) mcolor(black)"'				// includes "mcolor" for arrows (doesn't affect rspike/rcap)
+	local defPointOpts `"msymbol(diamond) mcolor(black) msize(vsmall)"'
+	local defOlineOpts `"lwidth(thin) lcolor(maroon) lpattern(shortdash)"'
+	local defNlineOpts `"lwidth(thin) lcolor(black)"'
+	
+	// ...and for "pooled" estimates
+	local defShape = cond("`interaction'"!="", "circle", "diamond")
+	local defColor "0 0 100"
+	local defDiamOpts `"lcolor("`defColor'")"'
+	local defPPointOpts `"msymbol("`defShape'") mlcolor("`defColor'") mfcolor("none")"'	// "pooled" point options (alternative to diamond)
+	local defPCIOpts `"lcolor("`defColor'") mcolor("`defColor'")"'						// "pooled" CI options (alternative to diamond)
+	local defRFOpts `"`defPCIOpts'"'													// prediction interval options (includes "mcolor" for arrows)
 
+	
+	* "Default" line style for CIs
+	// N.B. Have to do this here, first, as capped lines require a different -twoway- command
+	//      rather than simply a different option.
+	// Therefore, may as well parse some of the other options too (including disallowed ones)
+	
+	if `"`rfdist'"'==`""' & `"`rfopts'"'!=`""' {
+		nois disp as err `"prediction interval not specified; relevant options will be ignored"'
+		local rfopts
+	}
+
+	// Same routine applies to study CIs, "pooled" CIs (alternative to diamond), and to prediction intervals:
+	foreach plot in ci pci rf {
+		local 0 `", ``plot'opts'"'
+		syntax [, HORizontal VERTical Connect(string asis) RCAP LColor(string asis) MColor(string asis) LWidth(string asis) MLWidth(string asis) OVerlay * ]
+		if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
+			nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:`plot'opts()}"'
+			exit 198
+		}			
+		if `"`connect'"'!=`""' {
+			nois disp as err `"suboption {bf:connect()} not allowed in option {bf:`plot'opts()}"'
+			exit 198
+		}
+		if `"`overlay'"'!=`""' & "`plot'"!="rf" {
+			nois disp as err `"suboption {bf:overlay} not allowed in option {bf:`plot'opts()}"'
+			exit 198
+		}
+		if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""' {
+			local mcolor `lcolor'						// for pc(b)arrow
+		}
+		if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' {
+			local mlwidth `lwidth'						// for pc(b)arrow
+		}
+		local `plot'opts
+		foreach opt in mcolor lcolor mlwidth lwidth {
+			if `"``opt''"'!=`""' {
+				local `plot'opts `"``plot'opts' `opt'(``opt'')"'
+			}
+		}
+		local `plot'opts `"``plot'opts' `options'"'
+		local g_overlay "`overlay'"		// "global" overlay option
+		
+		local uplot = upper("`plot'")
+		local `uplot'PlotType = cond("`rcap'"=="", "rspike", "rcap")
+	}
+	
 
 	* Loop over possible values of `plotid' and test for plot#opts relating specifically to each value
 	numlist "1/`np'"
-	local plvals=r(numlist)			// need both of these as numlists,
-	local pplvals `plvals'			//    for later macro manipulations
+	local plvals=r(numlist)			// need both of these as explicit numlists,
+	local pplvals `plvals'			//    for later macro manipulations to remove specific values if necessary
 	forvalues p = 1/`np' {
 
 		local 0 `", `rest'"'
 		syntax [, ///
 			/// /* standard options */
 			BOX`p'opts(string asis) DIAM`p'opts(string asis) POINT`p'opts(string asis) CI`p'opts(string asis) OLINE`p'opts(string asis) ///
-			/// /* non-diamond options, and prediction interval */
+			/// /* non-diamond and prediction interval options */
 			PPOINT`p'opts(string asis) PCI`p'opts(string asis) RF`p'opts(string asis) * ]
 
 		local rest `"`options'"'
@@ -1135,119 +1256,47 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 			
 			local pplvals : list pplvals - p			// remove from list of "default" plotids
 			
-			* WEIGHTED SCATTER PLOT
-			local 0 `", `box`p'opts'"'
-			syntax [, MLABEL(string asis) MSIZe(string asis) * ]			// check for disallowed options
-			if `"`mlabel'"' != `""' {
-				nois disp as err `"suboption {bf:mlabel()} not allowed in option {bf:box`p'opts()}"'
-				exit 198
-			}
-			if `"`msize'"' != `""' {
-				nois disp as err `"suboption {bf:msize()} not allowed in option {bf:box`p'opts()}"'
-				exit 198
-			}
-			qui count if `touse' & `_USE'==1 & `plotid'==`p'
+			* OVERALL LINE(S) (if appropriate)
+			summ `ovLine' if `plotid'==`p', meanonly
 			if r(N) {
-				local scPlotOpts `"`DefBoxopts' `boxopts' `box`p'opts'"'
-				summ `_WT' if `touse' & `_USE'==1 & `plotid'==`p', meanonly
+				local olinePlot `"`macval(olinePlot)' || rspike `ovMin' `ovMax' `ovLine' if `touse' & `plotid'==`p', `defOlineOpts' `olineopts' `oline`p'opts'"'
+			}
+			
+			* INDIVIDUAL STUDY MARKERS
+			local touse2 `"`touse' & `_USE'==1 & `plotid'==`p'"'		// use local, not tempvar, so conditions are copied into plot commands
+			qui count if `touse2'
+			if r(N) {
+			
+				* WEIGHTED SCATTER PLOT
+				local 0 `", `box`p'opts'"'
+				syntax [, MLABEL(string asis) MSIZe(string asis) * ]			// check for disallowed options
+				if `"`mlabel'"' != `""' {
+					nois disp as err `"suboption {bf:mlabel()} not allowed in option {bf:box`p'opts()}"'
+					exit 198
+				}
+				if `"`msize'"' != `""' {
+					nois disp as err `"suboption {bf:msize()} not allowed in option {bf:box`p'opts()}"'
+					exit 198
+				}
+				local scPlotOpts `"`defBoxOpts' `boxopts' `box`p'opts'"'
+				summ `_WT' if `touse2', meanonly
 				if !r(N) nois disp as err `"No weights found for {bf:plotid}==`p'"'
 				else if `nd'==1 local scPlot `"`macval(scPlot)' || scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & `plotid'==`p', `macval(scPlotOpts)'"'
 				else {
 					forvalues d=1/`nd' {
 						local scPlot `"`macval(scPlot)' || scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & `plotid'==`p' & `dataid'==`d', `macval(scPlotOpts)'"'
 					}
-				}
-			}		// N.B. scatter if `toused' <-- "dummy obs" for consistent weighting
-			
-			* CONFIDENCE INTERVAL PLOT
-			local 0 `", `ci`p'opts'"'
-			syntax [, HORizontal VERTical Connect(string asis) RCAP LColor(string asis) MColor(string asis) LWidth(string asis) MLWidth(string asis) * ]	// check for disallowed options + rcap
-			if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
-				nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:ci`p'opts()}"'
-				exit 198
-			}			
-			if `"`connect'"' != `""' {
-				nois disp as err `"suboption {bf:connect()} not allowed in option {bf:ci`p'opts()}"'
-				exit 198
-			}
-			if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""' {
-				local mcolor `lcolor'						// for pc(b)arrow
-			}
-			if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' {
-				local mlwidth `lwidth'						// for pc(b)arrow
-			}
-			local ci`p'opts
-			foreach opt in mcolor lcolor mlwidth lwidth {
-				if `"``opt''"'!=`""' {
-					local ci`p'opts `"`ci`p'opts' `opt'(``opt'')"'
-				}
-			}
-			local ci`p'opts `"`ci`p'opts' `options'"'
-			local CIPlot`p'Type `CIPlotType'										// global status = rspike
-			local CIPlot`p'Type = cond("`rcap'"=="", "`CIPlot`p'Type'", "rcap")		// overwrite global status if appropriate
-			local CIPlotOpts `"`DefCIopts' `ciopts' `ci`p'opts'"'
-			
-			// default: both ends within scale (i.e. no arrows)
-			local CIPlot `"`macval(CIPlot)' || `CIPlot`p'Type' `_LCI' `_UCI' `id' if `touse' & `_USE'==1 & `plotid'==`p' & !`offscaleL' & !`offscaleR', hor `macval(CIPlotOpts)'"'
-
-			// if arrows required
-			qui count if `plotid'==`p' & `offscaleL' & `offscaleR'
-			if r(N) {													// both ends off scale
-				local CIPlot `"`macval(CIPlot)' || pcbarrow `id' `_LCI' `id' `_UCI' if `touse' & `_USE'==1 & `plotid'==`p' & `offscaleL' & `offscaleR', `macval(CIPlotOpts)'"'
-			}
-			qui count if `plotid'==`p' & `offscaleL' & !`offscaleR'
-			if r(N) {													// only left off scale
-				local CIPlot `"`macval(CIPlot)' || pcarrow `id' `_UCI' `id' `_LCI' if `touse' & `_USE'==1 & `plotid'==`p' & `offscaleL' & !`offscaleR', `macval(CIPlotOpts)'"'
-				if "`CIPlot`p'Type'" == "rcap" {			// add cap to other end if appropriate
-					local CIPlot `"`macval(CIPlot)' || rcap `_UCI' `_UCI' `id' if `touse' & `_USE'==1 & `plotid'==`p' & `offscaleL' & !`offscaleR', hor `macval(CIPlotOpts)'"'
-				}
-			}
-			qui count if `plotid'==`p' & !`offscaleL' & `offscaleR'
-			if r(N) {													// only right off scale
-				local CIPlot `"`macval(CIPlot)' || pcarrow `id' `_LCI' `id' `_UCI' if `touse' & `_USE'==1 & `plotid'==`p' & !`offscaleL' & `offscaleR', `macval(CIPlotOpts)'"'
-				if "`CIPlot`p'Type'" == "rcap" {			// add cap to other end if appropriate
-					local CIPlot `"`macval(CIPlot)' || rcap `_LCI' `_LCI' `id' if `touse' & `_USE'==1 & `plotid'==`p' & !`offscaleL' & `offscaleR', hor `macval(CIPlotOpts)'"'
-				}
-			}
-
-			* POINT PLOT (point estimates -- except if "classic")
-			if "`classic'" == "" {
-				local pointPlot `"`macval(pointPlot)' || scatter `id' `_ES' if `touse' & `_USE'==1 & `plotid'==`p', `DefPointopts' `pointopts' `point`p'opts'"'
-			}
-			
-			* OVERALL LINE(S) (if appropriate)
-			summ `ovLine' if `plotid'==`p', meanonly
-			if r(N) {
-				local olinePlot `"`macval(olinePlot)' || rspike `ovMin' `ovMax' `ovLine' if `touse' & `plotid'==`p', `DefOlineopts' `olineopts' `oline`p'opts'"'
-			}		
-
-			* POOLED EFFECT - DIAMOND; START FROM 9 O'CLOCK AND WORK ROUND
-			* Assume diamond if no "pooled point/CI" options, and no "interaction" option
-			if trim(`"`ppointopts'`ppoint`p'opts'`pciopts'`pci`p'opts'`interaction'"') == `""' {
-				local diamPlotOpts `"`DefDiamopts' `diamopts' `diam`p'opts'"'
-				local diamPlot `"`macval(diamPlot)' || pcspike `DiamLeftY1' `DiamLeftX' `DiamTopY' `DiamTopX' if `touse' & `plotid'==`p', `macval(diamPlotOpts)'"'
-				local diamPlot `"`macval(diamPlot)' || pcspike `DiamTopY' `DiamTopX' `DiamRightY1' `DiamRightX' if `touse' & `plotid'==`p', `macval(diamPlotOpts)'"'
-				local diamPlot `"`macval(diamPlot)' || pcspike `DiamRightY2' `DiamRightX' `DiamBottomY' `DiamBottomX' if `touse' & `plotid'==`p', `macval(diamPlotOpts)'"'
-				local diamPlot `"`macval(diamPlot)' || pcspike `DiamBottomY' `DiamBottomX' `DiamLeftY2' `DiamLeftX' if `touse' & `plotid'==`p', `macval(diamPlotOpts)'"'
-			}
-			
-			* POOLED EFFECT - PPOINT/PCI
-			else {
-				if `"`diam`p'opts'"'!=`""' {
-					nois disp as err `"Note: suboptions for both diamond and pooled point/CI specified for {bf:plotid}==`p';"'
-					nois disp as err `"      diamond suboptions will be ignored"'
-				}	
-			
-				// shouldn't need to bother with arrows etc. here, as pooled effect should always be narrower than individual estimates
-				// but do it anyway, just in case of non-obvious use case
-				local 0 `", `pci`p'opts'"'
+				}		// N.B. scatter if `toused' <-- "dummy obs" for consistent weighting
+				
+				* CONFIDENCE INTERVAL PLOT
+				local 0 `", `ci`p'opts'"'
 				syntax [, HORizontal VERTical Connect(string asis) RCAP LColor(string asis) MColor(string asis) LWidth(string asis) MLWidth(string asis) * ]	// check for disallowed options + rcap
 				if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
-					nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option{bf:pci`p'opts()}"'
+					nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:ci`p'opts()}"'
 					exit 198
 				}			
-				if `"`connect'"' != `""' {
-					nois disp as err "suboption {bf:connect()} not allowed in option {bf:pci`p'opts}"'
+				if `"`connect'"'!=`""' {
+					nois disp as err `"suboption {bf:connect()} not allowed in option {bf:ci`p'opts()}"'
 					exit 198
 				}
 				if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""' {
@@ -1256,99 +1305,239 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 				if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' {
 					local mlwidth `lwidth'						// for pc(b)arrow
 				}
-				local pci`p'opts
+				local CIPlot`p'Opts
 				foreach opt in mcolor lcolor mlwidth lwidth {
 					if `"``opt''"'!=`""' {
-						local pci`p'opts `"`pci`p'opts' `opt'(``opt'')"'
+						local CIPlot`p'Opts `"`CIPlot`p'Opts' `opt'(``opt'')"'
 					}
 				}
-				local pci`p'opts `"`pci`p'opts' `options'"'
-				local pCIPlot`p'Type `pCIPlotType'											// global status = rspike
-				local pCIPlot`p'Type = cond("`rcap'"=="", "`pCIPlot`p'Type'", "rcap")		// overwrite global status if appropriate
-				local pCIPlotOpts `"`DefPCIopts' `pciopts' `pci`p'opts'"'
+				local CIPlot`p'Opts `"`defCIOpts' `ciopts' `CIPlot`p'Opts' `options'"'		// main options first, then options specific to plot `p'
+				local CIPlot`p'Type = cond("`rcap'"=="", "`CIPlotType'", "rcap")
 				
 				// default: both ends within scale (i.e. no arrows)
-				local pCIPlot `"`macval(pCIPlot)' || `pCIPlot`p'Type' `_LCI' `_UCI' `id' if `touse' & inlist(`_USE', 3, 5) & `plotid'==`p' & !`offscaleL' & !`offscaleR', hor `macval(pCIPlotOpts)'"'
+				local CIPlot `"`macval(CIPlot)' || `CIPlot`p'Type' `_LCI' `_UCI' `id' if `touse2' & !`offscaleL' & !`offscaleR', hor `macval(CIPlot`p'Opts)'"'
 
-				// if arrows are required
-				qui count if `plotid'==`p' & `offscaleL' & `offscaleR'
+				// if arrows required
+				qui count if `touse2' & `offscaleL' & `offscaleR'
 				if r(N) {													// both ends off scale
-					local pCIPlot `"`macval(pCIPlot)' || pcbarrow `id' `_LCI' `id' `_UCI' if `touse' & inlist(`_USE', 3, 5) & `plotid'==`p' & `offscaleL' & `offscaleR', `macval(pCIPlotOpts)'"'
+					local CIPlot `"`macval(CIPlot)' || pcbarrow `id' `_LCI' `id' `_UCI' if `touse2' & `offscaleL' & `offscaleR', `macval(CIPlot`p'Opts)'"'
 				}
-				qui count if `plotid'==`p' & `offscaleL' & !`offscaleR'
+				qui count if `touse2' & `offscaleL' & !`offscaleR'
 				if r(N) {													// only left off scale
-					local pCIPlot `"`macval(pCIPlot)' || pcarrow `id' `_UCI' `id' `_LCI' if `touse' & inlist(`_USE', 3, 5) & `plotid'==`p' & `offscaleL' & !`offscaleR', `macval(pCIPlotOpts)'"'
-					if "`pCIPlot`p'Type'" == "rcap" {			// add cap to other end if appropriate
-						local pCIPlot `"`macval(pCIPlot)' || rcap `_UCI' `_UCI' `id' if `touse' & inlist(`_USE', 3, 5) & `plotid'==`p' & `offscaleL' & !`offscaleR', hor `macval(pCIPlotOpts)'"'
+					local CIPlot `"`macval(CIPlot)' || pcarrow `id' `_UCI' `id' `_LCI' if `touse2' & `offscaleL' & !`offscaleR', `macval(CIPlot`p'Opts)'"'
+					if "`CIPlot`p'Type'" == "rcap" {			// add cap to other end if appropriate
+						local CIPlot `"`macval(CIPlot)' || rcap `_UCI' `_UCI' `id' if `touse2' & `offscaleL' & !`offscaleR', hor `macval(CIPlot`p'Opts)'"'
 					}
 				}
-				qui count if `plotid'==`p' & !`offscaleL' & `offscaleR'
+				qui count if `touse2' & !`offscaleL' & `offscaleR'
 				if r(N) {													// only right off scale
-					local pCIPlot `"`macval(pCIPlot)' || pcarrow `id' `_LCI' `id' `_UCI' if `touse' & inlist(`_USE', 3, 5) & `plotid'==`p' & !`offscaleL' & `offscaleR', `macval(pCIPlotOpts)'"'
-					if "`pCIPlot`p'Type'" == "rcap" {			// add cap to other end if appropriate
-						local pCIPlot `"`macval(pCIPlot)' || rcap `_LCI' `_LCI' `id' if `touse' & inlist(`_USE', 3, 5) & `plotid'==`p' & !`offscaleL' & `offscaleR', hor `macval(pCIPlotOpts)'"'
+					local CIPlot `"`macval(CIPlot)' || pcarrow `id' `_LCI' `id' `_UCI' if `touse2' & !`offscaleL' & `offscaleR', `macval(CIPlot`p'Opts)'"'
+					if "`CIPlot`p'Type'" == "rcap" {			// add cap to other end if appropriate
+						local CIPlot `"`macval(CIPlot)' || rcap `_LCI' `_LCI' `id' if `touse2' & !`offscaleL' & `offscaleR', hor `macval(CIPlot`p'Opts)'"'
 					}
-				}				
-				local ppointPlot `"`macval(ppointPlot)' || scatter `id' `_ES' if `touse' & inlist(`_USE', 3, 5) & `plotid'==`p', `DefPPointopts' `ppointopts' `ppoint`p'opts'"'
-			}
+				}
+
+				* POINT PLOT (point estimates -- except if "classic")
+				if "`classic'" == "" {
+					local pointPlot `"`macval(pointPlot)' || scatter `id' `_ES' if `touse2', `defPointOpts' `pointopts' `point`p'opts'"'
+				}
+			}			// end if r(N) [i.e. if any obs with _USE==1 & plotid==`p']
+
 			
-			* PREDICTION INTERVAL
-			if `"`rfdist'"'==`""' {
-				if `"`rf`p'opts'"'!=`""' {
-					nois disp as err `"prediction interval not specified; relevant suboptions for {bf:plotid==`p'} will be ignored"'
+			* POOLED EFFECT MARKERS
+			local touse2 `"`touse' & inlist(`_USE', 3, 5) & `plotid'==`p'"'		// use local, not tempvar, so conditions are copied into plot commands
+			qui count if `touse2'			
+			if r(N) {
+			
+				* DIAMONDS; START FROM 9 O'CLOCK AND WORK ROUND
+				* Assume diamond if no "pooled point/CI" options, and no "interaction" option
+				if trim(`"`ppointopts'`ppoint`p'opts'`pciopts'`pci`p'opts'`interaction'`diamonds'"') == `""' {
+					local diamPlotOpts `"`defDiamOpts' `diamopts' `diam`p'opts'"'
+					local diamPlot `"`macval(diamPlot)' || pcspike `DiamLeftY1' `DiamLeftX' `DiamTopY' `DiamTopX' if `touse2', `macval(diamPlotOpts)'"'
+					local diamPlot `"`macval(diamPlot)' || pcspike `DiamTopY' `DiamTopX' `DiamRightY1' `DiamRightX' if `touse2', `macval(diamPlotOpts)'"'
+					local diamPlot `"`macval(diamPlot)' || pcspike `DiamRightY2' `DiamRightX' `DiamBottomY' `DiamBottomX' if `touse2', `macval(diamPlotOpts)'"'
+					local diamPlot `"`macval(diamPlot)' || pcspike `DiamBottomY' `DiamBottomX' `DiamLeftY2' `DiamLeftX' if `touse2', `macval(diamPlotOpts)'"'
 				}
-			}
-			else {
-				local 0 `", `rf`p'opts'"'
-				syntax [, HORizontal VERTical Connect(string asis) RCAP LColor(string asis) MColor(string asis) LWidth(string asis) MLWidth(string asis) * ]	// check for disallowed options + rcap
-				if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
-					nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:rf`p'opts}"'
-					exit 198
-				}			
-				if `"`connect'"' != `""' {
-					nois disp as err `"suboption {bf:connect()} not allowed in option {bf:rf`p'opts()}"'
-					exit 198
+				
+				* POOLED EFFECTS - PPOINT/PCI
+				else {
+					if `"`diam`p'opts'"'!=`""' {
+						nois disp as err `"Note: suboptions for both diamond and pooled point/CI specified for {bf:plotid}==`p';"'
+						nois disp as err `"      diamond suboptions will be ignored"'
+					}	
+				
+					// shouldn't need to bother with arrows etc. here, as pooled effect should always be narrower than individual estimates
+					// but do it anyway, just in case of non-obvious use case
+					local 0 `", `pci`p'opts'"'
+					syntax [, HORizontal VERTical Connect(string asis) RCAP LColor(string asis) MColor(string asis) LWidth(string asis) MLWidth(string asis) * ]	// check for disallowed options + rcap
+					if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
+						nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option{bf:pci`p'opts()}"'
+						exit 198
+					}			
+					if `"`connect'"' != `""' {
+						nois disp as err "suboption {bf:connect()} not allowed in option {bf:pci`p'opts}"'
+						exit 198
+					}
+					if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""' {
+						local mcolor `lcolor'						// for pc(b)arrow
+					}
+					if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' {
+						local mlwidth `lwidth'						// for pc(b)arrow
+					}
+					local PCIPlot`p'Opts
+					foreach opt in mcolor lcolor mlwidth lwidth {
+						if `"``opt''"'!=`""' {
+							local PCIPlot`p'Opts `"`PCIPlot`p'Opts' `opt'(``opt'')"'
+						}
+					}
+					local PCIPlot`p'Opts `"`defPCIOpts' `pciopts' `PCIPlot`p'Opts' `options'"'		// main options first, then options specific to plot `p'
+					local PCIPlot`p'Type = cond("`rcap'"=="", "`PCIPlotType'", "rcap")
+					
+					// default: both ends within scale (i.e. no arrows)
+					local PCIPlot `"`macval(PCIPlot)' || `PCIPlot`p'Type' `_LCI' `_UCI' `id' if `touse2' & !`offscaleL' & !`offscaleR', hor `macval(PCIPlot`p'Opts)'"'
+
+					// if arrows are required
+					qui count if `touse2' & `offscaleL' & `offscaleR'
+					if r(N) {													// both ends off scale
+						local PCIPlot `"`macval(PCIPlot)' || pcbarrow `id' `_LCI' `id' `_UCI' if `touse2' & `offscaleL' & `offscaleR', `macval(PCIPlot`p'Opts)'"'
+					}
+					qui count if `touse2' & `offscaleL' & !`offscaleR'
+					if r(N) {													// only left off scale
+						local PCIPlot `"`macval(PCIPlot)' || pcarrow `id' `_UCI' `id' `_LCI' if `touse2' & `offscaleL' & !`offscaleR', `macval(PCIPlot`p'Opts)'"'
+						if "`PCIPlot`p'Type'" == "rcap" {			// add cap to other end if appropriate
+							local PCIPlot `"`macval(PCIPlot)' || rcap `_UCI' `_UCI' `id' if `touse2' & `offscaleL' & !`offscaleR', hor `macval(PCIPlot`p'Opts)'"'
+						}
+					}
+					qui count if `touse2' & !`offscaleL' & `offscaleR'
+					if r(N) {													// only right off scale
+						local PCIPlot `"`macval(PCIPlot)' || pcarrow `id' `_LCI' `id' `_UCI' if `touse2' & !`offscaleL' & `offscaleR', `macval(PCIPlot`p'Opts)'"'
+						if "`PCIPlot`p'Type'" == "rcap" {			// add cap to other end if appropriate
+							local PCIPlot `"`macval(PCIPlot)' || rcap `_LCI' `_LCI' `id' if `touse2' & !`offscaleL' & `offscaleR', hor `macval(PCIPlot`p'Opts)'"'
+						}
+					}				
+					local ppointPlot `"`macval(ppointPlot)' || scatter `id' `_ES' if `touse2', `defPPointOpts' `ppointopts' `ppoint`p'opts'"'
 				}
-				if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""' {
-					local mcolor `lcolor'						// for pc(b)arrow
-				}
-				if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' {
-					local mlwidth `lwidth'						// for pc(b)arrow
-				}
-				local rf`p'opts
-				foreach opt in mcolor lcolor mlwidth lwidth {
-					if `"``opt''"'!=`""' {
-						local rf`p'opts `"`rf`p'opts' `opt'(``opt'')"'
+				
+				* PREDICTION INTERVAL
+				if `"`rfdist'"'==`""' {
+					if `"`rf`p'opts'"'!=`""' {
+						nois disp as err `"prediction interval not specified; relevant suboptions for {bf:plotid==`p'} will be ignored"'
 					}
 				}
-				local rf`p'opts `"`rf`p'opts' `options'"'
-				local RFPlot`p'Type `RFPlotType'											// global status = rspike
-				local RFPlot`p'Type = cond("`rcap'"=="", "`RFPlot`p'Type'", "rcap")			// overwrite global status if appropriate
+				else {
+					local 0 `", `rf`p'opts'"'
+					syntax [, HORizontal VERTical Connect(string asis) RCAP LColor(string asis) MColor(string asis) LWidth(string asis) MLWidth(string asis) OVerlay * ]	// check for disallowed options + rcap
+					if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
+						nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:rf`p'opts}"'
+						exit 198
+					}			
+					if `"`connect'"' != `""' {
+						nois disp as err `"suboption {bf:connect()} not allowed in option {bf:rf`p'opts()}"'
+						exit 198
+					}
+					if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""' {
+						local mcolor `lcolor'						// for pc(b)arrow
+					}
+					if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' {
+						local mlwidth `lwidth'						// for pc(b)arrow
+					}
+					local RFPlot`p'Opts
+					foreach opt in mcolor lcolor mlwidth lwidth {
+						if `"``opt''"'!=`""' {
+							local RFPlot`p'Opts `"`RFPlot`p'Opts' `opt'(``opt'')"'
+						}
+					}
+					local RFPlot`p'Opts `"`defRFOpts' `rfopts' `RFPlot`p'Opts' `options'"'		// main options first, then options specific to plot `p'
+					local RFPlot`p'Type = cond("`rcap'"=="", "`RFPlotType'", "rcap")
 				
-				// do this slightly differently from CIPlot, as we are *always* dealing with two separate (left/right) lines here
-				local rfPlotOpts `"`DefRFopts' `rfopts' `rf`p'opts'"'
+					// if overlay, use same approach as for CI/PCI
+					if trim(`"`overlay'`g_overlay'"') != `""' {
+						local touse_add `"float(`_rfUCI')>=float(`CXmin') & float(`_rfLCI')<=float(`CXmax') & float(`_rfLCI')!=float(`_rfUCI')"'
 				
-				// left-hand end
-				local RFPlot `"`macval(RFPlot)' || `RFPlot`p'Type' `_LCI' `_rfLCI' `id' if `touse' & inlist(`_USE', 3, 5) & `plotid'==`p' & !`rfoffscaleL', hor `macval(rfPlotOpts)'"'
-				qui count if `plotid'==`p' & `rfoffscaleL'
-				if r(N) {										// left off scale
-					local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_LCI' `id' `_rfLCI' if `touse' & inlist(`_USE', 3, 5) & `plotid'==`p' & `rfoffscaleL', `macval(rfPlotOpts)'"'
-				}
-				
-				// right-hand end
-				local RFPlot `"`macval(RFPlot)' || `RFPlot`p'Type' `_UCI' `_rfUCI' `id' if `touse' & inlist(`_USE', 3, 5) & `plotid'==`p' & !`rfoffscaleR', hor `macval(rfPlotOpts)'"'
-				qui count if `plotid'==`p' & `rfoffscaleR'
-				if r(N) {										// right off scale
-					local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_UCI' `id' `_rfUCI' if `touse' & inlist(`_USE', 3, 5) & `plotid'==`p' & `rfoffscaleR', `macval(rfPlotOpts)'"'
-				}
-			}
+						// default: both ends within scale (i.e. no arrows)
+						local touse3 `"`touse2' & !`rfLoffscaleL' & !`rfRoffscaleR' & `touse_add'"'
+						local RFPlot `"`macval(RFPlot)' || `RFPlot`p'Type' `_rfLCI' `_rfUCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)'"'
+
+						// if arrows required
+						local touse3 `"`touse2' & `rfLoffscaleL' & `rfRoffscaleR' & `touse_add'"'
+						qui count if `touse3'
+						if r(N) {													// both ends off scale
+							local RFPlot `"`macval(RFPlot)' || pcbarrow `id' `_rfLCI' `id' `_rfUCI' if `touse3', `macval(RFPlot`p'Opts)'"'
+						}
+						local touse3 `"`touse2' & `rfLoffscaleL' & !`rfRoffscaleR' & `touse_add'"'
+						qui count if `touse3'
+						if r(N) {													// only left off scale
+							local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_rfUCI' `id' `_rfLCI' if `touse3', `macval(RFPlot`p'Opts)'"'
+							if "`RFPlotType'" == "rcap" {			// add cap to other end if appropriate
+								local RFPlot `"`macval(RFPlot)' || rcap `_rfUCI' `_rfUCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)'"'
+							}
+						}
+						local touse3 `"`touse2' & !`rfLoffscaleL' & `rfRoffscaleR' & `touse_add'"'
+						qui count if `touse3'
+						if r(N) {													// only right off scale
+							local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_rfLCI' `id' `_rfUCI' if `touse3', `macval(RFPlot`p'Opts)'"'
+							if "`RFPlotType'" == "rcap" {			// add cap to other end if appropriate
+								local RFPlot `"`macval(RFPlot)' || rcap `_rfLCI' `_rfLCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)'"'
+							}
+						}
+					}
+					
+					// otherwise, need to do it slightly differently, as we are dealing with two separate (left/right) lines
+					else {
+					
+						// identify special cases where only one line required, with two arrows
+						local touse3 `"`touse2' & (`rfLoffscaleL' & `rfLoffscaleR') | (`rfRoffscaleL' & `rfRoffscaleR')"'
+						qui count if `touse3'
+						if r(N) {
+							local RFPlot `"`macval(RFPlot)' || pcbarrow `id' `_rfLCI' `id' `_rfUCI' if `touse3', `macval(RFPlot`p'Opts)'"'
+						}
+						
+						// left-hand line
+						local touse_add `"float(`_rfLCI')<=float(`CXmax') & float(`_rfLCI')!=float(`_LCI')"'
+
+						local touse3 `"`touse2' & !`rfLoffscaleL' & !`rfLoffscaleR' & !`offscaleL' & `touse_add'"'
+						local RFPlot `"`macval(RFPlot)' || `RFPlot`p'Type' `_LCI' `_rfLCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)'"'
+						
+						local touse3 `"`touse2' & `rfLoffscaleL' & !`rfLoffscaleR' & !`offscaleL' & `touse_add'"'
+						qui count if `touse3'
+						if r(N) {										// left-hand end off scale
+							local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_LCI' `id' `_rfLCI' if `touse3', `macval(RFPlot`p'Opts)'"'
+						}
+
+						local touse3 `"`touse2' & !`rfLoffscaleL' & `rfLoffscaleR' & !`offscaleL' & `touse_add'"'
+						qui count if `touse3'
+						if r(N) {										// right-hand end off scale
+							local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_rfLCI' `id' `_LCI' if `touse3', `macval(RFPlot`p'Opts)'"'
+						}
+
+						// right-hand line
+						local touse_add `"float(`_rfUCI')>=float(`CXmin') & float(`_rfUCI')!=float(`_UCI')"'
+						
+						local touse3 `"`touse2' & !`rfRoffscaleL' & !`rfRoffscaleR' & !`offscaleR' & `touse_add'"'
+						local RFPlot `"`macval(RFPlot)' || `RFPlot`p'Type' `_UCI' `_rfUCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)'"'
+						
+						local touse3 `"`touse2' & `rfRoffscaleL' & !`rfRoffscaleR' & !`offscaleR' & `touse_add'"'
+						qui count if `touse3'
+						if r(N) {										// left-hand end off scale
+							local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_rfUCI' `id' `_UCI' if `touse3', `macval(RFPlot`p'Opts)'"'
+						}
+
+						local touse3 `"`touse2' & !`rfRoffscaleL' & `rfRoffscaleR' & !`offscaleR' & `touse_add'"'
+						qui count if `touse3'
+						if r(N) {										// right-hand end off scale
+							local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_UCI' `id' `_rfUCI' if `touse3', `macval(RFPlot`p'Opts)'"'
+						}
+					}
+				}			// end else [i.e. if rfdist]
+			}			// end if r(N) [i.e. if any obs with _USE==3,5 & plotid==`p']
 		}		// end if trim(`"`box`p'opts'`diam`p'opts'`point`p'opts'`ci`p'opts'`oline`p'opts'`ppoint`p'opts'`pci`p'opts'"') != `""'
 	}		// end forvalues p = 1/`np'
 
+	
 	* Find invalid/repeated options
 	// any such options would generate a suitable error message at the plotting stage
 	// so just exit here with error, to save the user's time
-	if regexm(`"`rest'"', "(box|diam|point|ci|oline|ppoint|pci|rf)([0-9]+)") {
+	if regexm(`"`rest'"', "(box|diam|point|ci|oline|ppoint|pci|rf)([0-9]+)opt") {
 		local badopt = regexs(1)
 		local badp = regexs(2)
 		
@@ -1369,226 +1558,230 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 		local pplvals2 : copy local pplvals						// copy, just for use in line 1454
 		local pplvals : subinstr local pplvals " " ",", all		// so that "inlist" may be used
 
-		* WEIGHTED SCATTER PLOT
-		local 0 `", `boxopts'"'
-		syntax [, MLABEL(string asis) MSIZe(string asis) * ]	// check for disallowed options
-		if `"`mlabel'"' != `""' {
-			disp as err "boxopts: option mlabel() not allowed"
-			exit 198
+		* OVERALL LINE(S) (if appropriate)
+		summ `ovLine' if inlist(`plotid', `pplvals'), meanonly
+		if r(N) {
+			local olinePlot `"`macval(olinePlot)' || rspike `ovMin' `ovMax' `ovLine' if `touse' & inlist(`plotid', `pplvals'), `defOlineOpts' `olineopts'"'
 		}
-		if `"`msize'"' != `""' {
-			disp as err "boxopts: option msize() not allowed"
-			exit 198
-		}
-		local scPlotOpts `"`DefBoxopts' `boxopts'"'
 		
-		if `"`pplvals'"'==`"`plvals'"' {		// if no plot#opts specified, can plot all plotid groups at once
-			qui summ `_WT' if `_USE'==1 & inlist(`plotid', `pplvals')
-			if r(N) {
-				if `nd'==1 local scPlot `"`macval(scPlot)' || scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & inlist(`plotid', `pplvals'), `macval(scPlotOpts)'"'
-				else {
-					forvalues d=1/`nd' {
-						local scPlot `"`macval(scPlot)' || scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & inlist(`plotid', `pplvals') & `dataid'==`d', `macval(scPlotOpts)'"'
-					}
-				}
+		* INDIVIDUAL STUDY MARKERS
+		local touse2 `"`touse' & `_USE'==1 & inlist(`plotid', `pplvals')"'		// use local, not tempvar, so conditions are copied into plot commands
+		qui count if `touse2'
+		if r(N) {
+		
+			* WEIGHTED SCATTER PLOT
+			local 0 `", `boxopts'"'
+			syntax [, MLABEL(string asis) MSIZe(string asis) * ]	// check for disallowed options
+			if `"`mlabel'"' != `""' {
+				disp as err "boxopts: option mlabel() not allowed"
+				exit 198
 			}
-		}
-		else {		// else, need to plot each group separately to maintain correct weighting (July 2014)
-			foreach p of local pplvals2 {
-				qui summ `_WT' if `_USE'==1 & `plotid'==`p'
+			if `"`msize'"' != `""' {
+				disp as err "boxopts: option msize() not allowed"
+				exit 198
+			}
+			local scPlotOpts `"`defBoxOpts' `boxopts'"'
+			
+			if `"`pplvals'"'==`"`plvals'"' {		// if no plot#opts specified, can plot all plotid groups at once
+				summ `_WT' if `touse2', meanonly
 				if r(N) {
-					if `nd'==1 local scPlot `"`macval(scPlot)' || scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & `plotid'==`p', `macval(scPlotOpts)'"'
+					if `nd'==1 local scPlot `"`macval(scPlot)' || scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & inlist(`plotid', `pplvals'), `macval(scPlotOpts)'"'
 					else {
 						forvalues d=1/`nd' {
-							local scPlot `"`macval(scPlot)' || scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & `plotid'==`p' & `dataid'==`d', `macval(scPlotOpts)'"'
+							local scPlot `"`macval(scPlot)' || scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & inlist(`plotid', `pplvals') & `dataid'==`d', `macval(scPlotOpts)'"'
 						}
 					}
 				}
 			}
-		}		// N.B. scatter if `toused' <-- "dummy obs" for consistent weighting
-		
-		* CONFIDENCE INTERVAL PLOT
-		local 0 `", `ciopts'"'
-		syntax [, HORizontal VERTical Connect(string asis) RCAP LColor(string asis) MColor(string asis) LWidth(string asis) MLWidth(string asis) * ]	// check for disallowed options + rcap
-		if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
-			nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:ciopts()}"'
-			exit 198
-		}			
-		if `"`connect'"' != `""' {
-			nois disp as err `"suboption {bf:connect()} not allowed in option {bf:ciopts()}"'
-			exit 198
-		}
-		if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""' {
-			local mcolor `lcolor'						// for pc(b)arrow
-		}
-		if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' {
-			local mlwidth `lwidth'						// for pc(b)arrow
-		}
-		local ciopts
-		foreach opt in mcolor lcolor mlwidth lwidth {
-			if `"``opt''"'!=`""' {
-				local ciopts `"`ciopts' `opt'(``opt'')"'
-			}
-		}
-		local ciopts `"`ciopts' `options'"'
-		local CIPlotType = cond("`rcap'"=="", "`CIPlotType'", "rcap")		// overwrite global status if appropriate
-		local CIPlotOpts `"`DefCIopts' `ciopts'"'
-		
-		// default: both ends within scale (i.e. no arrows)
-		local CIPlot `"`macval(CIPlot)' || `CIPlotType' `_LCI' `_UCI' `id' if `touse' & `_USE'==1 & inlist(`plotid', `pplvals') & !`offscaleL' & !`offscaleR', hor `macval(CIPlotOpts)'"'
-
-		// if arrows required
-		qui count if inlist(`plotid', `pplvals') & `offscaleL' & `offscaleR'
-		if r(N) {													// both ends off scale
-			local CIPlot `"`macval(CIPlot)' || pcbarrow `id' `_LCI' `id' `_UCI' if `touse' & `_USE'==1 & inlist(`plotid', `pplvals') & `offscaleL' & `offscaleR', `macval(CIPlotOpts)'"'
-		}
-		qui count if inlist(`plotid', `pplvals') & `offscaleL' & !`offscaleR'
-		if r(N) {													// only left off scale
-			local CIPlot `"`macval(CIPlot)' || pcarrow `id' `_UCI' `id' `_LCI' if `touse' & `_USE'==1 & inlist(`plotid', `pplvals') & `offscaleL' & !`offscaleR', `macval(CIPlotOpts)'"'
-			if "`CIPlotType'" == "rcap" {			// add cap to other end if appropriate
-				local CIPlot `"`macval(CIPlot)' || rcap `_UCI' `_UCI' `id' if `touse' & `_USE'==1 & inlist(`plotid', `pplvals') & `offscaleL' & !`offscaleR', hor `macval(CIPlotOpts)'"'
-			}
-		}
-		qui count if inlist(`plotid', `pplvals') & !`offscaleL' & `offscaleR'
-		if r(N) {													// only right off scale
-			local CIPlot `"`macval(CIPlot)' || pcarrow `id' `_LCI' `id' `_UCI' if `touse' & `_USE'==1 & inlist(`plotid', `pplvals') & !`offscaleL' & `offscaleR', `macval(CIPlotOpts)'"'
-			if "`CIPlotType'" == "rcap" {			// add cap to other end if appropriate
-				local CIPlot `"`macval(CIPlot)' || rcap `_LCI' `_LCI' `id' if `touse' & `_USE'==1 & inlist(`plotid', `pplvals') & !`offscaleL' & `offscaleR', hor `macval(CIPlotOpts)'"'
-			}
-		}
-
-		* POINT PLOT
-		local pointPlot `"`macval(pointPlot)' || scatter `id' `_ES' if `touse' & `_USE'==1 & inlist(`plotid', `pplvals'), `DefPointopts' `pointopts'"'
-
-		* OVERALL LINE(S) (if appropriate)
-		summ `ovLine' if inlist(`plotid', `pplvals'), meanonly
-		if r(N) {
-			local olinePlot `"`macval(olinePlot)' || rspike `ovMin' `ovMax' `ovLine' if `touse' & inlist(`plotid', `pplvals'), `DefOlineopts' `olineopts'"'
-		}
-
-		* POOLED EFFECT - DIAMOND; START FROM 9 O'CLOCK AND WORK ROUND
-		* Assume diamond if no "pooled point/CI" options, and no "interaction" option
-		if trim(`"`ppointopts'`pciopts'`interaction'"') == `""' {
-			local diamPlotOpts `"`DefDiamopts' `diamopts'"'
-			local diamPlot `"`macval(diamPlot)' || pcspike `DiamLeftY1' `DiamLeftX' `DiamTopY' `DiamTopX' if `touse' & inlist(`plotid', `pplvals'), `macval(diamPlotOpts)'"'
-			local diamPlot `"`macval(diamPlot)' || pcspike `DiamTopY' `DiamTopX' `DiamRightY1' `DiamRightX' if `touse' & inlist(`plotid', `pplvals'), `macval(diamPlotOpts)'"'
-			local diamPlot `"`macval(diamPlot)' || pcspike `DiamRightY2' `DiamRightX' `DiamBottomY' `DiamBottomX' if `touse' & inlist(`plotid', `pplvals'), `macval(diamPlotOpts)'"'
-			local diamPlot `"`macval(diamPlot)' || pcspike `DiamBottomY' `DiamBottomX' `DiamLeftY2' `DiamLeftX' if `touse' & inlist(`plotid', `pplvals'), `macval(diamPlotOpts)'"'
-		}
-		
-		* POOLED EFFECT - PPOINT/PCI
-		else {
-			if `"`diamopts'"'!=`""' {
-				nois disp as err `"Note: suboptions for both diamond and pooled point/CI specified;"'
-				nois disp as err `"      diamond suboptions will be ignored"'
-			}	
-		
-			// shouldn't need to bother with arrows etc. here, as pooled effect should always be narrower than individual estimates
-			// but do it anyway, just in case of non-obvious use case
-			local 0 `", `pciopts'"'
-			syntax [, HORizontal VERTical Connect(string asis) RCAP LColor(string asis) MColor(string asis) LWidth(string asis) MLWidth(string asis) * ]	// check for disallowed options + rcap
-			if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
-				nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:pciopts()}"'
-				exit 198
-			}			
-			if `"`connect'"' != `""' {
-				nois disp as err `"suboption {bf:connect()} not allowed in option {bf:pciopts()}"'
-				exit 198
-			}			
-			if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""' {
-				local mcolor `lcolor'						// for pc(b)arrow
-			}
-			if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' {
-				local mlwidth `lwidth'						// for pc(b)arrow
-			}
-			local pciopts
-			foreach opt in mcolor lcolor mlwidth lwidth {
-				if `"``opt''"'!=`""' {
-					local pciopts `"`pciopts' `opt'(``opt'')"'
+			else {		// else, need to plot each group separately to maintain correct weighting (July 2014)
+				foreach p of local pplvals2 {
+					summ `_WT' if `touse' & `_USE'==1 & `plotid'==`p', meanonly
+					if r(N) {
+						if `nd'==1 local scPlot `"`macval(scPlot)' || scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & `plotid'==`p', `macval(scPlotOpts)'"'
+						else {
+							forvalues d=1/`nd' {
+								local scPlot `"`macval(scPlot)' || scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & `plotid'==`p' & `dataid'==`d', `macval(scPlotOpts)'"'
+							}
+						}
+					}
 				}
-			}
-			local pciopts `"`pciopts' `options'"'
-			local pCIPlotType = cond("`rcap'"=="", "`pCIPlotType'", "rcap")		// overwrite global status if appropriate
-			local pCIPlotOpts `"`DefPCIopts' `pciopts'"'
+			}		// N.B. scatter if `toused' <-- "dummy obs" for consistent weighting
+			
+			* CONFIDENCE INTERVAL PLOT
+			// N.B. options already processed
+			local CIPlotOpts `"`defCIOpts' `ciopts'"'
 			
 			// default: both ends within scale (i.e. no arrows)
-			local pCIPlot `"`macval(pCIPlot)' || `pCIPlotType' `_LCI' `_UCI' `id' if `touse' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals') & !`offscaleL' & !`offscaleR', hor `macval(pCIPlotOpts)'"'
+			local CIPlot `"`macval(CIPlot)' || `CIPlotType' `_LCI' `_UCI' `id' if `touse2' & !`offscaleL' & !`offscaleR', hor `macval(CIPlotOpts)'"'
 
-			// if arrows are required
-			qui count if inlist(`plotid', `pplvals') & `offscaleL' & `offscaleR'
+			// if arrows required
+			qui count if `touse2' & `offscaleL' & `offscaleR'
 			if r(N) {													// both ends off scale
-				local pCIPlot `"`macval(pCIPlot)' || pcbarrow `id' `_LCI' `id' `_UCI' if `touse' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals') & `offscaleL' & `offscaleR', `macval(pCIPlotOpts)'"'
+				local CIPlot `"`macval(CIPlot)' || pcbarrow `id' `_LCI' `id' `_UCI' if `touse2' & `offscaleL' & `offscaleR', `macval(CIPlotOpts)'"'
 			}
-			qui count if inlist(`plotid', `pplvals') & `offscaleL' & !`offscaleR'
+			qui count if `touse2' & `offscaleL' & !`offscaleR'
 			if r(N) {													// only left off scale
-				local pCIPlot `"`macval(pCIPlot)' || pcarrow `id' `_UCI' `id' `_LCI' if `touse' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals') & `offscaleL' & !`offscaleR', `macval(pCIPlotOpts)'"'
-				if "`pCIPlotType'" == "rcap" {			// add cap to other end if appropriate
-					local pCIPlot `"`macval(pCIPlot)' || rcap `_UCI' `_UCI' `id' if `touse' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals') & `offscaleL' & !`offscaleR', hor `macval(pCIPlotOpts)'"'
+				local CIPlot `"`macval(CIPlot)' || pcarrow `id' `_UCI' `id' `_LCI' if `touse2' & `offscaleL' & !`offscaleR', `macval(CIPlotOpts)'"'
+				if "`CIPlotType'" == "rcap" {			// add cap to other end if appropriate
+					local CIPlot `"`macval(CIPlot)' || rcap `_UCI' `_UCI' `id' if `touse2' & `offscaleL' & !`offscaleR', hor `macval(CIPlotOpts)'"'
 				}
 			}
-			qui count if inlist(`plotid', `pplvals') & !`offscaleL' & `offscaleR'
+			qui count if `touse2' & !`offscaleL' & `offscaleR'
 			if r(N) {													// only right off scale
-				local pCIPlot `"`macval(pCIPlot)' || pcarrow `id' `_LCI' `id' `_UCI' if `touse' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals') & !`offscaleL' & `offscaleR', `macval(pCIPlotOpts)'"'
-				if "`pCIPlotType'" == "rcap" {			// add cap to other end if appropriate
-					local pCIPlot `"`macval(pCIPlot)' || rcap `_LCI' `_LCI' `id' if `touse' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals') & !`offscaleL' & `offscaleR', hor `macval(pCIPlotOpts)'"'
+				local CIPlot `"`macval(CIPlot)' || pcarrow `id' `_LCI' `id' `_UCI' if `touse2' & !`offscaleL' & `offscaleR', `macval(CIPlotOpts)'"'
+				if "`CIPlotType'" == "rcap" {			// add cap to other end if appropriate
+					local CIPlot `"`macval(CIPlot)' || rcap `_LCI' `_LCI' `id' if `touse2' & !`offscaleL' & `offscaleR', hor `macval(CIPlotOpts)'"'
 				}
-			}				
-			local ppointPlot `"`macval(ppointPlot)' || scatter `id' `_ES' if `touse' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals'), `DefPPointopts' `ppointopts'"'		
-		}
+			}
+
+			* POINT PLOT (point estimates -- except if "classic")
+			if "`classic'" == "" {
+				local pointPlot `"`macval(pointPlot)' || scatter `id' `_ES' if `touse2', `defPointOpts' `pointopts'"'
+			}
+		}			// end if r(N) [i.e. if any obs with _USE==1 & plotid==`ppvals']
 		
-		* PREDICTION INTERVAL
-		if `"`rfdist'"'==`""' {
-			if `"`rfopts'"'!=`""' {
-				nois disp as err `"prediction interval not specified; relevant options will be ignored"'
+		
+		* POOLED EFFECT MARKERS
+		local touse2 `"`touse' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals')"'		// use local, not tempvar, so conditions are copied into plot commands
+		qui count if `touse2'			
+		if r(N) {
+
+			* DIAMONDS; START FROM 9 O'CLOCK AND WORK ROUND
+			* Assume diamond if no "pooled point/CI" options, and no "interaction" option
+			if trim(`"`ppointopts'`pciopts'`interaction'`diamonds'"') == `""' {
+				local diamPlotOpts `"`defDiamOpts' `diamopts'"'
+				local diamPlot `"`macval(diamPlot)' || pcspike `DiamLeftY1' `DiamLeftX' `DiamTopY' `DiamTopX' if `touse2', `macval(diamPlotOpts)'"'
+				local diamPlot `"`macval(diamPlot)' || pcspike `DiamTopY' `DiamTopX' `DiamRightY1' `DiamRightX' if `touse2', `macval(diamPlotOpts)'"'
+				local diamPlot `"`macval(diamPlot)' || pcspike `DiamRightY2' `DiamRightX' `DiamBottomY' `DiamBottomX' if `touse2', `macval(diamPlotOpts)'"'
+				local diamPlot `"`macval(diamPlot)' || pcspike `DiamBottomY' `DiamBottomX' `DiamLeftY2' `DiamLeftX' if `touse2', `macval(diamPlotOpts)'"'
 			}
-		}
-		else {
-			local 0 `", `rfopts'"'
-			syntax [, HORizontal VERTical Connect(string asis) RCAP LColor(string asis) MColor(string asis) LWidth(string asis) MLWidth(string asis) * ]	// check for disallowed options + rcap
-			if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
-				nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:rfopts()}"'
-				exit 198
-			}			
-			if `"`connect'"' != `""' {
-				nois disp as err `"suboption {bf:connect()} not allowed in option {bf:rfopts()}"'
-				exit 198
-			}
-			if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""' {
-				local mcolor `lcolor'						// for pc(b)arrow
-			}
-			if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' {
-				local mlwidth `lwidth'						// for pc(b)arrow
-			}
-			local rfopts
-			foreach opt in mcolor lcolor mlwidth lwidth {
-				if `"``opt''"'!=`""' {
-					local rfopts `"`rfopts' `opt'(``opt'')"'
+		
+			* POOLED EFFECT - PPOINT/PCI
+			else {
+				if `"`diamopts'"'!=`""' {
+					nois disp as err `"Note: suboptions for both diamond and pooled point/CI specified;"'
+					nois disp as err `"      diamond suboptions will be ignored"'
+				}	
+
+				// N.B. options already processed
+				local PCIPlotOpts `"`defPCIOpts' `pciopts'"'
+				
+				// default: both ends within scale (i.e. no arrows)
+				local PCIPlot `"`macval(PCIPlot)' || `PCIPlotType' `_LCI' `_UCI' `id' if `touse2' & !`offscaleL' & !`offscaleR', hor `macval(PCIPlotOpts)'"'
+
+				// if arrows are required
+				qui count if `touse2' & `offscaleL' & `offscaleR'
+				if r(N) {													// both ends off scale
+					local PCIPlot `"`macval(PCIPlot)' || pcbarrow `id' `_LCI' `id' `_UCI' if `touse2' & `offscaleL' & `offscaleR', `macval(PCIPlotOpts)'"'
 				}
+				qui count if `touse2' & `offscaleL' & !`offscaleR'
+				if r(N) {													// only left off scale
+					local PCIPlot `"`macval(PCIPlot)' || pcarrow `id' `_UCI' `id' `_LCI' if `touse2' & `offscaleL' & !`offscaleR', `macval(PCIPlotOpts)'"'
+					if "`PCIPlotType'" == "rcap" {			// add cap to other end if appropriate
+						local PCIPlot `"`macval(PCIPlot)' || rcap `_UCI' `_UCI' `id' if `touse2' & `offscaleL' & !`offscaleR', hor `macval(PCIPlotOpts)'"'
+					}
+				}
+				qui count if `touse2' & !`offscaleL' & `offscaleR'
+				if r(N) {													// only right off scale
+					local PCIPlot `"`macval(PCIPlot)' || pcarrow `id' `_LCI' `id' `_UCI' if `touse2' & !`offscaleL' & `offscaleR', `macval(PCIPlotOpts)'"'
+					if "`PCIPlotType'" == "rcap" {			// add cap to other end if appropriate
+						local PCIPlot `"`macval(PCIPlot)' || rcap `_LCI' `_LCI' `id' if `touse2' & !`offscaleL' & `offscaleR', hor `macval(PCIPlotOpts)'"'
+					}
+				}				
+				local ppointPlot `"`macval(ppointPlot)' || scatter `id' `_ES' if `touse2', `defPPointOpts' `ppointopts'"'		
 			}
-			local rfopts `"`rfopts' `options'"'
-			local RFPlotType = cond("`rcap'"=="", "`RFPlotType'", "rcap")			// overwrite global status if appropriate
-				
-			// do this slightly differently from CIPlot, as we are *always* dealing with two separate (left/right) lines here
-			local rfPlotOpts `"`DefRFopts' `rfopts'"'
+		
+			* PREDICTION INTERVAL
+			if `"`rfdist'"'!=`""' {
 			
-			// left-hand end
-			local RFPlot `"`macval(RFPlot)' || `RFPlot`p'Type' `_LCI' `_rfLCI' `id' if `touse' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals') & !`rfoffscaleL', hor `macval(rfPlotOpts)'"'
-			qui count if inlist(`plotid', `pplvals') & `rfoffscaleL'
-			if r(N) {										// left off scale
-				local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_LCI' `id' `_rfLCI' if `touse' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals') & `rfoffscaleL', `macval(rfPlotOpts)'"'
-			}
+				// N.B. options already processed
+				local RFPlotOpts `"`defRFOpts' `rfopts'"'
+			
+				// if overlay, use same approach as for CI/PCI
+				if `"`g_overlay'"'!=`""' {
+					local touse_add `"float(`_rfUCI')>=float(`CXmin') & float(`_rfLCI')<=float(`CXmax') & float(`_rfLCI')!=float(`_rfUCI')"'
+			
+					// default: both ends within scale (i.e. no arrows)
+					local touse3 `"`touse2' & !`rfLoffscaleL' & !`rfRoffscaleR' & `touse_add'"'
+					local RFPlot `"`macval(RFPlot)' || `RFPlotType' `_rfLCI' `_rfUCI' `id' if `touse3', hor `macval(RFPlotOpts)'"'
+
+					// if arrows required
+					local touse3 `"`touse2' & `rfLoffscaleL' & `rfRoffscaleR' & `touse_add'"'
+					qui count if `touse3'
+					if r(N) {													// both ends off scale
+						local RFPlot `"`macval(RFPlot)' || pcbarrow `id' `_rfLCI' `id' `_rfUCI' if `touse3', `macval(RFPlotOpts)'"'
+					}
+					local touse3 `"`touse2' & `rfLoffscaleL' & !`rfRoffscaleR' & `touse_add'"'
+					qui count if `touse3'
+					if r(N) {													// only left off scale
+						local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_rfUCI' `id' `_rfLCI' if `touse3', `macval(RFPlotOpts)'"'
+						if "`RFPlotType'" == "rcap" {			// add cap to other end if appropriate
+							local RFPlot `"`macval(RFPlot)' || rcap `_rfUCI' `_rfUCI' `id' if `touse3', hor `macval(RFPlotOpts)'"'
+						}
+					}
+					local touse3 `"`touse2' & !`rfLoffscaleL' & `rfRoffscaleR' & `touse_add'"'
+					qui count if `touse3'
+					if r(N) {													// only right off scale
+						local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_rfLCI' `id' `_rfUCI' if `touse3', `macval(RFPlotOpts)'"'
+						if "`RFPlotType'" == "rcap" {			// add cap to other end if appropriate
+							local RFPlot `"`macval(RFPlot)' || rcap `_rfLCI' `_rfLCI' `id' if `touse3', hor `macval(RFPlotOpts)'"'
+						}
+					}
+				}
 				
-			// right-hand end
-			local RFPlot `"`macval(RFPlot)' || `RFPlot`p'Type' `_UCI' `_rfUCI' `id' if `touse' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals') & !`rfoffscaleR', hor `macval(rfPlotOpts)'"'
-			qui count if inlist(`plotid', `pplvals') & `rfoffscaleR'
-			if r(N) {										// right off scale
-				local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_UCI' `id' `_rfUCI' if `touse' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals') & `rfoffscaleR', `macval(rfPlotOpts)'"'
-			}
-		}
+				// otherwise, need to do it slightly differently, as we are dealing with two separate (left/right) lines
+				else {
+				
+					// identify special cases where only one line required, with two arrows
+					local touse3 `"`touse2' & (`rfLoffscaleL' & `rfLoffscaleR') | (`rfRoffscaleL' & `rfRoffscaleR')"'
+					qui count if `touse3'
+					if r(N) {
+						local RFPlot `"`macval(RFPlot)' || pcbarrow `id' `_rfLCI' `id' `_rfUCI' if `touse3', `macval(RFPlotOpts)'"'
+					}
+					
+					// left-hand line
+					local touse_add `"float(`_rfLCI')<=float(`CXmax') & float(`_rfLCI')!=float(`_LCI')"'
+
+					local touse3 `"`touse2' & !`rfLoffscaleL' & !`rfLoffscaleR' & !`offscaleL' & `touse_add'"'
+					local RFPlot `"`macval(RFPlot)' || `RFPlotType' `_LCI' `_rfLCI' `id' if `touse3', hor `macval(RFPlotOpts)'"'
+					
+					local touse3 `"`touse2' & `rfLoffscaleL' & !`rfLoffscaleR' & !`offscaleL' & `touse_add'"'
+					qui count if `touse3'
+					if r(N) {										// left-hand end off scale
+						local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_LCI' `id' `_rfLCI' if `touse3', `macval(RFPlotOpts)'"'
+					}
+
+					local touse3 `"`touse2' & !`rfLoffscaleL' & `rfLoffscaleR' & !`offscaleL' & `touse_add'"'
+					qui count if `touse3'
+					if r(N) {										// right-hand end off scale
+						local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_rfLCI' `id' `_LCI' if `touse3', `macval(RFPlotOpts)'"'
+					}
+
+					// right-hand line
+					local touse_add `"float(`_rfUCI')>=float(`CXmin') & float(`_rfUCI')!=float(`_UCI')"'
+					
+					local touse3 `"`touse2' & !`rfRoffscaleL' & !`rfRoffscaleR' & !`offscaleR' & `touse_add'"'
+					local RFPlot `"`macval(RFPlot)' || `RFPlotType' `_UCI' `_rfUCI' `id' if `touse3', hor `macval(RFPlotOpts)'"'
+					
+					local touse3 `"`touse2' & `rfRoffscaleL' & !`rfRoffscaleR' & !`offscaleR' & `touse_add'"'
+					qui count if `touse3'
+					if r(N) {										// left-hand end off scale
+						local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_rfUCI' `id' `_UCI' if `touse3', `macval(RFPlotOpts)'"'
+					}
+
+					local touse3 `"`touse2' & !`rfRoffscaleL' & `rfRoffscaleR' & !`offscaleR' & `touse_add'"'
+					qui count if `touse3'
+					if r(N) {										// right-hand end off scale
+						local RFPlot `"`macval(RFPlot)' || pcarrow `id' `_UCI' `id' `_rfUCI' if `touse3', `macval(RFPlotOpts)'"'
+					}
+				}
+			}		// end if `"`rfdist'"'!=`""'
+		}		// end if r(N) [i.e. if any obs with _USE==3,5 & plotid==`ppvals']
 	}		// end if `"`pplvals'"'!=`""'
 		
 	// END GRAPH OPTS
-
+	
+	
 	// DF: modified to use added line approach instead of pcspike (less complex & poss. more efficient as fewer vars)
 	// null line (unless switched off)
 	if "`null'" == "" {
@@ -1602,39 +1795,52 @@ syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varnam
 			nois disp as err `"suboption {bf:connect()} not allowed in option {bf:nlineopts()}"'
 			exit 198
 		}
-		local nullCommand `"|| function y=`h0', horiz range(`DYmin' `borderline') n(2) lwidth(thin) lcolor(black) `options'"'
+		local nullCommand `"|| function y=`h0', horiz range(`DYmin' `borderline') n(2) `defNlineOpts' `options'"'
 	}
 
 
-
+	
 	***************************
 	***     DRAW GRAPH      ***
 	***************************
 	
+	// Re-ordered 28th June 2017 so that all twoway options are given together at the end
+	
 	#delimit ;
 
 	twoway
-	/* OVERALL AND NULL LINES FIRST */ 
+	
+	/* OVERALL AND NULL LINES FIRST (plus plot-specific options) */ 
 		`olinePlot' `nullCommand'
-	/* PLOT BOXES AND PUT ALL THE GRAPH OPTIONS IN THERE */ 
-		`scPlot' yscale(range(`DYmin' `DYmax') noline) ylabel(none) ytitle("")
-			xscale(range(`AXmin' `AXmax')) xlabel(`xlabcmd', labsize(`textSize') `xlabopts')
-			yline(`borderline', lwidth(thin) lcolor(gs12))
-	/* FAVOURS OR XTITLE */
-		`favopt' `xtitleopt'
-	/* PUT LABELS UNDER xticks? Yes as labels now extended */
-		xtitle(" ") legend(off) xtick(`xticklist')
-	/* NEXT, CONFIDENCE INTERVALS (plus offscale if necessary) */
-		`CIPlot'
+	
+	/* WEIGHTED SCATTERPLOT BOXES (plus plot-specific options) */ 
+	/*  and CONFIDENCE INTERVALS (incl. "offscale" if necessary) */
+		`scPlot' `CIPlot'
+	
 	/* DIAMONDS (or markers+CIs if appropriate) FOR SUMMARY ESTIMATES */
-	/* (and Prediction Intervals) */
-		`diamPlot' `ppointPlot' `pCIPlot' `RFPlot'
+	/* (and Prediction Intervals if appropriate; plus plot-specific options) */
+	/*  then last of all PLOT EFFECT MARKERS to clarify */
+		`RFPlot' `PCIPlot' `diamPlot' `pointPlot' `ppointPlot' 
+	
 	/* COLUMN VARIBLES (including effect sizes and weights on RHS by default) */
 		`lcolCommands' `rcolCommands'
-	/* LAST OF ALL PLOT EFFECT MARKERS TO CLARIFY */
-		`pointPlot'
-	/* Other options */
-		|| , `graphopts' /* RMH added */ plotregion(margin(zero)) ;
+	
+	/* GLOBAL TWOWAY OPTIONS */
+		|| , 
+	
+	/* Y-axis options */
+		yscale(range(`DYmin' `DYmax') noline) ylabel(none) ytitle("")
+			yline(`borderline', lwidth(thin) lcolor(gs12))
+	
+	/* X-axis options */
+		xscale(range(`AXmin' `AXmax')) xlabel(`xlabcmd', labsize(`textSize') `xlabopts')
+			xtitle(" ") legend(off) xtick(`xticklist', `xtickopts')		
+	
+	/* FAVOURS OR XTITLE */
+		`favopt' `xtitleopt'
+	
+	/* Other twoway options (`graphopts' = user-specified) */
+		`graphopts' plotregion(margin(zero)) ;
 
 	#delimit cr
 
@@ -1726,69 +1932,100 @@ end
 ******************
 
 
+* MyGetEFormOpts
+// Basically _get_eformopts plus a bit extra!
+// This program is used by -ipdmetan-, admetan- and -forestplot-
+// Not all aspects are relevant to all subroutines, but easier to maintain just a single program!
+
+program define MyGetEFormOpts, rclass
+	
+	// First, parse RR, since we want to stop it being interpreted as RRR by _get_eformopts
+	syntax [name(name=cmdname)] , [ RR * ]
+
+	** Estimation command syntax: use standard _check_eformopt
+	if `"`cmdname'"'!=`""' {
+		_check_eformopt `cmdname', eformopts(`options') soptions
+		local eform = cond(`"`s(eform)'"'!=`""', "eform", "")
+		local effect  `"`s(str)'"' 
+		local summstat = cond(`"`s(opt)'"'==`"eform"', `""', `"`s(opt)'"')
+	}
+	
+	** Non-estimation command syntax:
+	// First, try _get_eformopts
+	else {
+		_get_eformopts, soptions eformopts(`options') allowed(__all__)
+		local eform = cond(`"`s(eform)'"'!=`""', "eform", "")
+		local effect  `"`s(str)'"' 
+		local summstat = cond(`"`s(opt)'"'==`"eform"', `""', `"`s(opt)'"')
+	}
+	
+	// Next, parse `anything' to extract anything that wouldn't usually be interpreted by _get_eformopts
+	//  that is: mean differences (`md', `smd', `wmd'); `rd';
+	//  `rr' (since this would usually be interpreted as `rrr' by _get_eformopts)
+	//  `coef'/`log', and `nohr' & `noshr' (which imply `log')
+	// (N.B. do this even if a valid option was found by _get_eformopts, since we still need to check for multiple options)
+	local 0 `", `s(options)' `rr'"'
+	syntax , [ COEF LOG MD SMD WMD RR RD NOHR NOSHR * ]
+
+	// identify multiple options; exit with error if found
+	if `"`summstat'"'!=`""' & `"`md'`smd'`wmd'`rr'`rd'`nohr'`noshr'"'!=`""' {
+		opts_exclusive "`summstat' `md' `smd' `wmd' `rr' `rd' `nohr' `noshr'"
+	}
+	
+	if `"`md'`wmd'"'!=`""' {		// MD and WMD are synonyms
+		local effect `"WMD"'
+		local summstat "wmd"
+	}
+	else if "`rr'"!="" {
+		local effect `"Risk Ratio"'
+		local summstat "rr"
+		local eform `"eform"'
+	}
+	else {
+		local effect = cond("`smd'"!="", `"SMD"', ///
+			cond("`rd'"!="", `"Risk Diff."', ///
+			cond("`rr'"!="", `"Risk Ratio"', `"`effect'"')))
+		local summstat = cond(`"`summstat'"'==`""', `"`smd'`rd'`rr'"', `"`summstat'"')
+	}
+	else local summstat = cond(`"`nohr'"'!=`""', "hr", cond(`"`noshr'"'!=`""', "shr", `"`summstat'"'))
+
+	// log always takes priority over eform
+	// ==> cancel eform if appropriate
+	local log = cond(`"`coef'"'!=`""', `"log"', `"`log'"')				// `coef' is a synonym for `log'
+	if `"`log'"'!=`""' & inlist("`summstat'", "rd", "smd", "wmd") {
+		nois disp as err "Log option only appropriate with ratio statistics"
+		exit 198
+	}
+	if `"`log'`nohr'`noshr'"'!=`""' {
+		local eform
+		local log "log"
+	}
+	
+	return local eform    `"`eform'"'
+	return local log      `"`log'"'
+	return local summstat `"`summstat'"'
+	return local effect   `"`effect'"'
+	return local options  `"`options'"'
+
+end
+
+
+
 * Subroutine to sort out labels and ticks for x-axis, and find DXmin/DXmax (and CXmin/CXmax if different)
 * Created August 2016
 * Last modified May 2017
 
 program define ProcessXLabs, rclass
 
-	syntax anything [, XLABEL(string) XTICK(string) RAnge(string) CIRAnge(numlist min=2 max=2) EFORM H0(real 0) noNULL]
+	syntax anything [, XLABEL(string) XTICK(string) RAnge(string) CIRAnge(string) EFORM H0(real 0) noNULL]
 	
 	tokenize `anything'
 	args DXmin DXmax
+	
 
-	if `"`cirange'"' != `""' {
-		tokenize `anything'
-		args CXmin CXmax
-	}
-	
-	* Parse xlabel if supplied by user
-	local 0 `"`xlabel'"'
-	syntax [anything(name=xlablist)] , [FORCE FORMAT(string) * ]	
-	
-	if `"`xlablist'"' != `""' {
-		if `"`eform'"'!=`""' {					// assume given on exponentiated scale if "eform" specified, so need to take logs
-			numlist "`xlablist'", range(>0)		// in which case, all values must be greater than zero
-			local exlablist `xlablist'
-			local xlablist
-			foreach xi of numlist `exlablist' {
-				local xlablist `"`xlablist' `=ln(`xi')'"'
-			}
-		}
-		
-		if "`force'"!=`""' {
-			if "`cirange'"!="" {
-				disp as err `"Note: both {bf:cirange()} and {bf:xlabel(, force)} were specifed; {bf:cirange()} takes precedence"'
-			}
-			else {
-				numlist "`xlablist'", sort
-				local n : word count `r(numlist)' 
-				local CXmin : word 1 of `r(numlist)'
-				local CXmax : word `n' of `r(numlist)'
-			}
-		}		
-	}
-	
-	* Parse ticks
-	// JUN 2015 -- for future: is there any call for allowing FORCE, or similar, for ticks??
-	if "`xtick'" != "" {
-		gettoken xticklist : xtick, parse(",")
-		if `"`eform'"'!=`""' {						// assume given on exponentiated scale if "eform" specified, so need to take logs
-			numlist "`xticklist'", range(>0)		// ...in which case, all values must be greater than zero
-			local exticklist `xticklist'
-			local xticklist
-			foreach xi of numlist `exticklist' {
-				local xticklist `"`xticklist' `=ln(`xi')'"'
-			}
-		}
-		else {
-			numlist "`xticklist'"
-			local xticklist=r(numlist)
-		}
-	}
-
-	* `range' and `cirange': in both cases, "min" and "max" refer to initial values of `DXmin', `DXmax'
-	// that is, range of data in terms of LCI, UCI
+	* Parse `range' and `cirange'
+	// in both cases, "min" and "max" refer to range of data in terms of LCI, UCI
+	// (that is, initial values of `DXmin', `DXmax')
 	if "`range'" != `""' {
 		tokenize `range'
 		cap {
@@ -1801,14 +2038,22 @@ program define ProcessXLabs, rclass
 		}
 		
 		// if "min", "max" used
+		if `"`1'"'!=`"min"' return local adjust "noadjust"		// invoke "noadjust" if range specified, unless "min"
 		if inlist(`"`1'"', "min", "max") | inlist(`"`2'"', "min", "max") {
-			foreach minmax in min max {
+			if `"`eform'"'!=`""' {
 				forvalues i=1/2 {
-					if `"``i''"'==`"`minmax'"' local RX`minmax' = `DX`minmax''
+					cap confirm number ``i''
+					if !_rc local `i' = ln(``i'')
 				}
 			}
-			local range `"`RXmin' `RXmax'"'
-		}
+			local range `"`1' `2'"'
+			local range = subinstr(`"`range'"', `"min"', `"`DXmin'"', .)
+			local range = subinstr(`"`range'"', `"max"', `"`DXmax'"', .)
+			numlist "`range'", min(2) max(2) sort
+			local range = r(numlist)
+			tokenize "`range'"
+			args RXmin RXmax
+		}	
 		
 		else {
 			if `"`eform'"'!=`""' {
@@ -1837,14 +2082,21 @@ program define ProcessXLabs, rclass
 		
 		// if "min", "max" used
 		if inlist(`"`1'"', "min", "max") | inlist(`"`2'"', "min", "max") {
-			foreach minmax in min max {
+			if `"`eform'"'!=`""' {
 				forvalues i=1/2 {
-					if `"``i''"'==`"`minmax'"' local CX`minmax' = `DX`minmax''
+					cap confirm number ``i''
+					if !_rc local `i' = ln(``i'')
 				}
 			}
-			local cirange `"`CXmin' `CXmax'"'
-		}
-		
+			local cirange `"`1' `2'"'
+			local cirange = subinstr(`"`cirange'"', `"min"', `"`DXmin'"', .)
+			local cirange = subinstr(`"`cirange'"', `"max"', `"`DXmax'"', .)
+			numlist "`cirange'", min(2) max(2) sort
+			local cirange = r(numlist)
+			tokenize "`cirange'"
+			args CXmin CXmax
+		}	
+
 		else {
 			if `"`eform'"'!=`""' {
 				numlist "`cirange'", min(2) max(2) range(>0) sort
@@ -1859,8 +2111,70 @@ program define ProcessXLabs, rclass
 		}
 	}
 	
+	
+	* Parse xlabel if supplied by user
+	local 0 `"`xlabel'"'
+	syntax [anything(name=xlablist)] , [FORCE FORMAT(string) * ]	
+	local xlabopts `"`options'"'
+	
+	if `"`xlablist'"' != `""' {
+		if `"`eform'"'!=`""' {					// assume given on exponentiated scale if "eform" specified, so need to take logs
+			numlist "`xlablist'", range(>0)		// in which case, all values must be greater than zero
+			local exlablist `xlablist'
+			local xlablist
+			foreach xi of numlist `exlablist' {
+				local xlablist `"`xlablist' `=ln(`xi')'"'
+			}
+		}
+		
+		if "`force'"!=`""' {
+			if "`cirange'"!="" {
+				disp as err `"Note: both {bf:cirange()} and {bf:xlabel(, force)} were specifed; {bf:cirange()} takes precedence"'
+			}
+			else {
+				numlist "`xlablist'", sort
+				local n : word count `r(numlist)'
+				
+				// added Sep 2017 for v2.1
+				if `"`range'"'==`""' {
+					local RXmin : word 1 of `r(numlist)'		// if `range' not specified, default to "forced" xlab limits
+					local RXmax : word `n' of `r(numlist)'
+				}
+				else {
+					local CXmin : word 1 of `r(numlist)'		// otherwise, set `cirange' instead
+					local CXmax : word `n' of `r(numlist)'
+				}
+			}
+		}		
+	}
+
+	
+	* Parse ticks
+	// JUN 2015 -- for future: is there any call for allowing FORCE, or similar, for ticks??
+	if "`xtick'" != "" {
+		local 0 `"`xtick'"'
+		syntax [anything(name=xticklist)] , [ * ]	
+		local xtickopts `"`options'"'	
+	
+		if `"`xticklist'"' != `""' {
+			if `"`eform'"'!=`""' {						// assume given on exponentiated scale if "eform" specified, so need to take logs
+				numlist "`xticklist'", range(>0)		// ...in which case, all values must be greater than zero
+				local exticklist `xticklist'
+				local xticklist
+				foreach xi of numlist `exticklist' {
+					local xticklist `"`xticklist' `=ln(`xi')'"'
+				}
+			}
+			else {
+				numlist "`xticklist'"
+				local xticklist=r(numlist)
+			}
+		}
+	}
+
+	
 	* Check validity of user-defined values
-	if "`range'"!=`""' & "`cirange'"!=`""' {
+	if `"`range'"'!=`""' & `"`cirange'"'!=`""' {
 		cap {
 			assert `RXmin' <= `CXmin'
 			assert `RXmax' >= `CXmax'
@@ -1870,38 +2184,35 @@ program define ProcessXLabs, rclass
 			exit 198
 		}
 	}
-	else if "`range'"==`""' & trim("`cirange'`force'")!=`""' {
-		local RXmin = max(`CXmin', `DXmin')
-		local RXmax = min(`CXmax', `DXmax')
-	}
-	else if trim("`cirange'`force'")==`""' & "`range'"!=`""' {
+
+	// changed Sep 2017 for v2.1
+	else if `"`cirange'"'==`""' & `"`range'"'!=`""' {
 		local CXmin = max(`RXmin', `DXmin')
 		local CXmax = min(`RXmax', `DXmax')
 	}
 	
-	// remove null line if `cirange' specified (or `range' without `cirange') and `h0' lies outside it
+	// remove null line if lies outside range of x values to be plotted
 	if "`null'"=="" & trim("`cirange'`range'`force'")!="" {
-		if trim("`cirange'`force'")!="" local null_list `"`CXmin' `CXmax'"'
-		if "`range'"!=""   local null_list `"`null_list'  `RXmin' `RXmax'"'
-		numlist `"`null_list'"', sort
-		local n : word count `r(numlist)' 
-		local rangemin : word 1 of `r(numlist)'
-		local rangemax : word `n' of `r(numlist)'		
-		if `h0' < `rangemin' | `h0' > `rangemax' {
+		local removeNull = 0
+		if `"`cirange'"'!=`""' {
+			local removeNull = (`h0' < `CXmin' | `h0' > `CXmax')
+		}
+		else local removeNull = (`h0' < `RXmin' | `h0' > `RXmax')
+		// else local removeNull = (`h0' < `DXmin' | `h0' > `DXmax')
+
+		if `removeNull' {
 			nois disp as err "null line lies outside of user-specified x-axis range and will be suppressed"
 			local null "nonull"
 		}
-	}		
+	}
 	return local null `null'
 
+	
 	* If xlabel not supplied by user, need to choose sensible values
 	// Default is for symmetrical limits, with 3 labelled values including null
 	// N.B. First modified from original -metan- code by DF, March 2013
 	//  with further improvements by DF, January 2015
 	// Last modifed by DF April 2017 to avoid interminable looping if [base]^`mag' = missing
-
-	// use CXmin, CXmax if defined; otherwise use DXmin, DXmax
-	local cx = cond(trim("`range'`cirange'`force'")!="", "CX", "DX")
 
 	local xlablim1=0		// init
 	if `"`xlablist'"' == `""' {
@@ -1909,15 +2220,15 @@ program define ProcessXLabs, rclass
 		// If null line, choose values based around `h0'
 		// (i.e. `xlabinit1' = `h0'... but `h0' is automatically selected anyway so no need to explicitly define `xlabinit1')
 		if "`null'" == "" {
-			local xlabinit2 = max(abs(``cx'min' - `h0'), abs(``cx'max' - `h0'))
+			local xlabinit2 = max(abs(`DXmin' - `h0'), abs(`DXmax' - `h0'))
 			local xlabinit "`xlabinit2'"
 		}
 		
 		// if `nulloff', choose values in two stages: firstly based on the midpoint between CXmin and CXmax (`xlab[init|lim]1')
 		//  and then based on the difference between CXmin/CXmax and the midpoint (`xlab[init|lim]2')
 		else {
-			local xlabinit1 = (``cx'max' + ``cx'min')/2
-			local xlabinit2 = abs(``cx'max' - `xlabinit1')		// N.B. same as abs(`CXmin' - `xlabinit1')
+			local xlabinit1 = (`DXmax' + `DXmin')/2
+			local xlabinit2 = abs(`DXmax' - `xlabinit1')		// N.B. same as abs(`CXmin' - `xlabinit1')
 			if float(`xlabinit1') != 0 {
 				local xlabinit "`=abs(`xlabinit1')' `xlabinit2'"
 			}
@@ -1925,7 +2236,7 @@ program define ProcessXLabs, rclass
 		}
 		assert "`xlabinit'"!=""
 		assert "`xlabinit2'"!=""
-		assert `: word count `xlabinit'' == ("`null'"!="")*(float(``cx'max')!=-float(``cx'min')) + 1		// should be >= 1
+		assert `: word count `xlabinit'' == ("`null'"!="")*(float(`DXmax')!=-float(`DXmin')) + 1		// should be >= 1
 		
 		local counter=1
 		foreach xval of numlist `xlabinit' {
@@ -1997,21 +2308,21 @@ program define ProcessXLabs, rclass
 			// if data are "too far" from null (`h0'), take one limit (but not the other) plus null
 			//   where "too far" ==> abs(`CXmin' - `h0') > `CXmax' - `CXmin'
 			//   (this works whether data are "too far" to the left OR right, since our limits are symmetrical about `h0')
-			if abs(``cx'min' - `h0') > ``cx'max' - ``cx'min' {
-				if `3' > ``cx'max'      numlist `"`1' `h0'"'
-				else if `1' < ``cx'min' numlist `"`h0' `3'"'
+			if abs(`DXmin' - `h0') > `DXmax' - `DXmin' {
+				if `3' > `DXmax'      numlist `"`1' `h0'"'
+				else if `1' < `DXmin' numlist `"`h0' `3'"'
 			}
 			else if trim("`range'`cirange'`force'")=="" {		// "standard" situation
 				numlist `"`1' `h0' `3'"'
-				local `cx'min = `h0' - `xlabinit2'
-				local `cx'max = `h0' + `xlabinit2'
+				local DXmin = `h0' - `xlabinit2'
+				local DXmax = `h0' + `xlabinit2'
 			}
 		}
 		local xlablist=r(numlist)
 
 	}		// end if "`xlablist'" == ""
 
-	if "`xtick'" == "" {
+	if "`xticklist'" == "" {
 		local xticklist `"`xlablist'"'	// if not specified, default to same as labels	
 	}
 
@@ -2027,35 +2338,38 @@ program define ProcessXLabs, rclass
 		// if "too far", adjust `CXmin' and/or `CXmax' to reflect this
 		//   where "too far" ==> max(abs(`CXmin'-`h0'), abs(`CXmax'-`h0')) > `CXmax' - `CXmin'
 		if "`null'"=="" {		
-			if `h0' - ``cx'max' > ``cx'max' - ``cx'min' {						// data "too far" to the left
-				local `cx'max = max(`h0' + .5*(``cx'max'-``cx'min'), `XLmax')	// clip the right-hand side
+			if `h0' - `DXmax' > `DXmax' - `DXmin' {						// data "too far" to the left
+				local DXmax = max(`h0' + .5*(`DXmax'-`DXmin'), `XLmax')	// clip the right-hand side
 			}	
-			if ``cx'min' - `h0' > ``cx'max' - ``cx'min' {						// data "too far" to the right
-				local `cx'min = min(`h0' - .5*(``cx'max'-``cx'min'), `XLmin')	// clip the left-hand side
+			if `DXmin' - `h0' > `DXmax' - `DXmin' {						// data "too far" to the right
+				local DXmin = min(`h0' - .5*(`DXmax'-`DXmin'), `XLmin')	// clip the left-hand side
 			}
 			local toofar "toofar"
 		}
 	
 		if `"`toofar'"'==`""' {
-			local `cx'min = -max(abs(``cx'min'), abs(``cx'max'))
-			local `cx'max =  max(abs(``cx'min'), abs(``cx'max'))
+			local DXmin = -max(abs(`DXmin'), abs(`DXmax'))
+			local DXmax =  max(abs(`DXmin'), abs(`DXmax'))
 		}
 	}
 	
 	* Final calculation of DXmin, DXmax
-	numlist `"``cx'min' ``cx'max' `RXmin' `RXmax' `XLmin' `XLmax'"', sort
+	if trim(`"`RXmin'`RXmax'"')!=`""' {
+		numlist `"`RXmin' `RXmax'"', sort
+	}
+	else {
+		numlist `"`DXmin' `DXmax' `XLmin' `XLmax'"', sort
+	}
 	local n : word count `r(numlist)' 
 	local DXmin : word 1 of `r(numlist)'
 	local DXmax : word `n' of `r(numlist)'
-
+	
 	if trim(`"`CXmin'`CXmax'"')==`""' {
 		local CXmin = `DXmin'
 		local CXmax = `DXmax'
-	}
+	}	
 	
 	// Position of xtitle
-	// local xlablim1 = cond("`xlablist'"=="", `xlablim1', .5*(`CXmin' + `CXmax'))
-	// local xtitleval = cond("`null'"!="", `xlablim1', `h0')
 	local xtitleval = cond("`xlablist'"=="", `xlablim1', .5*(`CXmin' + `CXmax'))
 	return scalar xtitleval = `xtitleval'	
 	
@@ -2064,9 +2378,6 @@ program define ProcessXLabs, rclass
 	return scalar CXmax = `CXmax'
 	return scalar DXmin = `DXmin'
 	return scalar DXmax = `DXmax'
-	// return scalar xtitleval = `xtitleval'	
-	
-	local xlabopts `"`options'"'
 	
 	// if log scale, label with exponentiated values
 	if `"`eform'"'!=`""' {
@@ -2080,13 +2391,14 @@ program define ProcessXLabs, rclass
 		local xlabcmd `"`xlablist'"'
 	
 		// If formatting not used here (for string labelling), return it alongside other `xlabopts' to pass to -twoway-
-		local xlabopts `"`xlabopts' format(`format')"'
+		if `"`format'"'!=`""' local xlabopts `"`xlabopts' format(`format')"'
 	}
 	
 	return local xlablist  `"`xlablist'"'
 	return local xticklist `"`xticklist'"'
 	return local xlabcmd   `"`xlabcmd'"'
 	return local xlabopts  `"`xlabopts'"'
+	return local xtickopts `"`xtickopts'"'
 	
 end
 	
@@ -2102,7 +2414,8 @@ program define ProcessColumns, rclass
 	syntax varname [if] [in], LRCOLSN(numlist integer >=0) LCIMIN(real) DX(numlist) ///
 		[LVALlist(namelist) LLABlist(varlist) LFMTLIST(numlist integer) ///
 		 RVALlist(namelist) RLABlist(varlist) RFMTLIST(numlist integer) RFINDENT(varname) RFCOL(integer 1) ///
-		 noADJUST DXWIDTHChars(real -9) ASText(integer -9) MAXLines(passthru)]
+		 DXWIDTHChars(real -9) ASText(integer -9) ///
+		 noADJust TArget(integer 0) MAXWidth(integer 0) MAXLines(integer 0) noTRUNCate ]
 	
 	marksample touse
 	
@@ -2142,15 +2455,14 @@ program define ProcessColumns, rclass
 			local leftWD`i' = cond(abs(`fmtlen') <= `maxlen', `maxwid', ///		// exact width of `maxlen' string
 				abs(`fmtlen')*`digitwid')										// approx. max width (based on `digitwid')
 
-			// [comments from metan.ado follow]
-			// WORK OUT IF TITLE IS BIGGER THAN THE VARIABLE
-			// SPREAD OVER UP TO FOUR LINES IF NECESSARY
-			// [comments relevant to admetan.ado follow]
-			// No: could be any number of lines now.
-			// DF JAN 2015: Future work might be to re-write (incl. SpreadTitle) to use width rather than length??
 
-			// If more than one lcol, restrict to width of study-name data.
-			// Otherwise, title may be as long as the max width for the column.
+			** Check whether title string is longer than the data itself
+			// If so, potentially allow spread over a suitable number of lines
+			// [DF JAN 2015: Future work might be to re-write (incl. SpreadTitle) to use width rather than length??]
+
+			// If more than one lcol, restrict to width of data (i.e. _USE==1, 2).
+			// Otherwise, title may be as long as the max string length in the column.
+			// [Note that, as the title isn't stored as data (yet), the max string length does NOT account for the title string itself.]
 			if `lcolsN'>1 local anduse `" & inlist(`_USE', 1, 2)"'
 			summ `strlen' if `touse' `anduse', meanonly
 			local maxlen = r(max)
@@ -2158,15 +2470,9 @@ program define ProcessColumns, rclass
 			local colName : variable label `leftLB`i''
 			if `"`colName'"'!=`""' {
 				
-				// if `maxlines' is specified by user, assume no truncate, no target, no maxwidth
-				if `"`maxlines'"'!=`""' local truncate "notruncate"
-				else {
-					local target = cond(`: word count `colName''==1, length(`"`colName'"'), int(length(`"`colName'"')/3))
-					local target = max(abs(`fmtlen'), `maxlen', `target')
-					local maxwidth `"maxwidth(`=2*`target'')"'
-					local target   `"target(`target')"'
-				}
-				SpreadTitle `"`colName'"', `target' `maxwidth' `maxlines' `truncate'
+				local target_opt = cond(`target', `target', max(abs(`fmtlen'), `maxlen'))
+				local maxwidth_opt = cond(`maxwidth', `maxwidth', `=2*`target_opt'')
+				SpreadTitle `"`colName'"', target(`target_opt') maxwidth(`maxwidth_opt') maxlines(`maxlines') `truncate'
 				
 				if `r(nlines)' > `nlines' {
 					local oldN = _N
@@ -2215,24 +2521,17 @@ program define ProcessColumns, rclass
 			local rightWD`i' = cond(abs(`fmtlen') <= `maxlen', `maxwid', ///	// exact width of `maxlen' string
 				abs(`fmtlen')*`digitwid')										// approx. max width (based on `digitwid')
 
-			// [comments from metan.ado follow]
-			// WORK OUT IF TITLE IS BIGGER THAN THE VARIABLE
-			// SPREAD OVER UP TO FOUR LINES IF NECESSARY
-			// [comments relevant to admetan.ado follow]
-			// No: could be any number of lines now.
-			// DF JAN 2015: Future work might be to re-write (incl. SpreadTitle) to use width rather than length??			
+
+			** Check whether title string is longer than the data itself
+			// If so, potentially allow spread over a suitable number of lines
+			// [DF JAN 2015: Future work might be to re-write (incl. SpreadTitle) to use width rather than length??]
+
 			local colName : variable label `rightLB`i''
 			if `"`colName'"'!=`""' {
 				
-				// if `maxlines' is specified by user, assume no truncate, no target, no maxwidth
-				if `"`maxlines'"'!=`""' local truncate "notruncate"
-				else {
-					local target = cond(`: word count `colName''==1, length(`"`colName'"'), int(length(`"`colName'"')/3))
-					local target = max(abs(`fmtlen'), `maxlen', `target')
-					local maxwidth `"maxwidth(`=2*`target'')"'
-					local target   `"target(`target')"'
-				}
-				SpreadTitle `"`colName'"', `target' `maxwidth' `maxlines' `truncate'
+				local target_opt = cond(`target', `target', max(abs(`fmtlen'), `maxlen'))
+				local maxwidth_opt = cond(`maxwidth', `maxwidth', `=2*`target_opt'')
+				SpreadTitle `"`colName'"', target(`target_opt') maxwidth(`maxwidth_opt') maxlines(`maxlines') `truncate'
 
 				if `r(nlines)' > `nlines' {
 					local oldN = _N
@@ -2316,22 +2615,26 @@ program define ProcessColumns, rclass
 				if !`adjustOld' & `fmtlen'<=0 {
 				
 					summ `strlen' if `touse' & inlist(`_USE', 1, 2) | (`i'<`lcolsN' & `_USE'==9), meanonly
-					local maxlen = r(max)		// max length of text for study estimates only
+					if !r(N) local leftWD`i'NoTi = 0		// if summary diamonds only (added Sep 2017 for v2.1)
 
-					getWidth `leftLB`i'' `strwid'
-					summ `strwid' if `touse' & inlist(`_USE', 1, 2) | (`i'<`lcolsN' & `_USE'==9), meanonly
-					local maxwid = r(max)		// max width of text for study estimates only
-					
-					local leftWD`i'NoTi = cond(abs(`fmtlen') <= `maxlen', `maxwid', ///		// exact width of `maxlen' string
-						abs(`fmtlen')*`digitwid')											// approx. max width (based on `digitwid')
-					
-					replace `lindent`i'NoTi' = cond(`fmtlen'>0, `leftWD`i'NoTi' - `strwid', 0)	// indent if right-justified
+					else {
+						local maxlen = r(max)		// max length of text for study estimates only
+						
+						getWidth `leftLB`i'' `strwid'
+						summ `strwid' if `touse' & inlist(`_USE', 1, 2) | (`i'<`lcolsN' & `_USE'==9), meanonly
+						local maxwid = r(max)		// max width of text for study estimates only
+						
+						local leftWD`i'NoTi = cond(abs(`fmtlen') <= `maxlen', `maxwid', ///		// exact width of `maxlen' string
+							abs(`fmtlen')*`digitwid')											// approx. max width (based on `digitwid')
+						
+						replace `lindent`i'NoTi' = cond(`fmtlen'>0, `leftWD`i'NoTi' - `strwid', 0)	// indent if right-justified
+						drop `strwid'
+					}
 					local leftWD`i'NoTi = `leftWD`i'NoTi' + (2 - (`i'==`lcolsN'))*`digitwid'	// having calculated the indent, add a buffer (2x except for last col)
-					
+
 					local adjustNew = (`leftWD`i'NoTi' < `leftWD`i'')
 					if `adjustNew' local ++adjustTot
-					
-					drop `strwid'
+
 				}	
 				drop `strlen'
 			}
@@ -2365,7 +2668,7 @@ program define ProcessColumns, rclass
 					(`totWD' / ((`lciWD'/`astext2') + 1)) - `rightWDtot', ///
 					`leftWDtot' - `lciWD'*`DXwidthChars')
 					
-				// BUT don't make leftWDtot any *less* than before, unless there are no obs with inlist(`_USE', 1, 2)
+				// BUT don't make leftWDtot any *less* than `leftWDtotNoTi', unless there are no obs with inlist(`_USE', 1, 2)
 				count if `touse' & inlist(`_USE', 1, 2)
 				local leftWDtot = cond(r(N), max(`leftWDtotNoTi', `newleftWDtot'), `newleftWDtot')
 				
@@ -2374,12 +2677,14 @@ program define ProcessColumns, rclass
 					replace `lindent`i'' = `lindent`i'NoTi'
 				}
 			}
-		}
+		}		// end if "`adjust'" == ""
 
 		// Generate position of columns, using `astext' (% of graph width taken by text)
 		// N.B. although the "starting positions", `leftWD`i'' and `rightWD`i'', are constants, there will be indents if right-justified
 		//      and anyway, all will need to be stored in variables for use with -twoway-
-		if `DXwidthChars'!=-9 & `astext'==-9 {
+		
+		// sep 2017
+		if `DXwidthChars'!=-9 & (`astext'==-9 | `"`newleftWDtot'"'!=`""') {
 			local astext2 = (`leftWDtot' + `rightWDtot')/`DXwidthChars'
 			local astext = 100 * `astext2'/(1 + `astext2')
 		}
@@ -2428,6 +2733,7 @@ end
 // Updated July 2014
 // August 2016: identical program now used here, in admetan.ado, and in ipdover.ado
 // May 2017: updated to accept substrings delineated by quotes (c.f. multi-line axis titles)
+// August 2017: updated for better handling of maxlines()
 
 // subroutine of ProcessColumns
 
@@ -2437,7 +2743,7 @@ program define SpreadTitle, rclass
 	* Target = aim for this width, but allow expansion if alternative is wrapping "too early" (i.e before line is adequately filled)
 	//         (may be replaced by `titlelen'/`maxlines' if `maxlines' and `notruncate' are also specified)
 	* Maxwidth = absolute maximum width
-	* Maxlines = maximum no. lines
+	* Maxlines = maximum no. lines (default 3)
 	* noTruncate = don't truncate final line if "too long" (even if greater than `maxwidth')
 	//             (also allows `maxlines' to adjust `target' upwards if necessary)
 
@@ -2445,11 +2751,6 @@ program define SpreadTitle, rclass
 		return scalar nlines = 0
 		return scalar maxwidth = 0
 		exit
-	}
-	
-	if !`target' & !`maxwidth' & !`maxlines' {
-		nois disp as err `"must specify at least one of {bf:target()}, {bf:maxwidth()} or {bf:maxlines()}"'
-		exit 198
 	}
 	
 	if `maxwidth' & !`maxlines' {
@@ -2461,20 +2762,13 @@ program define SpreadTitle, rclass
 	}
 	
 	// Finalise `target' and calculate `spread'
+	local maxlines_def = cond(`maxlines', `maxlines', 3)	// use a default value for `maxlines' of 3 in these calculations
 	local titlelen = length(`title')
-	
-	local target = cond(`target', ///
-		cond(`maxlines' & "`truncate'"!="", max(`target', `titlelen'/`maxlines'), `target'), ///
-		cond(`maxlines', `titlelen'/`maxlines', cond(`maxwidth', `maxwidth', .)))
-	
-	if missing(`target') {
-		nois disp as err `"must specify at least one of {bf:target()}, {bf:maxwidth()} or {bf:maxlines()}"'
-		exit 198
-	}	
-	
-	local spread = cond(`maxlines', `maxlines', int(`titlelen'/`target') + 1)
+	local target = cond(`target', `target', ///
+		cond(`maxwidth', min(`maxwidth', `titlelen'/`maxlines_def'), `titlelen'/`maxlines_def'))
+	local spread = min(int(`titlelen'/`target') + 1, `maxlines_def')
 
-		
+
 	** If substrings are present, delineated by quotes, treat this as a line-break
 	// Hence, need to first process each substring separately and obtain parameters,
 	// then select the most appropriate overall parameters given the user-specified options,

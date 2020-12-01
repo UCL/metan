@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 2.0  David Fisher  11may2017}{...}
+{* *! version 2.1  David Fisher  14sep2017}{...}
 {vieweralsosee "admetani" "help admetani"}{...}
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
 {vieweralsosee "ipdover" "help ipdover"}{...}
@@ -77,9 +77,10 @@ For both {cmd:admetan} and {bf:{help ipdmetan}}, certain options are limited to 
 {synopt :{opt nosu:bgroup}}suppress pooling within subgroups{p_end}
 {synopt :{opt notab:le}}suppress printing the table of effect sizes to screen{p_end}
 {synopt :{opt ovwt sgwt}}over-ride default choice of whether to display overall weights or subgroup weights{p_end}
-{synopt :{opt qe(varname)}}variable containing Quality Effects{p_end}
+{synopt :{opt qe(varname)}}variable containing Quality Effects ({help admetan##refs:Doi et al 2015b}; see also {help admetan##re_model:{it:re_model}}){p_end}
 {synopt :{opt re}}specify the DerSimonian & Laird random-effects model{p_end}
 {synopt :{cmd:re(}{help admetan##re_model:{it:re_model}} [{cmd:,} {help admetan##re_model:{it:re_model_opts}}]{cmd:)}}alternative random-effects and variance-correction models{p_end}
+{synopt :{opt t}}use a {it:t}-distribution on {it:k-1} degrees of freedom to calculate confidence intervals for pooled results{p_end}
 {synopt :{cmd:sortby(}{it:varname}|{cmd:_n)}}ordering of studies in table and forest plot{p_end}
 {synopt :{opt npts(varname)}}(generic effect measures only) specify variable containing participant numbers, to be displayed in forest plot if applicable{p_end}
 
@@ -145,7 +146,7 @@ if not specifically referenced below.{p_end}
 {synopt :{opt kr}}REML tau-squared estimator with Kenward-Roger variance correction ({help admetan##refs:Morris et al 2017}){p_end}
 {synopt :{opt reml} [{cmd:, hksj ivhet kr qe(}{it:varname}{cmd:)}]}REML tau-squared estimator with Hartung-Knapp-Sidik-Jonkman,
 "IVHet" or Kenward-Roger variance correction, or the Quality Effects model ({help admetan##refs:Doi et al 2015b}){p_end}
-{synopt :{opt sa} [{cmd:, isq(}{it:real}{cmd:)}]}Sensitivity analysis with user-defined I-squared; default is 0.8{p_end}
+{synopt :{opt sa} [{cmd:, isq(}{it:real}{cmd:) tausq(}{it:real}{cmd:)}]}Sensitivity analysis with user-defined I-squared (taking values between 0 and 100; default is 80%) or tau-squared (>=0){p_end}
 {synoptline}
 
 
@@ -225,18 +226,19 @@ which must be either integer-valued or string.
 
 {phang}
 {opt citype(string)} specifies how confidence limits are constructed for individual studies.
-Note that confidence limits for {it:pooled} results are calculated consistently with the specified {help ipdmetan##re_model:{it:re_model}},
- or using the Normal distribution if fixed-effects.
+Note that confidence limits for {it:pooled} results are calculated separately:
+either consistently with the specified {help ipdmetan##re_model:{it:re_model}},
+or using the Normal (by default) or {it:t} (see the {bf:t} option) distributions.
 
-{pmore}
+{phang2}
 {cmd:citype(normal)} or {cmd:citype(z)} is the default, specifying use of the Normal distribution (i.e. a {it:z}-statistic)
 
-{pmore}
-{cmd:citype(t)} specifies use of the {it:t}-distribution.
+{phang2}
+{cmd:citype(t)} specifies use of the ("Student's") {it:t} distribution.
 Degrees of freedom may be specified using the {opt df(varname)} option;
 otherwise {cmd:admetan} will assume degrees of freedom of {it:n-2} where {it:n} is the study sample size.
 
-{pmore}
+{phang2}
 {cmd:citype(logit)} recreates the logit-transformed confidence limits outputted by default (as of {help whatsnew12to13:Stata 13}) by {bf:{help proportion}}.
 
 {phang}
@@ -248,13 +250,13 @@ Pooled effect information (tests of {it:z} = 0, heterogeneity etc.) will be base
 Pooled effect information remains identical to that if {opt influence} were not specified.
 
 {pmore}
-Note that for both {opt cumulative} and {opt influence}, use random-effects and/or variance-correction models
+Note that for both {opt cumulative} and {opt influence}, use of random-effects and variance-correction models
 may result in weights greater than 100%, since weights are expressed relative to the total weight in the model with all studies included.
 
-{phang}
-{opt altwt} (only appropriate with {opt cumulative} or {opt influence}) requests that study weights
-(and participant numbers in the forest plot, if applicable)
-are those from the model with all studies included, perhaps giving a better sense of the relative weighting of each study.
+{phang2}
+{opt altwt} (only appropriate with {opt cumulative} or {opt influence}) requests that the study weights presented 
+(and participant numbers in the forest plot, if applicable) are those from the model with all studies included.
+That is, each weight is relative to the remaining studies, rather than to the remaining {opt cumulative} or {opt influence} models.
 Effect estimates remain unchanged.
 
 {phang}
@@ -303,10 +305,12 @@ upon conclusion of the routine.
 {opt nooverall}, {opt nosubgroup} affect which groups of data are pooled, thus affecting both the table of effect sizes
 and the forest plot (if applicable).
 
-{pmore} {opt nooverall} suppresses the overall pooled effect, so that (for instance) subgroups are considered entirely
+{pmore}
+{opt nooverall} suppresses the overall pooled effect, so that (for instance) subgroups are considered entirely
 independently. Between-subgroup heterogeneity statistics are also suppressed.
 
-{pmore} {opt nosubgroup} suppresses the within-subgroup pooled effects, so that subgroups are displayed
+{pmore}
+{opt nosubgroup} suppresses the within-subgroup pooled effects, so that subgroups are displayed
 separately but with a single overall pooled effect with associated heterogeneity statistics.
 
 {phang}
@@ -320,6 +324,23 @@ as weights are normalised anyway.
 {phang}
 {opt qe(varname)} specifies a variable containing quality scores for each study, between 0 and 1,
 with which to run the Quality Effects model ({help admetan##refs:Doi et al 2015b}).
+
+{pmore}
+Since this model involves a variance correction based on a REML tau-squared estimate, it may also be specifed as {cmd:re(reml, qe(}{it:varname}{cmd:))}.
+
+{phang}
+{opt re}, {cmd:re(...)} specify a range of random-effects and variance-correction models.
+References for these models may be found under {help admetan##re_model:{it:re_model}}.
+{opt re} (without options) specifies the DerSimonian and Laird random-effects model. {opt random} is a permitted synonym.
+
+{phang}
+{opt t} requests that a ("Student's") {it:t} distribution with {it:k-1} degrees of freedom be used to calculate confidence intervals
+for pooled results, where {it:k} is the number of studies. Intervals will be at least as wide as using a Normal distribution.
+Note that certain random-effects and variance-correction models use a {it:t} distribution by default.
+
+{pmore}
+See also the {opt citype()} option, which requests alternative confidence intervals for individual studies
+but {it:not} the pooled result.
 
 {phang}
 {opt sortby(varname)} allows user-specified ordering of studies in the table and forest plot,
@@ -367,7 +388,7 @@ This is available only for odds ratios pooled using Peto or Mantel-Haenszel meth
 
 {phang}
 {opt nointeger} allows cell counts or sample sizes to be non-integers.
-This may be useful when a variable continuity correction is sought for studies containing zero cells,
+This may be useful when a variable continuity correction is sought for studies containing zero cells;
 but may also be used in other circumstances, such as where a cluster-randomised trial is to be incorporated
 and the "effective sample size" is less than the total number of observations.
 
@@ -404,7 +425,8 @@ Only available with odds ratios (OR) or risk ratios (RR).
 instead of the default I-squared.
 
 {pmore}
-Note: for specific effect measures, the Cochran, Mantel-Haenszel or Peto Q statistic will be reported as appropriate.
+For specific effect measures, the Cochran, Mantel-Haenszel or Peto Q statistic will be reported as appropriate.
+With user-defined weights and generic effect measures, Cochran's Q statistic will be reported.
 
 {phang}
 {opt rfdist} displays the confidence interval of the approximate predictive distribution of a future trial, based on the extent of heterogeneity.
@@ -534,7 +556,7 @@ This version of {cmd:admetan} has been designed so that most syntaxes and option
 However, there are some exceptions.  In particular, with {cmd:admetan}:
 
 {phang}
-Options {opt first()}, {opt firststats()}, {opt second()}, {opt secondstats()} and {opt nosecsub} are not currently implemented (as of {cmd:admetan} v2.0);
+Options {opt first()}, {opt firststats()}, {opt second()}, {opt secondstats()} and {opt nosecsub} are not currently implemented (as of {cmd:admetan} v2.1);
 the results of these options may instead be recreated using the {opt saving()} option and manipulating the saved dataset
 
 {phang}
@@ -549,10 +571,10 @@ need to be placed within the {opt forestplot()} option rather than directly to {
 
 {phang}
 Prediction intervals ({opt rfdist}) are not displayed with dotted lines if the number of studies is less than three;
-instead, the interval is simply not displayed at all.
+instead, the interval is simply not displayed at all. A message is printed in the Results Window explaining this.
 
 {phang}
-If {opt wgt()} is supplied, the Q statistic will still be based on the inverse-variance fixed-effects model.
+If {opt wgt()} is supplied, the displayed Q statistic will still be based on the inverse-variance fixed-effects model.
 {cmd:metan} here uses a statistic based on fixed-effects weights but the newly-weighted pooled effect size, which is just confusing.
 Instead, {cmd:admetan} returns the "generalised Q" based on the new weights and the newly-weighted pooled effect size in {bf:r(Qr)},
 whilst {bf:r(Q)} contains the standard Cochran Q based on inverse-variance weights (i.e. ignoring {opt wgt()} in its calculation).
@@ -591,7 +613,7 @@ Sort by year, use data columns syntax with all column data left-justified. Speci
 {p_end}
 
 {pstd}
-Analyse continuous data (six-parameter syntax), stratify by type of study, with weights summing to 100 within sub group,
+Analyse continuous data (six-parameter syntax), stratify by type of study, with weights summing to 100% within sub group,
 display random-effects predictive distribution, show raw data counts, display "favours treatment vs. favours control" labels
 
 {pmore}
@@ -733,7 +755,7 @@ JRSS Series A 172: 137-159
 
 {phang}
 Morris TP, Fisher DJ, Kenward MG, Carpenter JR. 2017, submitted.
-Meta-analysis of Gaussian individual patient data: two stage or not two stage?
+Meta-analysis of quantitative individual patient data: two stage or not two stage?
 
 {phang}
 R{c o:}ver C, Knapp G, Friede T. 2015.
