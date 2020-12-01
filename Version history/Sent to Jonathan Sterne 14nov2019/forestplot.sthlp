@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.3 (beta)  David Fisher  14nov2019}{...}
+{* *! version 4.0  David Fisher  14nov2019}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "metani" "help metani"}{...}
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
