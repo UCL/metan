@@ -11,9 +11,9 @@
 * version 3.0  David Fisher  08nov2018
 * (N.B. only changed very slightly from v1.01 ... this is actually more v1.02!)
 
-*! version 3.5 (beta)  David Fisher  21jan2020
+*! version 4.00  David Fisher  21jan2020
 * changed from -admetani- to -metan-
-* upversioned to match with the rest of -metan-
+* upversioned to 4.0 to match with the rest of -metan-
 
 
 program metani, rclass

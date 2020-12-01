@@ -1,7 +1,7 @@
 * metan.ado
 * Study-level (aka "aggregate-data" or "published data") meta-analysis
 
-*! version 3.5 (beta)  21jan2020
+*! version 4.00  21jan2020
 *! Current version by David Fisher
 *! Previous versions by Ross Harris and Michael Bradburn
 
@@ -52,18 +52,14 @@
 // added some new estimators
 // some bug fixes
 
-* version 3.3 (beta; never released)  David Fisher 14nov2019
+* version 3.3 (beta; never released)  David Fisher 30aug2019
 // restored previous -metan- second() option, and extended to multiple models using model(.. \ .. \ ..)
 // improvements to handling of zero cells;  added Tarone and CMH statistics for M-H
 // minor bug fixes
 
-* version 3.4 (beta; never released)  David Fisher 12dec2019
+* Current version 3.4 (beta; will be 4.00 upon release)  David Fisher 23oct2019
 // added meta-analysis of proportions
-// restored previous -metan- behaviour of sorting string by() by order of appearance, rather than alphabetically
 // minor bug fixes
-
-* version 3.5 (beta; never released)  David Fisher 21jan2020
-// various bug fixes and code improvements
 
 
 program define metan, rclass
@@ -71,7 +67,7 @@ program define metan, rclass
 	version 11.0
 	local version : di "version " string(_caller()) ":"
 
-	return hidden local metan_version "4.0"
+	return hidden local metan_version "4.1"
 	
 	syntax varlist(numeric min=2 max=6) [if] [in] [, SORTBY(varname) ///
 		STUDY(passthru) LABEL(passthru) BY(passthru) /// label() for backward-compatibility with metan.ado
@@ -9567,8 +9563,7 @@ end
 // `hksj', `bartlett', `skovgaard' and `robust' are returned (if applicable) as part of r(model)
 // Some text in help file has been changed/updated
 
-
-* version 3.3 (beta; never released)  David Fisher 14nov2019
+* version 3.3 (beta; never released)  David Fisher 30aug2019
 
 // Zero cells and the Mantel-Haenszel method:  default is to add cc=0.5 for display purposes only...
 //   ...including "double-zero" studies, as they still contribute to the MH pooled estimate
@@ -9579,6 +9574,11 @@ end
 
 // Also if M-H:  CMH with/without correction; "Old" Breslow/Day; "New" Breslow/Day/Tarone.
 
+* Current version 3.4 (beta; will be 4.0 upon release)  David Fisher 23oct2019
+
+// Fixed bug where main options (e.g. nograph) would be ignored under certain circumstances
+// Fixed bug where id would be repeated if given as lcols(id)
+
 // Major addition: multiple models, either as backslash-separated list e.g. model(fe\dl\reml\pl)
 //  or, as in -metan-  first() second()
 
@@ -9588,20 +9588,10 @@ end
 //  - noncentral Q
 //  - Q profiling
 
-
-* version 3.4 (beta; never released)  David Fisher 12dec2019
-
-// Fixed bug where main options (e.g. nograph) would be ignored under certain circumstances
-// Fixed bug where id would be repeated if given as lcols(id)
-
 // Major addition: added meta-analysis of proportions
 
 // Restored previous -metan- behaviour of sorting string by() by order of appearance, rather than alphabetically
 // Improved behaviour of -influence- : corrected bug in weight normalisation with subgroups;
 //    -forestplot- now by default displays -influence- pooled results as vertical lines rather than diamonds
 
-
-* version 3.5 (beta; never released)  David Fisher 21jan2020
-// added message if untruncated HKSJ method is anti-conservative relative to common-effect equivalent
-// following advice from Dan Jackson (c.f. van Aert & Jackson 2019)
 

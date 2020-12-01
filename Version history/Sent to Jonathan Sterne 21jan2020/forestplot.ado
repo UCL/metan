@@ -75,18 +75,9 @@
 // some text in help file is updated
 // improved counting of rows in titles containing compound quotes
 
-* version 3.3 (beta)  David Fisher  14nov2019
+*! version 4.00  David Fisher  21jan2020
 // changes to `xlabopts'
-// upversioned to match with -metan-
-
-* version 3.4 (beta)  David Fisher  12dec2019
-// no changes; upversioned to match with -metan-
-
-*! version 3.5 (beta)  David Fisher  21jan2020
-// changes to `xlabopts'
-// major changes to `influence' plot:
-//   default behaviour is now to "hide" pooled effects, and instead display vertical lines for the confidence limits
-//   can also be represented by a shaded area rather than a pair of vertical lines
+// changes to `influence' plot
 // upversioned to match with -metan-
 
 
