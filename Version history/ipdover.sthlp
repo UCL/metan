@@ -1,9 +1,10 @@
 {smcl}
-{* *! version 1.03  David Fisher  29jun2015}{...}
+{* *! version 2.0  David Fisher  11may2017}{...}
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "admetan" "help admetan"}{...}
+{vieweralsosee "admetani" "help admetani"}{...}
 {viewerjumpto "Syntax" "ipdover##syntax"}{...}
 {viewerjumpto "Description" "ipdover##description"}{...}
 {viewerjumpto "Options" "ipdover##options"}{...}
@@ -17,47 +18,53 @@
 {marker syntax}{...}
 {title:Syntax}
 
+{phang}
+Syntax 1: {it:command}-based syntax; "generic" effect measure
+
 {p 8 18 2}
 {cmd:ipdover}
 	[{it:{help exp_list}}]
-	{cmd:, over(}{it:varlist} [{cmd:, {ul:m}issing}]{cmd:)} [{cmd: over(}{it:varname} [{cmd:, {ul:m}issing}]{cmd:)} {it:options}] {cmd::} {it:command}
+	{cmd:, over(}{it:over_varlist} [{cmd:, {ul:m}issing}]{cmd:)} [{cmd: over(}{it:varname} [{cmd:, {ul:m}issing}]{cmd:)} {it:options}] {cmd::} {it:command} {ifin} {it:...}
 
+{phang}
+Syntax 2: {bf:{help collapse}}-based syntax; "specific" effect measure
+
+{p 8 18 2}
+{cmd:ipdover}
+	{it:input_varlist} {ifin}
+	{cmd:, over(}{it:over_varlist} [{cmd:, {ul:m}issing}]{cmd:)} [{cmd: over(}{it:varname} [{cmd:, {ul:m}issing}]{cmd:)} {it:options}]
+
+{pstd}
+where {it:input_varlist} is one of the following:
+
+{p 8 34 2}{it:var_outcome} {it:var_treat}{space 11}where {it:var_outcome} and {it:var_treat} are both binary 0, 1{p_end}
+{p 8 34 2}{it:var_outcome} {it:var_treat}{space 11}where {it:var_outcome} is continuous and {it:var_treat} is binary 0, 1{p_end}
+{p 8 34 2}{it:var_treat}{space 23}where {it:var_treat} is binary 0, 1 and the data have previously been {bf:{help stset}}.{p_end}
 
 
 {marker description}{...}
 {title:Description}
 
 {pstd}
-{cmd:ipdover} extends the functionality of {help ipdmetan} outside the context of meta-analysis.
+{cmd:ipdover} extends the functionality of {bf:{help ipdmetan}} outside the context of meta-analysis.
 It does not perform any pooling or heterogeneity calculations;
-rather, its intended use is creating forestplots of subgroup analyses within a single trial dataset.
-Basic syntax is
-
-{phang2}
-{cmd:. ipdover}{cmd:,} {opt over(varlist)} {cmd::} {it:command}
-
-{pstd}
-which fits the model {it:command} once within each level of each variable in {it:varlist}
-and saves effect sizes and standard errors for screen output and display of a forest plot.
-Any e-class regression command (whether built-in or user-defined) should be compatible
-with this basic syntax of {cmd:ipdover}; see {help ipdmetan} for help with using non e-class
-commands.
+rather, its intended use is creating forest plots of subgroup analyses within a single trial dataset.
+Basic syntaxes are the same as for {bf:{help ipdmetan}}, but with {opt over(varlist)} replacing {opt study(varname)}.
+Where {cmd:ipdmetan} summarises data by study, {cmd:ipdover} summarises data within each level of each variable in {it:varlist}.
+The optional second {opt over(varname)} allows stratification of results by a further single variable,
+in a similar way to {opt by(varname)} with {cmd:ipdmetan}.
 
 {pstd}
-{cmd:ipdover} functions in a similar way to {help ipdmetan}, with the following main differences in syntax:
-the {cmd:over()} option(s) replace(s) {cmd:study()} and {cmd:by()};
-the {cmd:ad()} and {cmd:re()} options are not permitted;
-and the {cmd:plotid()} option has a slightly different syntax (see below).
+Forest plots produced by {cmd:ipdover} are weighted by sample size rather than by the inverse of the variance,
+and by default sample size will appear to the left of the plot
+(instead of study weights appearing to the right of the plot as in {cmd:ipdmetan}).
 
 {pstd}
-Note that forestplots produced by {cmd:ipdover} are weighted by sample size rather than by the inverse of the variance.
-
-{pstd}
-Saved datasets (see {help ipdmetan}) include the following identifier variables:{p_end}
+Saved datasets (see {bf:{help ipdmetan}}) include the following identifier variables:{p_end}
 {p2colset 8 24 24 8}
-{p2col:{cmd:_BY}}subset of data (c.f. {help by}){p_end}
-{p2col:{cmd:_OVER}}{cmd:over()} variable{p_end}
-{p2col:{cmd:_LEVEL}}level of {cmd:over()} variable.{p_end}
+{p2col:{cmd:_BY}}subset of data (c.f. {help by}) as supplied to second {opt over()} option, if applicable{p_end}
+{p2col:{cmd:_OVER}}identifier of variable within {it:over_varlist}{p_end}
+{p2col:{cmd:_LEVEL}}level (category) of variable identified by {cmd:_OVER}.{p_end}
 
 
 {marker options}{...}
@@ -77,7 +84,7 @@ Variable and value labels will appear in output where appropriate.
 {opt missing} requests that missing values be treated as potential subgroups or subsets (the default is to exclude them).
 
 {phang}
-{cmd:plotid(_BY | _OVER | _LEVEL | _n} [{cmd:, list nograph}]{cmd:)} functions in basically the same way as in {help ipdmetan},
+{cmd:plotid(_BY | _OVER | _LEVEL | _n} [{cmd:, list nograph}]{cmd:)} functions in basically the same way as in {bf:{help ipdmetan}},
 but instead of a {it:varname}, it accepts one of the following values, corresponding to variables created in saved
 datasets created by {cmd:ipdover}:{p_end}
 {p2colset 8 24 24 8}
@@ -86,8 +93,12 @@ datasets created by {cmd:ipdover}:{p_end}
 {p2col:{cmd:_LEVEL}}group observations by levels of {cmd:_LEVEL}{p_end}
 {p2col:{cmd:_n}}allow each observation to be its own group.{p_end}
 
-{phang}For other options (given the caveat in the {help ipdover##description:Description}),
-see {help ipdmetan##options:ipdmetan} or {help forestplot##options:forestplot}.
+{pstd}Most other options as described for {bf:{help ipdmetan##options:ipdmetan}}, {bf:{help admetan##options:admetan}}
+or {bf:{help forestplot##options:forestplot}} may also be supplied to {cmd:ipdover},
+with the exception of options concerning heterogeneity statistics or pooled results
+such as {opt cumulative}, {opt influence}, {opt interaction}, {opt qe()} and {opt re()}.
+(However, note that {opt poolvar()} {ul:is} allowed (with Syntax 1), since it refers to the coefficient to be extracted
+from each model fit rather than to the pooled result {it:per se}.)
 
 
 {marker saved_results}{...}
@@ -110,7 +121,7 @@ see {help ipdmetan##options:ipdmetan} or {help forestplot##options:forestplot}.
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Matrices}{p_end}
-{synopt:{cmd:r(coeffs)}}Matrix of study and subgroup identifers, effect coefficients, and numbers of participants{p_end}
+{synopt:{cmd:r(coeffs)}}Matrix of study and subgroup identifiers, effect coefficients, and numbers of participants{p_end}
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Variables}{p_end}
@@ -119,17 +130,29 @@ see {help ipdmetan##options:ipdmetan} or {help forestplot##options:forestplot}.
 
 {title:Examples}
 
-{pstd} Example 1: Using the Hosmer & Lemeshow low birthweight data from {help logistic}
+{pstd} Example 1: Using the Hosmer & Lemeshow low birthweight data from {bf:{help logistic}}, look at the effect of maternal age on odds of LBW
+within various data subgroups:
 
 {pmore}
 {cmd:. webuse lbw, clear}{p_end}
 {pmore}
 {cmd:. ipdover, over(race smoke ht) or forestplot(favours("Odds of LBW decrease" "as age increases" # "Odds of LBW increase" "as age increases")) : logistic low age}{p_end}
 
-{pstd} Example 2: Treatment effect by covariate subgroup by trial, using the example IPD meta-analysis dataset from {help ipdmetan}:
+
+{pstd} Example 2: Using the same dataset, look at the mean difference in maternal age between those whose babies were LBW vs those who were normal weight
+(demonstrates use of {opt group1()}, {opt group2()}):
 
 {pmore}
-{cmd:. use ipdmetan_example.dta, clear}{p_end}
+{cmd:. ipdover age low, over(race ht) wmd forestplot(favours("Mean maternal age higher" "among those with LBW infant" # }
+{cmd:  "Mean maternal age lower" "among those with LBW infant"))}
+{cmd:  counts group1("Age of mothers" "of low BW infants") group2("Age of mothers" "of normal BW infants")}
+
+
+{pstd} Example 3: Applying {bf:ipdover} to a set of clinical trials, showing the treatment effect by covariate subgroup by trial (using the example IPD meta-analysis dataset from {bf:{help ipdmetan}}):
+
+{pmore}
+{stata "use http://fmwww.bc.edu/repec/bocode/i/ipdmetan_example.dta":. use http://fmwww.bc.edu/repec/bocode/i/ipdmetan_example.dta}
+{p_end}
 {pmore}
 {cmd:. stset tcens, fail(fail)}{p_end}
 {pmore}

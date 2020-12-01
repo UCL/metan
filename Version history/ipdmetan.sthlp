@@ -1,9 +1,10 @@
 {smcl}
-{* *! version 1.04  David Fisher  29jun2015}{...}
-{vieweralsosee "metan" "help metan"}{...}
-{vieweralsosee "forestplot" "help forestplot"}{...}
+{* *! version 2.0  David Fisher  11may2017}{...}
 {vieweralsosee "admetan" "help admetan"}{...}
+{vieweralsosee "admetani" "help admetani"}{...}
 {vieweralsosee "ipdover" "help ipdover"}{...}
+{vieweralsosee "forestplot" "help forestplot"}{...}
+{vieweralsosee "metan" "help metan"}{...}
 {viewerjumpto "Syntax" "ipdmetan##syntax"}{...}
 {viewerjumpto "Description" "ipdmetan##description"}{...}
 {viewerjumpto "Options" "ipdmetan##options"}{...}
@@ -11,41 +12,60 @@
 {title:Title}
 
 {phang}
-{cmd:ipdmetan} {hline 2} Perform two-stage inverse-variance individual participant data (IPD) meta-analysis
+{cmd:ipdmetan} {hline 2} Perform two-stage individual participant data (IPD) meta-analysis
 
 
 {marker syntax}{...}
 {title:Syntax}
 
+{phang}
+Syntax 1: {it:command}-based syntax; "generic" effect measure
+
 {p 8 18 2}
 {cmd:ipdmetan}
 	[{it:{help exp_list}}]
-	{cmd:, {ul:s}tudy(}{it:varname} [{cmd:, {ul:m}issing}]{cmd:)} [{it:options}] {cmd::} {it:command}
+	{cmd:, {ul:s}tudy(}{it:varname} [{cmd:, {ul:m}issing}]{cmd:)} [{it:options}] {cmd::} {it:command} {ifin} {it:...}
+
+{phang}
+Syntax 2: {bf:{help collapse}}-based syntax; "specific" effect measure
+
+{p 8 18 2}
+{cmd:ipdmetan}
+	{it:input_varlist} {ifin}
+	{cmd:, {ul:s}tudy(}{it:varname} [{cmd:, {ul:m}issing}]{cmd:)} [{it:options}]
+
+{pstd}
+where {it:input_varlist} is one of the following:
+
+{p 8 34 2}{it:var_outcome} {it:var_treat}{space 11}where {it:var_outcome} and {it:var_treat} are both binary 0, 1{p_end}
+{p 8 34 2}{it:var_outcome} {it:var_treat}{space 11}where {it:var_outcome} is continuous and {it:var_treat} is binary 0, 1{p_end}
+{p 8 34 2}{it:var_treat}{space 23}where {it:var_treat} is binary 0, 1 and the data have previously been {bf:{help stset}}.{p_end}
+
+
+{pstd}
+The terms "generic" and "specific" are used here with reference to the {bf:{help admetan}} documentation,
+and differentiate between derivation of effect sizes and standard errors which could, in the inverse-variance meta-analysis context,
+be interpreted generically (although in practice, of course, the interpretation is governed by {it:command});
+and the use of {bf:{help collapse}} to directly convert the IPD to an aggregate dataset with a specific data structure
+such as a 2x2 contingency table, or means and SDs by treatment arm.
+With {cmd:ipdmetan}, there is a substantial difference in syntax;
+hence in the remainder of the {cmd:ipdmetan} documentation the terms "Syntax 1" and "Syntax 2" will be used.
+
 
 {synoptset 34 tabbed}{...}
 {synopthdr}
 {synoptline}
 {syntab :Main}
-{synopt :{cmd:by(}{it:varname} [{cmd:, {ul:m}issing}]{cmd:)}}group the studies in the output{p_end}
-{synopt :{opt citype(string)}}specify method of constructing confidence intervals for individual studies (not pooled results){p_end}
-{synopt :{opt cumul:ative}}perform cumulative meta-analysis{p_end}
-{synopt :{it:{help eform_option}}}exponentiate effect sizes and confidence limits{p_end}
-{synopt :{opt eff:ect(string)}}title for "effect size" column in the output{p_end}
-{synopt :{opt inter:action}}automatically identify and pool a treatment-covariate interaction{p_end}
-{synopt :{opt keepall}}display all studies in the output, even those for which no effect could be estimated{p_end}
+{synopt :{it:{help admetan##options:admetan_options}}}any {bf:{help admetan}} options except {opt npts(varname)}{p_end}
+
+{syntab :Syntax 1 only}
 {synopt :{opt me:ssages}}print messages relating to success of model fits{p_end}
-{synopt :{opt nogr:aph}}suppress the forest plot{p_end}
-{synopt :{opt nohet}}suppress all heterogeneity statistics{p_end}
-{synopt :{opt noov:erall}}suppress overall pooling{p_end}
-{synopt :{opt nosu:bgroup}}suppress pooling within subgroups{p_end}
-{synopt :{opt notab:le}}suppress printing the table of effect sizes to screen{p_end}
-{synopt :{opt notot:al}}suppress initial fitting of {it:command} to the entire dataset{p_end}
-{synopt :{opt nowarn:ing}}suppress random-effects warning note on forest plot{p_end}
-{synopt :{opt ovwt sgwt}}over-ride default choice of whether to display overall weights or subgroup weights{p_end}
+{synopt :{opt inter:action}}automatically identify and pool a treatment-covariate interaction{p_end}
 {synopt :{opt pool:var(model_coefficient)}}specify explicitly the coefficient to pool{p_end}
-{synopt :{opt re}}specify the DerSimonian & Laird random-effects model{p_end}
-{synopt :{cmd:re(}{help ipdmetan##re_model:{it:re_model}}{cmd:)}}specify alternative random-effects models{p_end}
-{synopt :{cmd:sortby(}{it:varname}|{cmd:_n)}}specify ordering of studies in table and forestplot{p_end}
+{synopt :{opt notot:al}}suppress initial fitting of {it:command} to the entire dataset{p_end}
+
+{syntab :Syntax 2 with {opt logrank} only}
+{synopt :{opt st:rata}}specify further variables by which to stratify the log-rank calculations{p_end}
 
 {syntab :Combined IPD/aggregate data analysis}
 {synopt :{cmd:ad(}{it:{help filename}} {ifin}{cmd:,} {help ipdmetan##aggregate_data_options:{it:aggregate_data_options}}{cmd:)}}
@@ -54,11 +74,10 @@ combine IPD with aggregate data stored in {it:filename}{p_end}
 {syntab :Forest plots}
 {synopt :{cmdab:lcol:s(}{help ipdmetan##cols_info:{it:cols_info}}{cmd:)} {cmdab:rcol:s(}{help ipdmetan##cols_info:{it:cols_info}}{cmd:)}}
 display (and/or save) columns of additional data{p_end}
-{synopt :{cmd:ovstat(q)}}display Q statistics instead of I-squared{p_end}
 {synopt :{cmd:plotid(}{it:varname}{cmd:|_BYAD} [{cmd:, {ul:l}ist {ul:nogr}aph}]{cmd:)}}
 define groups of observations in which to apply specific plot rendition options{p_end}
-{synopt :{cmdab:sa:ving(}{it:{help filename}} [{cmd:, replace} {cmdab:stack:label}]{cmd:)}}save results in the form of a "forestplot dataset" to {it:filename}{p_end}
-{synopt :{cmdab:forest:plot(}{help forestplot##options:{it:forestplot_options}}{cmd:)}}other options to pass to {bf:{help forestplot}}{p_end}
+{synopt :{it:{help admetan##fplotopts:admetan_fplotopts}}}other options pertaining to the forest plot as described in {bf:{help admetan}}{p_end}
+{synopt :{cmdab:forest:plot(}{help forestplot##options:{it:forestplot_options}}{cmd:)}}other options as described in {bf:{help forestplot}}{p_end}
 {synoptline}
 
 {pstd}
@@ -70,7 +89,7 @@ or an interaction involving continuous variables (c.f. syntax of {help test})
 and where {it:cols_info} has the following syntax, which is based on that of {bf:{help collapse}}:
 
 {pmore}
-[{opt (stat)}] [{it:newname}=]{it:item} [{it:%fmt} {cmd:"}{it:label}{cmd:"}] [[{it:newname}=]{it:item} [{it:%fmt} {cmd:"}{it:label}{cmd:"}] ] {it:...} [ [{opt (stat)}] {it:...}]
+[{opt (stat)}] [{it:newname}=]{it:item} [{it:%fmt}] [{cmd:"}{it:label}{cmd:"}] [[{it:newname}=]{it:item} [{it:%fmt} {cmd:"}{it:label}{cmd:"}] ] {it:...} [ [{opt (stat)}] {it:...}]
 
 {pmore}
 where {it:stat} is as defined in {bf:{help collapse}};
@@ -78,31 +97,14 @@ where {it:stat} is as defined in {bf:{help collapse}};
 {it:item} is the name of either a numeric returned quantity from {it:command} (in parentheses, see {it:{help exp_list}})
 or a variable currently in memory; {it:%fmt} is an optional {help format}; and {cmd:"}{it:label}{cmd:"} is an optional variable label.
 
-{marker re_model}{...}
-{synopthdr :re_model}
-{synoptline}
-{synopt :{opt dl}}DerSimonian-Laird estimator (equivalent to specifying {opt re} alone, with no sub-option){p_end}
-{synopt :{opt dlt}, {opt hk} or {opt kh}}DerSimonian-Laird with Hartung-Knapp t-based variance estimator{p_end}
-{synopt :{opt bdl} or {opt dlb}}Bootstrap DerSimonian-Laird estimator (due to Kontopantelis) {p_end}
-{synopt :{opt ca}, {opt he} or {opt vc}}Cochran ANOVA-like estimator aka Hedges aka "variance component" estimator{p_end}
-{synopt :{opt sj}}Sidik-Jonkman two-step estimator{p_end}
-{synopt :{opt b0}}Rukhin B0 estimator{p_end}
-{synopt :{opt bp}}Rukhin BP estimator{p_end}
-{synopt :{opt bs}, {opt bt} or {opt gamma}}Biggerstaff-Tweedie approximate Gamma model{p_end}
-{synopt :{opt eb}, {opt gq}, {opt genq}, {opt mp} or {opt q}}Mandel-Paule aka Generalised Q aka "empirical Bayes" estimator{p_end}
-{synopt :{opt ml}}(simple) maximum likelihood (ML) estimator{p_end}
-{synopt :{opt pl}}"Profile" maximum likelihood model{p_end}
-{synopt :{opt reml}}Restricted maximum likelihood (REML) estimator{p_end}
-{synopt :{opt kr}}REML with Kenward-Roger variance estimator (using expected information){p_end}
-{synopt :{opt sa} [{cmd:, isq(}{it:real}{cmd:)}]}Sensitivity analysis with user-defined I-squared (due to Kontopantelis); default is 0.8{p_end}
-{synoptline}
-
 {marker aggregate_data_options}{...}
 {synopthdr :aggregate_data_options}
 {synoptline}
+{synopt :{opt vars(varlist)}}variables containing effect size and either standard error or 95% confidence limits, on the normal scale{p_end}
+{synopt :{opt npts(varname)}}variable containing participant numbers{p_end}
 {synopt :{opt byad}}IPD and aggregate data are to be treated as subgroups (rather than as a single set of estimates){p_end}
-{synopt :{opt npts(varname)}}specify variable containing participant numbers{p_end}
-{synopt :{opt vars(varlist)}}specify variables containing effect size and either standard error or 95% confidence limits, on the normal scale{p_end}
+{synopt :{opt logr:ank}}specify that {opt vars()} are to be interpreted as {it:O-E} and {it:V}{p_end}
+{synopt :{opt rel:abel}}force relabelling of studies within the combined IPD/aggregate dataset{p_end}
 {synoptline}
 
 {p2colreset}{...}
@@ -112,23 +114,39 @@ or a variable currently in memory; {it:%fmt} is an optional {help format}; and {
 {title:Description}
 
 {pstd}
-{cmd:ipdmetan} performs two-stage individual participant-data (IPD) meta-analysis using the inverse-variance method.  Basic syntax is
-
-{phang2}
-{cmd:. ipdmetan}{cmd:,} {opt study(study_ID)} {cmd::} {it:command}
+{cmd:ipdmetan} performs two-stage individual participant-data (IPD) meta-analysis.  There are two basic syntaxes, as shown above.
 
 {pstd}
-which fits the model {it:command} once within each level of {it:study_ID}
-and saves effect sizes and standard errors for pooling, output and displaying in a forest plot.
-Any e-class regression command (whether built-in or user-defined) should be compatible with this basic syntax of {cmd:ipdmetan}.
+Syntax 1 fits the model {it:command} once within each level of {it:study_ID}
+and saves effect sizes and standard errors. By default these are pooled using inverse-variance, with output displayed on screen and in a forest plot.
+Any e-class regression command (whether built-in or user-defined) should be compatible with this syntax of {cmd:ipdmetan}.
 
-{pstd}
+{pmore}
 In the case of non e-class commands - those which do not change the contents of {cmd:e(b)} -,
 the effect size and standard error statistics to be collected from the execution of {it:command}
 must be specified manually by supplying {it:{help exp_list}}.
 If {it:command} changes the contents in {cmd:e(b)}, {it:exp_list} defaults to
 {cmd:_b[}{it:varname}{cmd:]} {cmd:_se[}{it:varname}{cmd:]},
 where {it:varname} is the first independent variable within {it:command}.
+
+{pstd}
+Syntax 2 converts the IPD to aggregate data using {bf:{help collapse}};
+after which any of the analysis methods used by {bf:{help metan}},
+such as Mantel-Haenszel and Standardised Weighted Means, become applicable.
+
+{pmore}
+There are three ways in which {cmd:ipdmetan} Syntax 2 can convert IPD to aggregate data, as listed under {help ipdmetan##syntax:Syntax}.
+In the first case (binary outcome; binary treatment variable), the data will be summarised by study as cell counts from a 2x2 contingency table.
+In the second case (continuous outcome; binary treatment variable), the data will be summarised by study as means and SDs by treatment arm.
+Finally, if a binary treatment variable alone is supplied and the data is {bf:{help stset}},
+the survival data will be summarised by study using Peto logrank {it:O-E} and {it:V} statistics
+(note that this supersedes {cmd:petometan} which previously formed part of the {cmd:ipdmetan} package).
+These summaries correspond to the "specific effect measure" inputs listed in the {bf:{help admetan#syntax:admetan}} help file.
+
+{pmore}
+Note that with Syntax 2, the effect measure must be made explicit by use of an option such as {opt rr}, {opt or}, {opt hr}, {opt smd} or {opt logrank};
+see {bf:{help admetan}} and {it:{help eform_option}}.
+
 
 {marker options}{...}
 {title:Options}
@@ -143,163 +161,102 @@ which must be either integer-valued or string.
 {opt missing} requests that missing values be treated as potential study identifiers; the default is to exclude them.
 
 {phang}
-{cmd:by(}{it:subgroup_ID} [{cmd:, missing}]{cmd:)} specifies a variable identifying subgroups of studies (and must therefore be constant within studies),
-which must be either integer-valued or string.
-
-{pmore}
-{opt missing} requests that missing values be treated as potential subgroup identifiers; the default is to exclude them.
-
-{phang}
-{opt citype(string)} specifies how confidence limits are constructed for individual studies.
-Note that confidence limits for {it:pooled} results are calculated consistently with the specified {help ipdmetan##re_model:{it:re_model}},
- or using the Normal distribution if fixed-effects.
-
-{pmore}
-{cmd:citype(normal)} or {cmd:citype(z)} is the default, specifying use of the Normal distribution (i.e. a {it:z}-statistic)
-
-{pmore}
-{cmd:citype(t)} specifies use of the {it:t}-distribution based on {cmd:e(df_r)} degrees of freedom ({it:command} must be e-class and return this statistic)
-
-{pmore}
-{cmd:citype(logit)} recreates the logit-transformed confidence limits outputted by default (as of Stata 13) by {bf:{help proportion}}.
-
-{phang}
-{opt cumulative} requests that the meta-analysis be performed cumulatively; that is, performed repeatedly with one study being added each time, in the order specified by {cmd:sortby()}.
-Overall pooled effect information (tests of {it:z} = 0, heterogeneity etc.) is not reported.
-
-{pmore}
-Note that, in the forest plot, box sizing uses cumulative {it:fixed}-effects weights, even if the analyses themselves are random-effects.
-This is to maintain a monotone increase in box size reflecting the accumulating information,
-which due to heterogeneity would not not be guaranteed if random-effects weights were used.
-
-{phang}
-{it:{help eform_option}} specifies that effect sizes and confidence limits should be exponentiated in the table and forest plot.
-The option also generates a heading for the effect size column.
-
-{pmore}
-Note that {cmd:ipdmetan} does not check the validity of the particular {it:{help eform_option}} used;
-e.g. whether {it:command} is a survival model if {opt hr} is supplied.
-
-{phang}
-{opt effect(string)} specifies a heading for the effect size column in the output.
-This overrides any heading generated by {it:{help eform_option}}.
-
-{phang}
-{opt interaction} specifies that {it:command} contains one or more interaction effects
+{opt interaction} (Syntax 1 only) indicates that {it:command} contains one or more interaction effects
 supplied using factor-variable syntax (see {help fvvarlist}),
 and that the first valid interaction effect should be pooled across studies.
-This is intended as a helpful shortcut for simple interaction analyses, but it is not foolproof or comprehensive.
-The alternative is to supply the desired coefficient to be pooled directly to ipdmetan using {cmd:poolvar()}.
+This is intended as a helpful shortcut for performing two-stage "deft" interaction analyses as described in {help ipdmetan#refs:Fisher 2017}.
+However, it is not foolproof, and the identified coefficient should be checked carefully.
+Alternatively, the desired coefficient to be pooled may be supplied directly using {opt poolvar()}.
 
 {phang}
-{opt keepall} specifies that all values of {it:study_ID} should be visible in the table and forest plot,
-even if no effect could be estimated (e.g. due to insufficient observations or missing data).
-For such studies, "(Insufficient data)" will appear in place of effect estimates and weights.
-
-{phang}
-{opt messages} requests that information is printed to screen regarding whether effect size and standard error statistics
+{opt messages} (Syntax 1 only) requests that information is printed to screen regarding whether effect size and standard error statistics
 have been successfully obtained from each study, and (if applicable) whether the iterative random-effects calculations
 converged successfully.
 
 {phang}
-{opt nograph}, {opt notable} request the suppression of, respectively,
-construction of the forest plot and the table of effect sizes.
-
-{phang}
-{opt nohet} suppresses heterogeneity statistics in both table and forest plot.
-
-{phang}
-{opt nooverall}, {opt nosubgroup} affect which groups of data are pooled, thus affecting both the table of effect sizes
-and the forestplot (if applicable).
-
-{pmore} {opt nooverall} suppresses the overall pooled effect, so that (for instance) subgroups are considered entirely
-independently. Between-subgroup heterogeneity statistics (if applicable) are also suppressed.
-
-{pmore} {opt nosubgroup} suppresses the within-subgroup pooled effects (if applicable), so that subgroups are displayed
-separately but with a single overall pooled effect with associated heterogeneity statistics.
-
-{phang}
-{opt nototal} requests that {it:command} not be fitted within the entire dataset, e.g. for time-saving reasons.
+{opt nototal} (Syntax 1 only) requests that {it:command} not be fitted within the entire dataset, e.g. for time-saving reasons.
 By default, such fitting is done to check for problems in convergence and in the validity of requested coefficients and
 returned expressions. If {opt nototal} is specified, either {opt poolvar()} or {it:exp_list} must be supplied,
 and a message appears above the table of results warning that estimates should be double-checked by the user.
 
 {phang}
-{opt nowarning} suppresses the default display, in the forest plot, of a note warning
-that studies are weighted from random effects analyses.
-
-{phang}
-{opt ovwt}, {opt sgwt} over-ride the default choice of whether to display overall weights or within-subgroup weights
-in the screen output and forest plot. Note that this makes no difference to the calculations,
-as weights are normalised anyway.
-
-{phang}
-{opt poolvar(model_coefficient)} allows the coefficient to be pooled to be explicitly stated in situations where it may not be obvious,
+{opt poolvar(model_coefficient)} (Syntax 1 only) allows the coefficient to be pooled to be explicitly stated in situations where it may not be obvious,
 or where {cmd:ipdmetan} has made a previous incorrect assumption. {it:model_coefficient} should be a variable name,
 a level indicator, an interaction indicator, or an interaction involving continuous variables (c.f. syntax of {help test}).
 To use equations, use the format {cmd:poolvar(}{it:eqname}{cmd::}{it:varname}{cmd:)}.
 
 {phang}
-{opt re} or {opt random} specifies DerSimonian & Laird random-effects
+{opt strata(varlist)} (Syntax 2 with {opt logrank} only) specifies further variables to be used in log-rank calculations
+but not be presented in the output.
 
-{phang}
-{cmd:re(}{help ipdmetan##re_model:{it:re_model}}{cmd:)} specifies other possible random-effects models. For details of these models, see the Stata Journal article referenced below.
-If {help ipdmetan##re_model:{it:re_model}} is not specified, the DerSimonian & Laird random-effects model is assumed.
-
-{phang}
-{cmd:sortby(}{it:varname}|{cmd:_n)} allows user-specified ordering of studies in the table and forestplot.
-The default ordering is by {it:study_ID}. Note that {opt sortby} does not alter the data in memory.
-
-{pmore}
-To order the studies by their first appearance in the data (using the current sort order), specify {cmd:sortby(_n)}.
 
 {dlgtab:Combined IPD/aggregate data analysis}
 
 {phang}
-{cmd:ad(}{it:{help filename}} {ifin}{cmd:,} {help ipdmetan##aggregate_data_options:{it:aggregate_data_options}}{cmd:)}
+{cmd:ad(}[{it:{help filename}}] {ifin}{cmd:,} {it:aggregate_data_options}{cmd:)}
 allows aggregate (summary) data may be included in the analysis alongside IPD, for example if some studies do not have IPD available.
-If {cmd:ad()} is specified, {it:filename} and {opt vars(varlist)} are required.
+
+{phang}
+{it:aggregate_data_options} are as follows:
 
 {pmore}
-{opt vars(varlist)} contains the names of variables (within {it:filename})
-containing the effect size and either a standard error or lower and upper 95% confidence limits, on the linear scale.
+{opt vars(varlist)} contains the names of variables containing the effect size
+and either a standard error or lower and upper 95% confidence limits, on the linear scale.
+If {it:{help filename}} is supplied, {it:varlist} will be taken from within the external file;
+otherwise {it:varlist} will be taken from the data currently in memory.
 If confidence limits are supplied, they must be derived from a Normal distribution or the pooled result will not be accurate (see {bf:{help admetan}}).
 
 {pmore}
-{opt npts(varname)} allows participant numbers (stored in {it:varname} within {it:filename}) to be displayed in tables and forestplots.
+{opt npts(varname)} allows participant numbers stored in {it:varname} within {it:filename} to be displayed in tables and forest plots.
 
 {pmore}
 {opt byad} specifies that aggregate data and IPD respectively are to be treated as subgroups.
 
 {pmore}
-Note that subgroups may be analysed in the same way as for IPD - that is, with the {opt by(varname)} option to {cmd:ipdmetan}.
+{opt logrank} specifies that {opt vars(varlist)} contains the statistics {it:O-E} and {it:V}
+rather than the default {it:ES} and {it:seES}.
+
+{pmore}
+{opt relabel} tells {cmd:ipdmetan} to re-label all studies sequentially as "1", "2", etc.,
+(copying value labels across, if found) in the event that value labels do not agree between IPD and aggregate datasets.
+
+{pmore}
+Note that subgroups in aggregate data may be analysed in the same way as for IPD - that is, with the {opt by(varname)} option to {cmd:ipdmetan}.
 {it:varname} may be found in either the data in memory (IPD), or in the aggregate dataset, or both.
+
 
 {dlgtab:Forest plots}
 
 {phang}
-{cmd:lcols(}{help ipdmetan##cols_info:{it:cols_info}}{cmd:)}, {cmd:rcols(}{help ipdmetan##cols_info:{it:cols_info}}{cmd:)} define columns of additional data to be presented to the left or right of the forest plot.
-These options are carried over from {bf:{help metan}}, but in the IPD context they must first be generated from the existing dataset.
-{cmd:ipdmetan} creates a new dataset of effect sizes, weights, labels etc. to pass to {bf:{help forestplot}},
-which may also contain variables representing such additional columns.
-Hence, the syntax of {help ipdmetan##cols_info:{it:cols_info}} allows the user to specify characteristics of new variables
-such as name, title and format, which will be carried over to the forest plot.
+{cmd:lcols(}{help ipdmetan##cols_info:{it:cols_info}}{cmd:)}, {cmd:rcols(}{help ipdmetan##cols_info:{it:cols_info}}{cmd:)}
+define columns of additional summary data to be presented to the left or right of the forest plot.
+With {cmd:admetan} these options simply require a {it:varlist}, but in the IPD context the syntax is more complicated.
+The user may specify summary statistics by which to {bf:{help collapse}} the data,
+as well as characteristics of the summarised variables such as name, title and format which will be carried over to the forest plot.
 
 {pmore}
-Specifying {it:newname} is only necessary in circumstances where the name of the variable in the {bf:{help forestplot}} dataset is important.
+Specifying {it:newname} is only necessary in circumstances where the name of the variable is important
+in the dataset underlying the forest plot (i.e. the dataset created by {opt saving()} if applicable).
 For example, you may have an aggregate dataset with a variable containing data equivalent to an {it:item},
 and wish for all such data (whether IPD or aggregate) to appear in a single column in the forest plot.
 To achieve this, specify {it:newname} as the name of the relevant variable in the aggregate dataset.
-Make sure that the variables in the IPD and aggregate datasets do not have conflicting formats (e.g. string and numeric)
+Make sure that the variables in the IPD and aggregate datasets do not have conflicting {help data_types} (e.g. string vs numeric)
 or a {bf:{help merge}} error will be returned.
 
 {pmore}
-Note that {it:item} may be an existing string variable, in which case the first non-empty observation for each study will be used,
-and the {it:item} will not be displayed alongside overall or subgroup pooled estimates.
-To force this behaviour for a numeric variable, it must first be converted to string format using {bf:{help recode}} or {bf:{help tostring}}.
+If {it:item} is an existing string variable, the first non-empty observation for each study will be used,
+and {it:item} will not be displayed alongside overall or subgroup pooled estimates.
+(This behaviour may also be forced upon a numeric variable by first converting it into a string using {bf:{help recode}} or {bf:{help tostring}}.)
 
 {pmore}
-{cmd:lcols} and {cmd:rcols} may also be supplied directly to {bf:{help forestplot}}, but as a list of existing variable names only.
+Formatting of forest plot columns may be controlled using {help ipdmetan##cols_info:{it:cols_info}}.
+Note that unlike {opt (stat)}, {it:%fmt} only applies to each immediately preceding {it:item}.
+By default, Stata displays strings as right-justified.
+A single string-valued forest plot column may be left-justified as described in {help format}.
+To left-justify {ul:all} strings in the forest plot, the {help forestplot##options:{it:forestplot_option}} {opt leftjustify} has been provided.
+
+{pmore}
+(Note that the syntax of {opt lcols()} and {opt rcols()} with {bf:{help admetan}} and {bf:{help forestplot}} is as a list of existing variable names only.)
 
 {phang}
 {cmd:plotid(}{it:varname}{cmd:|_BYAD} [{cmd:, list nograph}]{cmd:)} is really a {bf:{help forestplot}} option, but has a slightly
@@ -309,69 +266,30 @@ is supplied to {opt ad}, since in this case the subgrouping is not defined by an
 {pmore}
 For further details of this option and the {opt list} and {opt nograph} suboptions, see {bf:{help forestplot}}.
 
-{phang}
-{cmd:saving(}{it:{help filename}} [{cmd:, replace} {cmd:stacklabel}]{cmd:)} saves the forestplot "results set" created by
-{cmd:ipdmetan} in a Stata data file for further use or manipulation. See {bf:{help forestplot}} for further details.
-
-{pmore}
-{opt replace} overwrites {it:filename}
-
-{pmore}
-{opt stacklabel} is a subtlety: it takes the {it:{help label:variable label}} from the left-most column variable (usually {it:study_ID}),
-which would usually appear outside the plot region as the column heading, and copies it into a new first row in {it:filename}.
-This allows multiple such datasets to be {bf:{help append}}ed without this information being overwritten.
-
 
 {marker saved_results}{...}
 {title:Saved results}
 
-{pstd}{cmd:ipdmetan} saves the following in {cmd:r()}:{p_end}
-{pstd}(with some variation, and in addition to any scalars saved by {bf:{help forestplot}}){p_end}
-
-{synoptset 25 tabbed}{...}
-{p2col 5 25 29 2: Scalars}{p_end}
-{synopt:{cmd:r(k)}}Number of included studies {it:k}{p_end}
-{synopt:{cmd:r(n)}}Number of included participants{p_end}
-{synopt:{cmd:r(eff)}}Overall pooled effect size{p_end}
-{synopt:{cmd:r(se_eff)}}Standard error of overall pooled effect size{p_end}
-{synopt:{cmd:r(Q)}}Q statistic of heterogeneity (N.B. has degrees of freedom {it:k}–1){p_end}
-{synopt:{cmd:r(tausq)}}Between-study variance tau-squared{p_end}
-{synopt:{cmd:r(sigmasq)}}Average within-study variance{p_end}
-{synopt:{cmd:r(Isq)}}Heterogeneity measure I-squared{p_end}
-{synopt:{cmd:r(HsqM)}}Heterogeneity measure H-squared (Mittlböck modification){p_end}
+{pstd}{cmd:ipdmetan} saves the same results in {cmd:r()} as {bf:{help admetan}}, with the following additions:{p_end}
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Macros}{p_end}
-{synopt:{cmd:r(citype)}}Method of constructing confidence intervals{p_end}
 {synopt:{cmd:r(command)}}Full estimation command-line{p_end}
 {synopt:{cmd:r(cmdname)}}Estimation command name{p_end}
 {synopt:{cmd:r(estvar)}}Name of pooled coefficient{p_end}
-{synopt:{cmd:r(re_model)}}Random-effects model used{p_end}
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Matrices}{p_end}
-{synopt:{cmd:r(coeffs)}}Matrix of study and subgroup identifers, effect coefficients, numbers of participants, and weights{p_end}
+{synopt:{cmd:r(coeffs)}}Matrix of study and subgroup identifiers, effect coefficients, numbers of participants, and weights{p_end}
+{synopt:{cmd:r(bystats)}}Matrix of heterogeneity statistics by subgroup{p_end}
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Variables}{p_end}
 {synopt:{cmd:_rsample}}Observations included in the analysis (c.f. {cmd:e(sample)}){p_end}
 
-
 {pstd}
-Certain iterative random-effects models may save the following additional results:{p_end}
-{pstd}
-(see {help mf_mm_root} for interpretations of convergence success values)
-
-{synoptset 25 tabbed}{...}
-{p2col 5 25 29 2: Scalars}{p_end}
-{synopt:{cmd:r(tsq_var)}}Estimated variance of tau-squared{p_end}
-{synopt:{cmd:r(tsq_lci)}}Lower confidence limit for tau-squared{p_end}
-{synopt:{cmd:r(tsq_uci)}}Upper confidence limit for tau-squared{p_end}
-{synopt:{cmd:r(rc_tausq)}}Whether tau-squared point estimate converged successfully{p_end}
-{synopt:{cmd:r(rc_tsq_lci)}}Whether tau-squared lower confidence limit converged successfully{p_end}
-{synopt:{cmd:r(rc_tsq_uci)}}Whether tau-squared upper confidence limit converged successfully{p_end}
-{synopt:{cmd:r(rc_eff_lci)}}Whether mu_hat lower confidence limit converged successfully{p_end}
-{synopt:{cmd:r(rc_eff_uci)}}Whether mu_hat upper confidence limit converged successfully{p_end}
+N.B. For obvious reasons, {help admetan##saved_results:new variables} {bf:_ES}, {bf:_seES} etc. are {ul:not} added to the data with {cmd:ipdmetan}.
+They are instead returned within the matrix {cmd:r(coeffs)}.
 
 
 {title:Examples}
@@ -380,9 +298,9 @@ Certain iterative random-effects models may save the following additional result
 Setup
 
 {pmore}
-{cmd:. use ipdmetan_example.dta, clear}{p_end}
+{stata "use http://fmwww.bc.edu/repec/bocode/i/ipdmetan_example.dta":. use http://fmwww.bc.edu/repec/bocode/i/ipdmetan_example.dta}{p_end}
 {pmore}
-{cmd:. stset tcens, fail(fail)}
+{cmd:. stset tcens, fail(fail)}{p_end}
 
 {pstd}
 Basic use
@@ -401,15 +319,15 @@ Use of {cmd:plotid()}
 Treatment-covariate interactions
 
 {pmore}
-{cmd:. ipdmetan, study(trialid) interaction hr keepall forest(favours("Favours greater treatment effect" "with higher disease stage" # "Favours greater treatment effect" "with lower disease stage") boxsca(200) fp(1)) : stcox trt##c.stage}
+{cmd:. ipdmetan, study(trialid) interaction hr keepall forest(favours("Favours greater treatment effect" "with higher disease stage" # "Favours greater treatment effect" "with lower disease stage") boxsca(200) fp(3)) : stcox trt##c.stage}
 
 {pstd}
-Random effects
+Random effects: DerSimonian-Laird (default), and with optional Hartung-Knapp-Sidik-Jonkman variance correction
 
 {pmore}
 {cmd:. ipdmetan, study(trialid) hr nograph re : stcox trt, strata(sex)}{p_end}
 {pmore}
-{cmd:. ipdmetan, study(trialid) hr nograph re(q) : stcox trt, strata(sex)}
+{cmd:. ipdmetan, study(trialid) hr nograph re(hksj) : stcox trt, strata(sex)}
 
 {pstd}
 Aggregate data setup: create aggregate dataset from IPD dataset (for example purposes only)
@@ -427,11 +345,20 @@ Including aggregate data in the analysis
 {cmd:: stcox trt if region==1, strata(sex)}
 
 {pstd}
-Use of non e-class commands and {cmd:rcols()}: Peto log-rank analysis
+Use of non e-class commands and {opt lcols()}: Peto log-rank analysis
 
 {pmore}
-{cmd:. ipdmetan (u[1,1]/V[1,1]) (1/sqrt(V[1,1])), study(trialid) rcols((u[1,1]) %5.2f "o-E(o)" (V[1,1]) %5.1f "V(o)") by(region) plotid(region) hr forest(nostats nowt favours(Favours treatment # Favours control))}
+{cmd:. ipdmetan (u[1,1]/V[1,1]) (1/sqrt(V[1,1])), study(trialid) by(region) eform effect(Haz. Ratio)}
+{cmd:  lcols((u[1,1]) %5.2f "o-E(o)" (V[1,1]) %5.2f "V(o)") forest(nostats nowt favours(Favours treatment # Favours control))}
 {cmd:: sts test trt, mat(u V)}
+
+{pstd}
+However, that was just to demonstrate Syntax 1 with a non e-class command.
+The example is a Peto logrank survival analysis, which is much more straightforward using Syntax 2 and the {opt oev} option:
+
+{pmore}
+{cmd:. ipdmetan trt, study(trialid) hr iv oev by(region) forest(nostats nowt favours(Favours treatment # Favours control))}
+
 
 
 {title:Author}
@@ -443,16 +370,13 @@ David Fisher, MRC Clinical Trials Unit at UCL, London, UK.{p_end}
 Email {browse "mailto:d.fisher@ucl.ac.uk":d.fisher@ucl.ac.uk}{p_end}
 
 
-{title:Acknowledgments}
+{marker syntax}{...}
+{title:References}
 
-{pstd}
-Thanks to the authors of {bf:{help metan}}, upon which this code is based;
-paticularly Ross Harris for his comments and good wishes.
-
-
-{title:Reference}
-
-{phang}Fisher D. 2015. Two-stage individual participant data meta-analysis and generalised forest plots.
+{phang}Fisher DJ. 2015. Two-stage individual participant data meta-analysis and generalised forest plots.
 Stata Journal 15: 369-96{p_end}
 
+{phang}Fisher DJ, Carpenter JR, Morris TP, Freeman SC, Tierney JF. 2017.
+Meta-analytical methods to identify who benefits most from treatments: daft, deluded, or deft approach?
+BMJ 356: j573{p_end}
 
