@@ -49,12 +49,12 @@
 * Reason:
 * - return F statistic for subgroups
 * - correct error in `touse' when passed from admetan
-* - correct error in behaviour of stacklabel under certain conditions (line 2156)
+* - correct error in behaviour of stacklabel under certain conditions (line 2307)
 
 * version 1.04  David Fisher  09apr2014
 * - fixed bug with DerSimonian & Laird random-effects
 * - fixed bug which failed to drop tempvar containing held estimates
-* - fixed bug in output table title when using ipdover (lines 2826-2831)
+* - fixed bug in output table title when using ipdover
 * - _rsample now returned for admetan too
 * - added ovwt/sgwt options
 
@@ -68,10 +68,23 @@
 * - improved parsing of prefix/mixed-effects models (i.e. those containing one or more colons)
 *     also improved management of non-convergence and user breaking
 
-*! version 1.06  David Fisher 23jul2014
-* Corrected AD filename bug (line 420)
+* version 1.06  David Fisher 23jul2014
+* Corrected AD filename bug (line 437)
 * ipdover now uses subgroup sample size as default weight, rather than inverse-variance
 * (as suggested by Phil Jones, and as seems to be standard practice in literature)
+
+*! version 1.07  David Fisher, 29jun2015
+* Major update to coincide with publication of Stata Journal article
+* Corrected "Cochrane Q" to "Cochran Q"
+* Improved behaviour of "nohet" and "notab"
+* Dec 2014: Added cumulative MA option(cf metacum)
+* Feb 2015: Added Kenward-Roger variance estimator (using expected information, not observed)
+* Modified the program generally to deal better with sitations where only one estimate (or zero estimates for specific subgroups)
+* May 2015: Work-around for bug in _prefix_command which fails with "if varname="label":lblname" syntax
+* June 2015: Corrected implementation of empirical Bayes random-effects model
+
+
+
 
 
 program ipdmetan, rclass sortpreserve
@@ -93,34 +106,33 @@ program ipdmetan, rclass sortpreserve
 		/// IPD options
 		Study(string) OVER(string)	/// to be parsed later; over() for error-trapping only
 		SORTBY(string)				/// optional sorting varlist
+		CUMULative					/// cumulative meta-analysis
 		INTERaction					///
 		MEssages					///
 		KEEPALL						///
 		POOLvar(string)				/// "string" as may include equation names
 		IPDOVER	SMISSING BYMISSING	/// options passed through from ipdover (see ipdover.ado & help file)
 		/// Aggregate options
-		AD(string) ADONLY			///	to be parsed later
+		AD(string asis) ADONLY		///	to be parsed later
 		NPTS(name local) BYAD VARS(namelist local)	/// for error capture only -- should only appear within "AD" option
 		/// General options
 		BY(string)					///
 		EFFect(string)				///
+		CITYPE(string)				/// CIs for individual studies (NOT for pooled results)
 		FORESTplot(string asis)		/// options to pass through to forestplot
 		LCOLs(string asis) RCOLs(string asis)	/// lcols/rcols apply to both ipdmetan coeff matrix or to forestplot
 		noTABle	noHET noTOTal 		///
+		OVSTAT(string)				/// display Q statistics instead of I-squared
 		PLOTID(string)				///
 		SAving(string)				/// specify filename in which to save results set
-		/// General options, may be specified either directly to ipdmetan or as a forestplot() option (see line 215)
-		noGRaph	noOVerall noSUbgroup noWT OVWT SGWT ///
+		/// General options, may be specified either directly to ipdmetan or as a forestplot() option (see line 237 onwards)
+		noGRaph	noOVerall noSUbgroup noWARNing noWT OVWT SGWT ///
 		/// Undocumented options
 		ZTOL(real 1e-6)	LEVEL(passthru)	/// ztol = tolerance for z-score (abs(ES/seES)); level = CI (default 95)
-		/// Options for specific random-effects models
-		/// (these need to appear here in order to set defaults; later parsing of re() will override)
-		REPS(real 1000) ISQ(real .8)	/// reps for bootstrap; isq for sensitivity analysis
-		ITOL(real 1e-8) MAXTAUSQ(real 50) ///
-		MAXITER(real 1000)			/// defaults for mm_root (in GetEstimates)
-		QUADPTS(real 40)			/// default quadrature points for &Integrate (in GetEstimates)
-		*							///
+		*							/// other options
 	]
+	
+	local citype = cond(inlist(`"`citype'"', `""', `"z"'), `"normal"', `"`citype'"')	// default is citype(normal)
 	
 	** Sort out eform opts
 	_get_eformopts, soptions eformopts(`options') allowed(__all__)
@@ -130,8 +142,17 @@ program ipdmetan, rclass sortpreserve
 	
 
 	** Parse random-effects option (more than one permitted syntax)
-	* (N.B. Stata options are RIGHTMOST)
-	local reModel "fe"					// fixed-effects (default)
+	// (N.B. Stata options are RIGHTMOST)
+	
+	* Defaults
+	local reModel "fe"		// fixed-effects
+	local reps = 1000		// reps for bootstrap (undocumented)
+	local isq = .8			// isq for sensitivity analysis
+	local itol = 1e-8
+	local maxtausq = 50
+	local maxiter = 1000	// defaults (undocumented) for mm_root in GetEstimates
+	local quadpts = 40		// default quadrature points (undocumented) for &Integrate in GetEstimates
+	
 	if `"`options'"'!=`""' {
 		local 0 `", `options'"'
 		cap syntax [, RE RE(string) RANDOM RANDOM(string)]
@@ -149,25 +170,25 @@ program ipdmetan, rclass sortpreserve
 			if `"`re'"'!=`""' local random `re'
 		}
 		
-		* Sort out synonyms
+		// sort out RE model synonyms
 		if `"`random'"'!=`""' {
 			local 0 `"`random'"'
 			syntax [anything(name=reModel id="random-effects model")] ///
 				[, ITOL(real 1e-8) MAXTausq(real 50) REPS(real 1000) MAXITer(real 1000) QUADPTS(real 40) ISQ(real .8)]
 			if inlist("`reModel'", "", "r", "random", "rand", "re", "dl") local reModel "dl"	// DerSimonian/Laird random-effects (default)
-			else if inlist("`reModel'", "dlt", "hk") local reModel "dlt"					// DL with Hartung-Knapp variance estimator
+			else if inlist("`reModel'", "dlt", "hk", "kh") local reModel "dlt"				// DL with Hartung-Knapp variance estimator
 			else if inlist("`reModel'", "bdl", "dlb") local reModel "dlb"					// Bootstrap DerSimonian/Laird
 			else if inlist("`reModel'", "q", "gq", "genq", "vb", "eb") local reModel "gq"	// Generalised Q aka Empirical Bayes
 			else if inlist("`reModel'", "g", "gamma", "bt", "bs") local reModel "bs"		// Biggerstaff/Tweedie random-effects (approx Gamma)
 			else if inlist("`reModel'", "f", "fe", "fixed") local reModel "fe"		// Fixed-effects
 			else if inlist("`reModel'", "vc", "ca", "he") local reModel "vc"		// Variance-component aka Cochran ANOVA aka Hedges
 			else if inlist("`reModel'", "sens", "sa") local reModel "sa"			// Sensitivity analysis (at fixed Isq)
-			else if !inlist("`reModel'", "dlt", "sj", "b0", "bp", "ml", "pl", "reml") {
+			else if !inlist("`reModel'", "dlt", "sj", "b0", "bp", "ml", "pl", "reml", "kr") {
 				disp as err "Invalid random-effects model"							// SJ = (improved) Sidik/Jonkman
 				exit 198															// B0/BP = Rukhin Bayes estimators
 			}																		// ML/REML = (simple) ML/REML
 		}																			// PL = "Profile" ML
-		if inlist("`reModel'", "gq", "bs", "ml", "pl", "reml") {
+		if inlist("`reModel'", "gq", "bs", "ml", "pl", "reml", "kr") {				// KR = REML with Kenward-Roger variance estimator
 			capture mata mata which mm_root()
 			if _rc {
 				disp as err "Iterative tau-squared calculations require mm_root() from -moremata-"
@@ -210,37 +231,37 @@ program ipdmetan, rclass sortpreserve
 			}
 		}
 	}
-	return local re_model "`reModel'"
+	if `"`ipdover'"'==`""' return local re_model "`reModel'"
 	
 	
 	** Parse forestplot options to extract those relevant to ipdmetan
-	* But first, temporarily rename options which may be supplied to EITHER ipdmetan OR forestplot.
-	* "forestplot options" prioritised over "ipdmetan options" in the event of a clash
-	* ipdmetan will then pass them back through to forestplot as usual.
-	foreach x in graph overall subgroup het plotid lcols rcols ovwt sgwt wt {
+	//  But first, temporarily rename options which may be supplied to EITHER ipdmetan OR forestplot.
+	//  "forestplot options" prioritised over "ipdmetan options" in the event of a clash
+	//  ipdmetan will then pass them back through to forestplot as usual.
+	foreach x in graph overall subgroup het ovstat name plotid lcols rcols ovwt sgwt wt {
 		local `x'_ipdm : copy local `x'
 	}
 	local 0 `", `forestplot'"'
-	syntax [, noGRAPH noOVERALL noSUBGroup noHET EFORM EFFECT(string) PLOTID(string asis) ///
+	syntax [, noGRAPH noOVERALL noSUBGroup noHET /*EFORM*/ EFFECT(string) OVSTAT(string) PLOTID(string asis) ///
 		LCOLS(string asis) RCOLS(string asis) OVWT SGWT noWT *]
 
-	* sort out eform options from ipdmetan and forestplot
+	// sort out eform options from ipdmetan and forestplot
 	_get_eformopts, soptions eformopts(`options') allowed(__all__)
 	local fplotopts `"`s(options)'"'
 	local eform = cond(`"`s(eform)'"'!="", "eform", `"`eform_ipdm'"')
 	if `"`effect'"'=="" local effect = cond(`"`s(str)'"'!="", `"`s(str)'"', `"`effect_ipdm'"')
 	if `"`interaction'"'!=`""' local effect `"Interact. `effect'"'
 	
-	* sort out other options
-	foreach x in graph overall subgroup het ovwt sgwt wt {
+	// sort out other options
+	foreach x in graph name overall subgroup wt {
 		if `"``x''"'==`""' & `"``x'_ipdm'"'!=`""' local `x' : copy local `x'_ipdm
 		local fplotopts `"`fplotopts' ``x''"'	// add straight to fplotopts; not needed any more by ipdmetan
 	}
-	foreach x in plotid lcols rcols {
+	foreach x in het ovstat plotid lcols rcols ovwt sgwt {
 		if `"``x''"'==`""' & `"``x'_ipdm'"'!=`""' local `x' : copy local `x'_ipdm
-		* don't include these in fplotopts, as contents may need to be manipulated first
+		// don't include these in fplotopts, as either cannot be supplied directly to forestplot (het, ovstat, ovwt, sgwt)
+		// or their contents may need to be manipulated first (plotid, lcols, rcols)
 	}
-	syntax [, noNAME OVSTAT(string) *]			// extract noNAME and OVSTAT from `0' == `", `forestplot'"'
 
 	* Error checking
 	if `"`het'"'!=`""' local ovstat "none"
@@ -250,53 +271,58 @@ program ipdmetan, rclass sortpreserve
 	}
 	
 
-	* Main ipdmetan loop needs to add "if `touse' & `sgroup'==`i'" after "`cmdname' `anything'" but before "`options'"
-	* Hence, need to check for, and deal with, complex syntaxes e.g. svy or mixed
+	* PROBLEM: Main ipdmetan loop needs to add "if `touse' & `sgroup'==`i'" to the command syntax in an appropriate place
 	
-	* Begin by checking for a second colon and testing for a "prefix command" syntax
+	* POTENTIAL ISSUES:
+	// (a) prefix commands, e.g. svy; these can mostly be left alone, but strip off to identify the actual *estimation* command
+	// (b) multilevel models; these (should) all have the syntax  [command] [depvar] [indepvars] [if] [in] [, fe_options] [|| ...] [, options]
+	//      so use "_parse expand" to isolate fe_equation; then can continue as normal
+	// (c) _prefix_command does not like the syntax  if varname=="[label]":[lblname]  so will need to remove `if' before using it.
+	
+	* STRATEGY:
+	// 1. Use "_parse expand" to isolate fe_equation
+	// 2. Strip off `if' (and `in', `weights' and `options', for simplicity) and save separately
+	// 3. Run _prefix_command repeatedly to separate off any prefixes and to isolate estimation command
+	// 5. Re-assemble command and continue (any remaining syntax errors will be found when the command is first run)
+	
+	* Use "_parse expand" to isolate fe_equation, and to identify first `if' and `in'
+	local fullcommand `"`command'"'
+	_parse expand stub1 stub2 : command
+	forvalues i=1/`stub1_n' {
+		local 0 `stub1_`i''
+		syntax [anything] [if] [in] [fw aw pw iw] [, *]
+
+		local cmdif = cond(`"`cmdif'"'==`""', `"`if'"', `"`cmdif'"')
+		local cmdin = cond(`"`cmdin'"'==`""', `"`in'"', `"`cmdin'"')
+
+		if `i'==1 {
+			local command `"`anything'"'
+			local cmdopts
+			if `"`weight'`exp'"'!=`""' local cmdopts `"[`weight'`exp']"'
+			if `"`options'"'!=`""' local cmdopts `"`cmdopts', `options'"'
+		}
+		else local cmdrest `"`cmdrest' || (`stub1_`i'')"'		// store everything else
+	}
+
+	* Prefixes should be the only instances of colons outside quotes now
+	//  so we can run _prefix_command repeatedly to identify the estimation command
+	//  (i.e. the command following the last colon)
 	local pcommand
 	local before "before"
 	while `"`before'"'!=`""' {
 		cap _on_colon_parse `command'
-		if !_rc {
+		if !_rc {							// if colon found
 			local before `"`s(before)'"' 
 			local after `"`s(after)'"' 
-			cap `version' _prefix_command ipdmetan, `level' `eform' : `before'
-			
-			* If valid syntax, check that `command' is not a mixed model, as these also use colons
-			if !_rc {
-				local cmdname `"`s(cmdname)'"'
-				if !inlist("`cmdname'", "xtmixed", "xtmelogit", "xtmepoisson") ///
-					& !inlist("`cmdname'", "mixed", "meglm", "melogit", "meqrlogit", "meprobit", "mecloglog") ///
-					& !inlist("`cmdname'", "meologit", "meoprobit", "mepoisson", "meqrpoisson", "menbreg") {	
-				
-					local pcommand `"`s(command)' : `pcommand'"'
-					local command `"`after'"'
-				}
-				else local before
-			}
-			else continue, break
+			`version' _prefix_command ipdmetan, `level' `eform' : `before'
+			local cmdname `"`s(cmdname)'"'						// current prefix command
+			local pcommand `"`s(command)' : `pcommand'"'		// all prefix commands
+			local command `"`after'"'							// estimation command
 		}
 		else continue, break
 	}
 	
-	* Having removed prefixes, test for mixed-model structure
-	cap `version' _prefix_command ipdmetan, `level' `eform' : `command'
-	local cmdname `"`s(cmdname)'"'
-	if inlist("`cmdname'", "xtmixed", "xtmelogit", "xtmepoisson") ///
-		| inlist("`cmdname'", "mixed", "meglm", "melogit", "meqrlogit", "meprobit", "mecloglog") ///
-		| inlist("`cmdname'", "meologit", "meoprobit", "mepoisson", "meqrpoisson", "menbreg") {
-		
-		local sanything `"`s(anything)'"'
-		_parse expand stub1 stub2 : sanything
-		forvalues i=2/`stub1_n' {
-			local cmdrest `"`cmdrest' (`stub1_`i'')"'
-		}
-		local cmdrest `"|| `cmdrest'"'
-		local command `"`cmdname' `stub1_1'"'
-	}	
-
-	* Final parse of estimation command only (without "capture")
+	* Final parse of estimation command only
 	`version' _prefix_command ipdmetan, `level' `eform' : `command'
 	local cmdname	`"`s(cmdname)'"'
 	local ADonly : copy local adonly					// use capitalised version for clarity (still contains "adonly")
@@ -305,18 +331,11 @@ program ipdmetan, rclass sortpreserve
 		if `"`efopt'"'!=`""' local efopt "eform"		// no command to which to pass other eforms (e.g. HR, OR)
 	}
 	local cmdargs	`"`s(anything)'"'
-	local cmdif		`"`s(if)'"'
-	local cmdin		`"`s(in)'"'
-	local cmdopts = cond(`"`s(options)'"'==`""', `""', `", `s(options)'"')
-	* MAY 2014: `cmdopts' only appears with `cmdname' and `cmdrest', so include comma in case of user-defined program with no options allowed
-	local level		`"`s(level)'"'
-	if "`level'" == "" local level `c(level)'
-	* local eform		`"`s(eform)'"'
+	local level = cond(`"`s(level)'"'!=`""', `"`s(level)'"', `"`c(level)'"')
 	local eform		`"`s(efopt)'"'
-	* local command	`"`s(command)'"'
 	
 	* Re-assemble full command line and return
-	* (do this now to allow for user error-checking with "return list")
+	// (do this now to allow for user error-checking with "return list")
 	local finalcmd `"`pcommand' `cmdname' `cmdargs' `cmdif' `cmdin' `cmdopts' `cmdrest'"'
 	local finalcmd = trim(itrim(`"`finalcmd'"'))
 	if `"`ADonly'"'==`""' {
@@ -324,13 +343,12 @@ program ipdmetan, rclass sortpreserve
 		return local cmdname `"`cmdname'"'
 	}
 	
-	
 
-	*********
-	* Setup *
-	*********
+	******************************
+	* Option compatibility tests *
+	******************************
 	
-	** Option compatibility tests
+	* IPD-only compatibility tests (i.e. using an estimation command)
 	if `"`cmdname'"'!=`""' {
 		if `"`study'"'==`""' & `"`ipdover'"'==`""' & `"`ADonly'"'==`""' {
 			disp as err `"option study() required for IPD analysis"'
@@ -353,7 +371,7 @@ program ipdmetan, rclass sortpreserve
 		}
 	}
 	
-	** General presentation/forest-plot, no pooling (ipdover)
+	* -ipdover- compatibility tests
 	if `"`over'"'!=`""' {
 		disp as err `"Cannot specify over() with ipdmetan; please use ipdover instead"'
 		exit 198
@@ -363,7 +381,7 @@ program ipdmetan, rclass sortpreserve
 			disp as error `"Must supply an estimation command to ipdover"'
 			exit 198
 		}
-		foreach x in ad random {
+		foreach x in ad random cumulative {
 			if `"``x''"'!=`""' {
 				disp as error `"option `x' not allowed with ipdover"'
 				exit 198
@@ -373,7 +391,7 @@ program ipdmetan, rclass sortpreserve
 		local het "nohet"		// cannot have heterogeneity stats with ipdover
 	}
 	
-	** Pooled meta-analysis (IPD, AD or both)
+	* Compatibility tests for pooled meta-analysis (i.e. IPD, AD or both)
 	else {
 	
 		* AD only; cannot use any of the IPD options (and "ad" option must be present)
@@ -410,29 +428,23 @@ program ipdmetan, rclass sortpreserve
 		if `"`ad'"'!=`""' {
 			_parse comma lhs rhs : ad
 			
-			* check for "using" filename
-			* can't use -syntax- here, as [if] [in] refer to data not (necessarily) in memory
+			// check for "using" filename
+			// can't use -syntax- here, as [if] [in] refer to data not (necessarily) in memory
 			if `"`lhs'"'!=`""' {
 			
 				assert `"`ADonly'"'==`""'
+				gettoken ADfile lhs : lhs
+				confirm file `"`ADfile'"'
 				
-				gettoken ADfile : lhs
-				confirm file `"`ADfile'"'	// amended July 2014
-				
-				* If filename is valid, check for presence of IPD command (AD alone should use -admetan-)
+				// if filename is valid, check for presence of IPD command (AD alone should use -admetan-)
 				if `"`cmdname'"'==`""' {
 					disp as err `"Cannot specify an aggregate-data filename without IPD estimation command"'
 					disp as err `"For analysis of aggregate data alone, please use admetan instead"'
 					exit 198
 				}
 			}
-			
-			* if admetan, pass `cmdif' `cmdin' (i.e. `touse') to ProcessAD
-			else if `"`ADonly'"'!=`""' {
-				local lhs `"`cmdif' `cmdin'"'
-			}
-			
-			* test for byad, and check for conflicts
+
+			// test for byad, and check for conflicts
 			local 0 `rhs'
 			syntax, [BYAD NPTS(name local) VARS(namelist local)]
 			if `"`byad'"'!=`""' {
@@ -447,21 +459,34 @@ program ipdmetan, rclass sortpreserve
 			}
 		}
 
-		else if `"`cmdname'"'==`""' {								// If no AD, IPD data must exist
-			disp as err `"IPD estimation command not found"'		// i.e. assume IPD analysis is intended
+		else if `"`cmdname'"'==`""' {								// if no AD, IPD data must exist
+			disp as err `"IPD estimation command not found"'		// (i.e. assume IPD analysis is intended)
 			exit 198
 		}
 
 		local pooltext "Meta-analysis pooling"
-
+		
+		* Compatibility tests for cumulative MA 
+		if `"`cumulative'"'!=`""' {
+			if `"`sgwt'`ovwt'"'!=`""' {
+				disp as err "Cannot specify ovwt or sgwt with cumulative meta-analysis"
+				exit 198
+			}
+			local overall "nooverall"
+			if `"`by'`byad'"'!=`""' local subgroup "nosubgroup"
+			local pooltext "Cumulative meta-analysis"
+		}
 	}		// end of if `"`ipdover'"'==`""'
 
 	
-	** Setup of data *in memory* (whether IPD or AD)
-	tempvar touse
+	
+	************************************
+	* Setup of data currenly in memory *  ...whether IPD or AD
+	************************************
+	
+	tempvar touse touse2				// touse2 will have various uses later on
 	mark `touse' `cmdif' `cmdin'
 	
-	* Added Jan 2014
 	qui count if `touse'
 	if !r(N) {
 		if `"`ADonly'"'=="" local errtext "in study() variable"
@@ -469,8 +494,8 @@ program ipdmetan, rclass sortpreserve
 		exit 2000
 	}
 	
-	* parse `by' and `study' if NOT ipdover
-	* (this has already been done in ipdover.ado since varname/varlist must be checked at the time)
+	* Parse `by' and `study' if NOT ipdover
+	// (this has already been done in ipdover.ado since varname/varlist must be checked at the time)
 	if `"`ipdover'"'==`""' {
 		foreach x in smissing bymissing {
 			if `"``x''"'!=`""' {
@@ -499,10 +524,10 @@ program ipdmetan, rclass sortpreserve
 	if `overlen'>1 {
 		assert `"`ipdover'"'!=`""' 		// `study' can only contain multiple vars if ipdover
 		local _over "_OVER"				// ...in which case, create marker
-	}
+	}									// N.B. although `_over' implies `ipdover', the converse is not true, as `overlen' might be 1.
 	
 	* Sort out subgroup identifier (BY) and labels
-	* (N.B. `by' might only exist in an external (aggregate) dataset)
+	// (N.B. `by' might only exist in an external (aggregate) dataset)
 	local nby 1				// default, as used in logical expressions. (N.B. "bylist" is true marker of whether subgroups exist)
 	local bystr=0
 	tempvar bytemp
@@ -553,7 +578,7 @@ program ipdmetan, rclass sortpreserve
 					exit 198
 				}
 			
-				* form value label and bylist from bymat
+				// form value label and bylist from bymat
 				forvalues i=1/`nby' {
 					local byi = `bymat'[`i',1]
 					local bylist "`bylist' `byi'"
@@ -587,8 +612,9 @@ program ipdmetan, rclass sortpreserve
 	}
 	
 	* Parse `plotid' -- but keep original contents to pass to forestplot for later re-parsing
-	* Allow "_BYAD" with ipdmetan in case of byad
-	* Allow "_LEVEL", "_BY", "_OVER" with ipdover (because data manipulation means can't specify a single current varname)
+	//  allow "_BYAD" with ipdmetan in case of byad
+	//  allow "_LEVEL", "_BY", "_OVER" with ipdover (because data manipulation means can't specify a single current varname)
+	local PlotVarInLCols = 0			// initialise
 	local 0 `"`plotid'"'
 	syntax [name(name=plname)] [,*]
 	local plotidopts `options'
@@ -634,16 +660,16 @@ program ipdmetan, rclass sortpreserve
 		else if "`plname'"!="" {
 			local plotvar `plname'				// plotvar contains a variable name other than study/by (not necessarily in current memory)
 			local lcols `"`plotvar' `lcols'"'	// add it to lcols for parsing (will strip off again later)
+			local PlotVarInLCols = 1
 		}
 		local _study "_STUDY"
 	}
 	tempvar obs
 	qui gen long `obs'=_n		// observation ID, sorted by `sortby' if appropriate
 
-
 	* Sort out study ID (or 'over' vars)
-	* If IPD meta-analysis (i.e. not ipdover), create subgroup ID based on order of first occurrence
-	* (overh will be a single var, =study, so keep sgroup and stouse for later)
+	//  if IPD/AD meta-analysis (i.e. not ipdover), create subgroup ID based on order of first occurrence
+	//  (overh will be a single var, =study, so keep sgroup and stouse for later)
 	local study2 : copy local study		// create copy in case of string variable
 	local overtype "int"				// default
 	local studystr = 0					// default
@@ -655,63 +681,60 @@ program ipdmetan, rclass sortpreserve
 		qui gen byte `stouse' = `touse'
 		if `"`smissing'"'==`""' markout `stouse' `overh', strok
 		
-		* if `"`_over'"'==`""' {		// July 2014
-		if `"`ipdover'"'==`""' {
+		if `"`ipdover'"'==`""' {		// use `ipdover' rather than `_over', in case `overlen'==1
 			tempvar sobs
 			qui bysort `stouse' `overh' (`obs') : gen long `sobs' = `obs'[1]
 			qui bysort `stouse' `byIPD' `sobs' : gen long `sgroup' = (_n==1)*`stouse'
 			qui replace `sgroup' = sum(`sgroup')
 			local ns = `sgroup'[_N]					// number of studies
 			qui drop `sobs'
-		* }
 		
-		* Test to see if subgroup variable varies within studies; if it does, exit with error
-		* if `"`ipdover'"'==`""' & `"`cmdname'"'!=`""' {
-		if `"`cmdname'"'!=`""' {		// July 2014
+			// test to see if subgroup variable varies within studies; if it does, exit with error
+			if `"`cmdname'"'!=`""' {
 
-			qui tab `overh' if `stouse', m
-			if r(r) != `ns' {					// N.B. `ns' is already stratified by `by'
-				disp as err "Data is not suitable for meta-analysis"
-				disp as err " as subgroup variable (in option 'by') is not constant within studies."
-				disp as err "Use alternative command 'ipdover' if appropriate."
-				exit 198
-			}
-				
-			* Also test plotvarIPD in the same way (if exists)
-			cap confirm var `plotvar'
-			if !_rc {
-				local plotvarIPD `plotvar'
-				tempvar tempgp
-				qui bysort `stouse' `plotvar' `overh' : gen long `tempgp' = (_n==1)*`stouse'
-				qui replace `tempgp' = sum(`tempgp')
-				summ `tempgp', meanonly
-				local ntg = r(max)
-				drop `tempgp'
-				
 				qui tab `overh' if `stouse', m
-				if r(r) != `ntg' {
-					disp as err "plotid: variable `plotvar' is not constant within studies"
+				if r(r) != `ns' {					// N.B. `ns' is already stratified by `by'
+					disp as err "Data is not suitable for meta-analysis"
+					disp as err " as subgroup variable (in option 'by') is not constant within studies."
+					disp as err "Use alternative command 'ipdover' if appropriate."
 					exit 198
+				}
+					
+				// also test plotvarIPD in the same way (if exists)
+				cap confirm var `plotvar'
+				if !_rc {
+					local plotvarIPD `plotvar'
+					tempvar tempgp
+					qui bysort `stouse' `plotvar' `overh' : gen long `tempgp' = (_n==1)*`stouse'
+					qui replace `tempgp' = sum(`tempgp')
+					summ `tempgp', meanonly
+					local ntg = r(max)
+					drop `tempgp'
+					
+					qui tab `overh' if `stouse', m
+					if r(r) != `ntg' {
+						disp as err "plotid: variable `plotvar' is not constant within studies"
+						exit 198
+					}
 				}
 			}
 		}
-		}	// July 2014
 		
 		* Store variable label
 		local varlab`h' : variable label `overh'
 		if `"`varlab`h''"'==`""' local varlab`h' `"`overh'"'
 
-		* Numeric type
+		// numeric type
 		if `"`overtype'"'=="int" & inlist(`"`: type `overh''"', "long", "float", "double") {
 			local overtype `"`: type `overh''"'		// "upgrade" if more precision needed
 		}
 		
 		* If any string variables, "decode" them
-		*   and replace string var with numeric var in list "study"
-		* If numeric, make a copy of each (original) value label value-by-value
-		*   to avoid unlabelled values being displayed as blanks
-		*   (also, for `study' with IPD+AD it needs to be added to)
-		* Then, store value label
+		//   and replace string var with numeric var in list "study"
+		// If numeric, make a copy of each (original) value label value-by-value
+		//   to avoid unlabelled values being displayed as blanks
+		//   (also, for `study' with IPD+AD it needs to be added to)
+		//   then store value label
 		cap confirm string var `overh'
 		if !_rc {
 			tempvar overtemp
@@ -767,16 +790,37 @@ program ipdmetan, rclass sortpreserve
 	}
 	
 	
-	*** Set up lcols and rcols if appropriate (either for a saved dataset or a forestplot)
-	foreach x in na nc ncs nr ni HetOnNewLine {
-		local `x'=0
+	
+	*******************
+	* lcols and rcols *
+	*******************
+	
+	foreach x in na nc ncs nr nrn nrs ni HetOnNewLine DFRInRCols {
+		local `x'=0		// initialise
 	}
-	if (`"`saving'"'!=`""' | `"`graph'"'==`""') & (`"`lcols'"'!=`""' | `"`rcols'"'!=`""') {
-
+	
+	* If citype is other than normal, or if cumulative and using dlt/KR, will need a column for df
+	//  sort out citype here, as that requires the returned stat e(df_r).
+	//  we will sort out dlt/KR later on.
+	tempvar _df
+	if `"`citype'"'!=`"normal"' {
+		local rcols `"`_df' = (e(df_r)) `rcols'"'	// use tempvar; if user wishes to see it, they can specify it in l/rcols as usual
+		local DFRInRCols = 1						// (validity, e.g. e-class etc., will be tested later)
+	}
+	
+	if trim(`"`lcols'`rcols'"')==`""' | (`"`saving'"'==`""' & `"`graph'"'!=`""' & `"`citype'"'==`"normal"') {
+		// if lcols/rcols will not be used,
+		// (either because not specified, or because no savefile and no graph and no need for _df)
+		// clear the macros
+		local lcols
+		local rcols
+	}
+	
+	else {
 		local rcolsy = (`"`lcols'"'==`""')						// marker of "start with rcols = yes" (i.e. if no lcols)
 		parsecols `lcols' : `rcols', rcols(`rcolsy') `byad'		// option rcols() = "are we currently parsing Rcols? (as opposed to Lcols)"
-		local lcols	/*clear macro */							// if no lcols then rcols=1 from the start
-		local rcols	/*clear macro */							// otherwise gets changed when appropriate within parsecols.
+		local lcols	/*clear macro */							//    if no lcols then rcols=1 from the start
+		local rcols	/*clear macro */							//    otherwise gets changed when appropriate within parsecols.
 
 		local itypes `"`r(itypes)'"'			// item types ("itypes")
 		local fmts `"`r(fmts)'"'				// formats
@@ -787,23 +831,28 @@ program ipdmetan, rclass sortpreserve
 		local lrcols `"`r(newnames)'"'			// item names (valid Stata names)
 		
 		* Test validity of names -- cannot be any of the names ipdmetan uses for other things
-		local badnames `"_BY _OVER `_study' _ES _seES _NN"'
-		if `"`: list lrcols & badnames'"'!=`""' {
-			disp as err "Invalid name in lcols or rcols"
-			exit 198
+		// (...but OK if admetan only)
+		if `"`ADonly'"'==`""' {
+			local badnames `"_BY _OVER `_study' _ES _seES _NN"'
+			if `"`cumulative'"'!=`""' local badnames `"`badnames' _Q _tausq _sigmasq"'
+			if `"`byad'"'!=`"byad"' local badnames `"`badnames' _SOURCE"'
+			if `"`: list lrcols & badnames'"'!=`""' {
+				disp as err "Invalid name in lcols or rcols"
+				exit 198
+			}
 		}
 		
 		* Get total number of "items" and loop, perfoming housekeeping tasks for each item
 		local ni : word count `itypes'
 		forvalues i=1/`ni' {
 		
-			* Form new `lcols' and `rcols', just containing new varnames
+			// form new `lcols' and `rcols', just containing new varnames
 			if !`: word `i' of `sidelist'' {
 				local lcols `"`lcols' `: word `i' of `lrcols''"'
 			}
 			else local rcols `"`rcols' `: word `i' of `lrcols''"' 
 	
-			* Separate lists of names for the different itypes
+			// separate lists of names for the different itypes
 			if "`: word `i' of `itypes''"=="a" {						// a: AD-only vars, not currently in memory
 				local ++na
 				local ADvars `"`ADvars' `: word `i' of `lrcols''"'
@@ -827,22 +876,20 @@ program ipdmetan, rclass sortpreserve
 			if `"`het'"'==`""' & inlist("`: word `i' of `itypes''", "c", "r") & !`: word `i' of `sidelist'' {
 				local HetOnNewLine=1				// if "c" or "r" in "lcols" then het will need to be on a new line (in forestplot)
 			}
-		}
-	}		// end if (`"`saving'"'!=`""' | `"`graph'"'==`""') & (`"`lcols'"'!=`""' | `"`rcols'"'!=`""')
+		}		// end forvalues i=1/`ni'
+	}		// end else (i.e. if not trim(`"`lcols'`rcols'"')==`""' | (`"`saving'"'==`""' & `"`graph'"'!=`""'))
 
-	* If lcols/rcols will not be used, clear the macros
-	else {
-		local lcols
-		local rcols
-	}
 	
 	
-	* If IPD, run command on entire dataset
-	* (to test validity, and also to find default poolvar and/or store overall returned stats if appropriate)
-	tempname totnpts
-	scalar `totnpts' = .
-	local userbreak=0				// JUN 2014: initialise
-	local noconverge=0				// JUN 2014: initialise
+	
+	**************************
+	* Setup for IPD analysis *
+	**************************
+	
+	tempname totnpts	
+	scalar `totnpts' = 0
+	local userbreak=0		// initialise
+	local noconverge=0		// initialise
 	
 	if `"`cmdname'"'!=`""' {
 	
@@ -853,7 +900,11 @@ program ipdmetan, rclass sortpreserve
 
 		local eclass=0
 		local nosortpreserve=0
-		if `"`total'"'==`""' {		// run the command using the entire dataset
+
+		
+		* Unless specified otherwise (`noTOTAL'), run command on entire dataset
+		// (to test validity, and also to find default poolvar and/or store overall returned stats if appropriate)
+		if `"`total'"'==`""' {
 			sort `obs'
 			cap `version' `pcommand' `cmdname' `cmdargs' if `touse' `cmdopts' `cmdrest'
 			local rc = _rc
@@ -862,7 +913,7 @@ program ipdmetan, rclass sortpreserve
 				_prefix_run_error `rc' ipdmetan `errtext'
 			}
 			tempname obs2
-			qui gen `obs2'=_n
+			qui gen long `obs2'=_n
 			cap assert `obs'==`obs2'
 			local nosortpreserve = (_rc!=0)		// if running `cmdname' changes sort order, "sortpreserve" is not used, therefore must sort manually
 		
@@ -880,147 +931,41 @@ program ipdmetan, rclass sortpreserve
 				disp as err "cannot specify 'poolvar' with a non e-class command; please specify 'exp_list' instead"
 				exit 198
 			}
-
-			* Parse <exp_list>
-			local nexp=0
-			local neexp=0
-			_prefix_explist `exp_list', stub(_df_) edefault
-			if `"`exp_list'"'!=`""' {
-				assert `s(k_eexp)'==0 & inlist(`s(k_exp)', 2, 3)		// if exp_list supplied, must be 2 or 3 exps, no eexps
-				local nexp = `s(k_exp)'
+			
+			// check for string-valued returned stats (`statsrs'), and separate them out
+			forvalues j=1/`nr' {
+				local statsrj : word `j' of `statsr'
+				local val = `statsrj'
+				cap confirm number `val'
+				if _rc & `"`val'"'!=`"."' {					// if ".", assume numeric missing
+					local namesrj : word `j' of `namesr'
+					local namesrs `"`namesrs' `namesrj'"'
+					local statsrs `"`statsrs' `statsrj'"'
+				}
+			}
+			if `"`statsrs'"'!=`""' {
+				local statsrn : list statsr - statsrs
+				local namesrn : list namesr - namesrs
+				local nrn     : word count `statsrn'
+				local nrs     : word count `statsrs'
 			}
 			else {
-				assert `s(k_eexp)'==1 & `s(k_exp)'==0		// otherwise, must be a single eexp (_b) and no exps
-				local neexp = `s(k_eexp)'
+				local statsrn : copy local statsr
+				local namesrn : copy local namesr
+				local nrn = `nr'
 			}
-			local eqlist	`"`s(eqlist)'"'
-			local idlist	`"`s(idlist)'"'
-			local explist	`"`s(explist)'"'
-			local eexplist	`"`s(eexplist)'"'
 			
-			* Expand <exp_list>	
-			tempname b
-			cap _prefix_expand `b' `explist' `statsr', stub(_df_) eexp(`eexplist') colna(`idlist') coleq(`eqlist') eqstub(_df)
-			if _rc {
-				disp as err "explist error. Possible reasons include:"
-				disp as err "- coefficient in poolvar() not found in the model"
-				disp as err "- an expression in lcols/rcols that evaluates to a string"
-				disp as err "- an expression not enclosed in parentheses"
-				exit _rc
+			// identify estvar
+			FindEstVar, explist(`exp_list') statsrn(`statsrn') nrn(`nrn') poolvar(`poolvar') `interaction'
+			local estvar `"`r(estvar)'"'
+			local estvareq `"`r(estvareq)'"'
+			local estexp `"`r(estexp)'"'
+			local beta `"`r(beta)'"'
+			local sebeta `"`r(sebeta)'"'
+			local nbeta `"`r(nbeta)'"'
+			forvalues j=1/`nrn' {
+				local us_`j' `"`r(us_`j')'"'
 			}
-			local nexp = cond(`neexp', `s(k_eexp)', `nexp')		// if eexps, update `neexp' and rename it to `nexp'
-			
-			* Form list of "returned statistic" expressions to post
-			if `nr' {
-				forvalues j=1/`nr' {
-					local i = `nexp' + `j'
-					local us_`j' `"`s(exp`i')'"'
-					local rpostlist `"`rpostlist' `us_`j''"'
-				}
-			}
-			if `"`exp_list'"'!=`""' & `"`poolvar'"'==`""' {		// non e-class
-				local beta `"`s(exp1)'"'
-				local sebeta `"`s(exp2)'"'
-				local nbeta = cond(`nexp'==3, `"`s(exp3)'"', ".")
-			}
-			else {
-				* If e-class, parse e(b) using _ms_parse_parts
-				* Choose the first suitable coeff, then check for conflicts with other coeffs (e.g. interactions)
-				* Can we also check for badly-fitted coeffs here?  i.e. v high/low b or se?
-				local ecolna `"`s(ecolna)'"'	// from _prefix_expand
-				local ecoleq `"`s(ecoleq)'"'	// from _prefix_expand
-				local colna : colnames e(b)		// from e(b)
-				local coleq : coleq e(b)		// from e(b)
-
-				* If not poolvar (i.e. basic syntax), results from _prefix_expand should match those from e(b)
-				assert (`"`ecolna'"'!=`""') == (`"`poolvar'"'==`""')
-				assert (`"`ecoleq'"'!=`""') == (`"`poolvar'"'==`""')
-				
-				if `"`poolvar'"'==`""' {				// MAY 2014: only check for conflicts if poolvar not supplied
-					assert `"`ecolna'"'==`"`colna'"'
-					if substr(`"`coleq'"', 1, 1)!=`"_"' {
-						assert `"`ecoleq'"'==`"`coleq'"'
-					}
-					local name1
-					local name2
-					
-					forvalues i=1/`nexp' {
-						local colnai : word `i' of `colna'
-						local coleqi : word `i' of `coleq'
-
-						_ms_parse_parts `colnai'
-						if !r(omit) {
-						
-							* If estvar already exists, check for conflicts with subsequent coeffs
-							* (cannot currently check for difference between, e.g. "arm" and "1.arm"
-							*   - i.e. how to tell when a var is factor if not made explicit... is this a problem?)
-							if `"`estvar'"'!=`""' {
-								if `"`coleqi'"'==`"`estvareq'"' {			// can only be a conflict if same eq
-									if `"`r(type)'"'=="interaction" {
-										local rname1 = cond(`"`r(op1)'"'==`""', `"`r(name1)'"', `"`r(op1)'.`r(name1)'"')
-										local rname2 = cond(`"`r(op2)'"'==`""', `"`r(name2)'"', `"`r(op2)'.`r(name2)'"')
-									
-										if (`"`interaction'"'!=`""' & ///
-												( inlist(`"`name1'"',`"`rname1'"',`"`rname2'"') ///
-												| inlist(`"`name2'"',`"`rname1'"',`"`rname2'"') )) ///
-											| (`"`interaction'"'==`""' & inlist(`"`estvar'"',`"`rname1'"',`"`rname2'"')) {
-											disp as err "Automated identification of estvar failed; please use poolvar() option or supply exp_list"
-											exit 198
-										}
-									}
-									else if inlist(`"`r(type)'"',"variable","factor") {
-										local rname = cond(`"`r(op)'"'==`""', `"`r(name)'"', `"`r(op)'.`r(name)'"')
-									
-										if (`"`interaction'"'!=`""' & inlist(`"`rname'"',`"`name1'"',`"`name2'"')) ///
-											| (`"`interaction'"'==`""' & `"`rname'"'==`"`estvar'"') {
-											disp as err "Automated identification of estvar failed; please use poolvar() option or supply exp_list"
-											exit 198
-										}
-									}
-								}
-							}		// end if `"`estvar'"'!=`""'
-						
-							* Else define estvar
-							else if `"`interaction'"'!=`""' {
-								if `"`r(type)'"'=="interaction" {
-									local estvar `colnai'
-									local estvareq `coleqi'
-									local name1 `"`r(name1)'"'
-									local name2 `"`r(name2)'"'
-								}
-							}
-							else {
-								local estvar `colnai'
-								local estvareq `coleqi'							
-							}		// end else
-						}		// end if !r(omit)
-					}		// end forvalues i=1/`nexp'
-
-					if `"`estvar'"'==`""' {
-						disp as err "Automated identification of estvar failed; please use poolvar() option or supply exp_list"
-						exit 198
-					}
-				}		// end if `"`poolvar'"'==`""'
-
-				* This section updated May 2014
-				if `"`poolvar'"'!=`""' {		// parse `poolvar' -- assume "estvareq:estvar" format
-					local estexp `poolvar'
-					cap _on_colon_parse `estexp'
-					if _rc local estvar `"`estexp'"'	// no colon found
-					else {
-						local estvareq `"`s(before)'"'
-						local estvar `"`s(after)'"'
-					}
-				}
-				else {
-					if inlist(`"`estvareq'"', "_", "") local estexp `"`estvar'"'
-					else local estexp `"`estvareq':`estvar'"'
-				}
-				local beta `"_b[`estexp']"'
-				local sebeta `"_se[`estexp']"'
-				local nbeta `"e(N)"'
-
-			}		// end else (i.e. if eclass)
 		}			// end if `"`total'"'==`""'
 		
 		else {		// i.e. if noTOTAL
@@ -1043,6 +988,7 @@ program ipdmetan, rclass sortpreserve
 
 		return local estvar `"`estexp'"'	// return this asap in case of later problems
 	
+	
 		** Set up postfile
 		tempname postname
 		tempfile pfile
@@ -1051,9 +997,10 @@ program ipdmetan, rclass sortpreserve
 		}
 		else if `"`byad'"'!=`""' local byopt "long _BY"
 		if `"`_over'"'!=`""' local overopt "int _OVER"
-		postfile `postname' long `sgroup' `byopt' `overopt' `overtype' `_study' byte _USE double(_ES _seES) long _NN `namesr' using `pfile'
+		if `"`namesrs'"'!=`""' local namesrsopt `"str20(`namesrs')"'
+		postfile `postname' long `sgroup' `byopt' `overopt' `overtype' `_study' byte _USE double(_ES _seES) long _NN `namesrn' `namesrsopt' using `pfile'
 			
-		* Overall (non-pooled): post values or blanks, as appropriate
+		// overall (non-pooled): post values or blanks, as appropriate
 		if `"`overall'"'==`""' | (`"`byad'"'!=`""' & `"`subgroup'"'==`""') {
 		
 			// post "(.) (5)" if overall (or "(.) (3)" if byad, as IPD is treated as subgroup)
@@ -1071,15 +1018,17 @@ program ipdmetan, rclass sortpreserve
 				local postexp `"(1) (.) (3) `postreps'"'						// "all data in memory" ==> "subgroup" (_USE==3) if byad
 			}
 			
-			if `nr' /* ADDED MAR 2014 - don't return stats if AD+IPD and no byad */ & `"`byad'"'==`""' & `"`ad'"'==`""' {
+			if `"`byad'"'==`""' & `"`ad'"'==`""' {
 				if `"`total'"'==`""' {
-					forvalues j=1/`nr' {			// returned statistics
+					forvalues j=1/`nrn' {						// returned numeric stats
 						local postexp `"`postexp' (`us_`j'')"'
 					}
+					local postexp `"`postexp' `statsrs'"'		// returned strings
 				}
 				else {
-					local postreps : di _dup(`nr') `" (.)"'
-					local postexp `"`postexp' `postreps'"'
+					local postrepsn : di _dup(`nrn') `" (.)"'	// returned numeric stats
+					local postrepss : di _dup(`nrs') `" ()"'	// returned strings
+					local postexp `"`postexp' `postrepsn' `postrepss'"'
 				}
 			}
 
@@ -1087,32 +1036,33 @@ program ipdmetan, rclass sortpreserve
 
 		}		// end if `"`overall'"'==`""' | (`"`byad'"'!=`""' & `"`subgroup'"'==`""')
 		
-		* If byad (i.e. no *overall* yet), generate blank "overall" observation (to hold pooled estimates)
+		// if byad (i.e. no overall yet), generate blank "overall" observation as placeholder
 		if `"`byad'"'!=`""' & `"`overall'"'==`""' {
 			local postreps : di _dup(3) `" (.)"'
 			local postexp `"`postreps' (5) `postreps'"'
 
-			local postreps : di _dup(`nr') `" (.)"'
-			local postexp `"`postexp' `postreps'"'
+			local postrepsn : di _dup(`nrn') `" (.)"'		// returned numeric stats
+			local postrepss : di _dup(`nrs') `" ()"'		// returned strings
+			local postexp `"`postexp' `postrepsn' `postrepss'"'
 			
 			post `postname' `postexp'
 		}
 
 		
-		*** Analyse IPD
+		
+		*******************
+		* Analysis of IPD *
+		*******************
 	
-		* Main IPD analysis loop
 		cap drop _rsample
 		qui gen byte _rsample=0			// this will show which observations were used
 
-		* tempvar obs
-		* gen long `obs'=_n
 		local n=1						// matrix row counter
 		forvalues h=1/`overlen' {		// if over() not specified this will be 1/1
 										// else, make `sgroup' equal to (`h')th over variable
 			local overh : word `h' of `study'
 
-			* If ipdover, order them "naturally", i.e. numerically or alphabetically
+			* If ipdover, order studies "naturally", i.e. numerically/alphabetically
 			* Otherwise, use existing `sgroup' and `ns' from earlier loop
 			if `"`ipdover'"'!=`""' {
 				cap drop `stouse'
@@ -1122,7 +1072,7 @@ program ipdmetan, rclass sortpreserve
 				cap drop `sgroup'
 				qui bysort `stouse' `byIPD' `overh' : gen long `sgroup' = (_n==1)*`stouse'
 				qui replace `sgroup' = sum(`sgroup')
-				local ns = `sgroup'[_N]				// total number of studies (might be repeats if `by' is not trial-level)
+				local ns = `sgroup'[_N]				// total number of studies (might be repeats if `by' is not study-level)
 			}
 			sort `obs'
 		
@@ -1130,43 +1080,42 @@ program ipdmetan, rclass sortpreserve
 			forvalues i=1/`ns' {
 				summ `obs' if `touse' & `sgroup'==`i', meanonly
 				
-				* Find value of by() for current study ID
+				// find value of by() for current study ID
 				if `"`byIPD'"'!=`""' {
 					local val = `byIPD'[`r(min)']
 					local postby `"(`val')"'
 				}
 				else if `"`byad'"'!=`""' local postby `"(1)"'
 				
-				* Add over() var ID
-				if `"`_over'"'!=`""' local postover `"(`h')"'
+				if `"`_over'"'!=`""' local postover `"(`h')"'		// add over() var ID
 				
 				* Create label containing original values or strings,
-				* then add (original) study ID
+				//  then add (original) study ID
 				local val = `overh'[`r(min)']
 				local poststudy `"(`val')"'
 				local trlabi : label (`overh') `val'
 				if `"`messages'"'!=`""' disp as text  "Fitting model for `overh' = `trlabi' ... " _c				
 				cap `version' `pcommand' `cmdname' `cmdargs' if `touse' & `sgroup'==`i' `cmdopts' `cmdrest'
 				local rc = c(rc)
-				* if `rc'==1 error 1					// user break
 				
 				if `rc' {	// if unsuccessful, insert blanks
 					if `"`messages'"'!=`""' {
 						disp as err "Error: " _c
 						if `rc'==1 {
-							disp as err "user break"	// added JUN 2014
+							disp as err "user break"
 							local userbreak=1
 						}
 						else cap noisily error _rc
 					}
-					local reps = 3 + `nr'
-					local postreps : di _dup(`reps') `" (.)"'
-					local postcoeffs `"(2) `postreps'"'			// (2) for _USE ==> unsuccessful
+					local reps = 3 + `nrn'
+					local postrepsn : di _dup(`reps') `" (.)"'			// returned numeric stats
+					local postrepss : di _dup(`nrs') `" ()"'			// returned strings
+					local postcoeffs `"(2) `postrepsn' `postrepss'"'	// N.B. "(2)" is for _USE ==> unsuccessful
 				}
 				else {
 				
-					* If model was fitted successfully but desired coefficient was not estimated
-					if `eclass' {						// ADDED MAY 2014
+					// if model was fitted successfully but desired coefficient was not estimated
+					if `eclass' {
 						local colna : colnames e(b)
 						local coleq : coleq e(b)
 						if e(converged)==0 {
@@ -1196,11 +1145,11 @@ program ipdmetan, rclass sortpreserve
 						if `eclass' qui replace _rsample=1 if e(sample)				// if e-class
 						else qui replace _rsample=1 if `touse' & `sgroup'==`i'		// if non e-class
 					}
-					if `nr' {
-						forvalues j=1/`nr' {
-							local postcoeffs `"`postcoeffs' (`us_`j'')"'
-						}
+					forvalues j=1/`nrn' {
+						local postcoeffs `"`postcoeffs' (`us_`j'')"'
 					}
+					local postcoeffs `"`postcoeffs' `statsrs'"'
+
 					local nocvtext		// clear macro
 				}
 				post `postname' (`i') `postby' `postover' `poststudy' `postcoeffs'
@@ -1216,7 +1165,7 @@ program ipdmetan, rclass sortpreserve
 		}		// end forvalues h=1/`overlen'
 
 		* If appropriate, generate blank subgroup observations
-		* and fill in with user-requested statistics (and, if ipdover, non-pooled effect estimates)
+		//   and fill in with user-requested statistics (and, if ipdover, non-pooled effect estimates)
 		if `"`byIPD'"'!=`""' & `"`subgroup'"'==`""' {
 			forvalues i = 1/`nby' {
 				local byi : word `i' of `bylist'
@@ -1226,19 +1175,21 @@ program ipdmetan, rclass sortpreserve
 					cap `version' `pcommand' `cmdname' `cmdargs' if `byIPD'==`byi' & `touse' `cmdopts' `cmdrest'
 					if !_rc {
 						local postexp `"(.) (3) (`beta') (`sebeta') (`nbeta')"'
-						if `nr' /* ADDED MAR 2014 - don't return stats if AD+IPD (byIPD ==> byad here) */ & `"`ad'"'==`""' {{
-							forvalues j=1/`nr' {
+						if `nr' & `"`ad'"'==`""' {
+							forvalues j=1/`nrn' {
 								local postexp `"`postexp' (`us_`j'')"'
 							}
+							local postexp `"`postexp' `statsrs'"'
 						}
 					}
 					else local blank=1
 				}
 				else local blank=1
 				if `blank' {
-					local reps = 3 + `nr'
-					local postreps : di _dup(`reps') `" (.)"'
-					local postexp `"(.) (3) `postreps'"'
+					local reps = 3 + `nrn'
+					local postrepsn : di _dup(`reps') `" (.)"'			// returned numeric stats
+					local postrepss : di _dup(`nrs') `" ()"'			// returned strings
+					local postexp `"(.) (3) `postrepsn' `postrepss'"'
 				}
 				if `"`_over'"'!=`""' local postexp `"(.) `postexp'"'
 				local postexp `"(.) (`byi') `postexp'"'
@@ -1251,25 +1202,24 @@ program ipdmetan, rclass sortpreserve
 				
 				
 		*** Perform -collapse- if data in memory is being used
-		tempvar touse2
 		if `"`cclist'"'!=`""' {
 			preserve
 			forvalues h=1/`overlen' {
 				local overh : word `h' of `study'
 				clonevar `touse2' = `touse'
-				if `"`smissing'"'==`""' markout `touse2' `overh', strok		// added July 2014
+				if `"`smissing'"'==`""' markout `touse2' `overh', strok
 				tempfile extra1_`h'
 				qui collapse `cclist' if `touse2', fast by(`byIPD' `overh')	// study/over-level
 				qui save `extra1_`h''
 				restore, preserve
 			}
-			if `"`byIPD'"'!=`""' & "`subgroup'"==`""' /* ADDED MAR 2014 - don't return stats if AD+IPD (byIPD ==> byad here) */ & `"`ad'"'==`""' {
+			if `"`byIPD'"'!=`""' & "`subgroup'"==`""' & `"`ad'"'==`""' {
 				tempfile extra1_by
 				qui collapse `cclist' if `touse', fast by(`byIPD') 			// by-level
 				qui save `extra1_by'
 				restore, preserve
 			}
-			if (`"`overall'"'==`""' /* ADDED MAR 2014 - don't return stats if AD+IPD and no byad */ & `"`byad'"'==`""' & `"`ad'"'==`""') | (`"`byad'"'!=`""' & "`subgroup'"==`""') {
+			if (`"`overall'"'==`""' & `"`byad'"'==`""' & `"`ad'"'==`""') | (`"`byad'"'!=`""' & "`subgroup'"==`""') {
 				tempfile extra1_tot
 				qui collapse `cclist' if `touse', fast 						// overall
 				qui save `extra1_tot'										// (or "subgroup" level for byad)
@@ -1278,7 +1228,7 @@ program ipdmetan, rclass sortpreserve
 		}
 	
 		* Perform manual "collapse" of any string vars in "over" files
-		* This could take a bit of to-ing and fro-ing, but it's a niche case
+		//  this could take a bit of to-ing and fro-ing, but it's a niche case
 		if `"`svars'"'!=`""' & `overlen'>1 {
 			assert `ncs' == `: word count `oldnames''
 			cap preserve
@@ -1289,13 +1239,13 @@ program ipdmetan, rclass sortpreserve
 				local overh : word `h' of `study'
 				clonevar `touse2' = `touse'
 				if `"`smissing'"'==`""' markout `touse2' `overh', strok
-				qui bysort `touse2' `byIPD' `overh': keep if _n==_N & `touse2'	// `byIPD' and `touse2' added July 2014
+				qui bysort `touse2' `byIPD' `overh': keep if _n==_N & `touse2'
 				keep `byIPD' `overh' `svars'
-				if `"`cclist'"'!=`""' {					// file already created above
+				if `"`cclist'"'!=`""' {					// if file already created above
 					qui merge 1:1 `byIPD' `overh' using `extra1_`h'', nogen assert(match)
 					qui save, replace
 				}
-				else {									// file not yet created
+				else {									// if file not yet created
 					tempfile extra1_`h'
 					qui save `extra1_`h''
 				}
@@ -1303,7 +1253,7 @@ program ipdmetan, rclass sortpreserve
 			}
 		}
 	
-		** Append files to form a single "extra" file
+		* Append files to form a single "extra" file
 		if `"`cclist'"'!=`""' | `"`svars'"'!=`""' {	
 			cap preserve
 		
@@ -1314,15 +1264,15 @@ program ipdmetan, rclass sortpreserve
 				local overh : word 1 of `study'
 				clonevar `touse2' = `touse'
 				if `"`smissing'"'==`""' markout `touse2' `overh', strok
-				qui bysort `touse2' `byIPD' `overh': keep if _n==_N & `touse2'	// `byIPD' and `touse2' added July 2014
+				qui bysort `touse2' `byIPD' `overh': keep if _n==_N & `touse2'
 				keep `byIPD' `overh' `svars'
-				if `"`cclist'"'!=`""' {					// file already created above
+				if `"`cclist'"'!=`""' {						// if file already created above
 					qui merge 1:1 `byIPD' `overh' using `extra1_1', nogen assert(match)
 				}
 			}
 			else qui use `extra1_1', clear
 
-			if `overlen'>1 {				// if "over", append files
+			if `overlen'>1 {								// if "over", append files
 				qui gen _OVER=1
 				forvalues h=2/`overlen' {
 					local prevoverh : word `=`h'-1' of `study'
@@ -1333,10 +1283,10 @@ program ipdmetan, rclass sortpreserve
 				}
 			}
 			if `"`cclist'"'!=`""' {			// 'by' and 'overall' sections don't apply if only svars
-				if `"`byIPD'"'!=`""' & "`subgroup'"==`""' /* ADDED MAR 2014 - don't return stats if AD+IPD (byIPD ==> byad here) */ & `"`ad'"'==`""' {
+				if `"`byIPD'"'!=`""' & "`subgroup'"==`""' & `"`ad'"'==`""' {
 					qui append using `extra1_by'
 				}
-				if (`"`overall'"'==`""' /* ADDED MAR 2014 - don't return stats if AD+IPD and no byad */ & `"`byad'"'==`""' & `"`ad'"'==`""') | (`"`byad'"'!=`""' & "`subgroup'"==`""') {
+				if (`"`overall'"'==`""' & `"`byad'"'==`""' & `"`ad'"'==`""') | (`"`byad'"'!=`""' & "`subgroup'"==`""') {
 					qui append using `extra1_tot'
 				}
 			}
@@ -1352,17 +1302,12 @@ program ipdmetan, rclass sortpreserve
 			}
 			cap rename `overh' `_study'		// rename to "_STUDY" or "_LEVEL"
 
-			cap rename `byIPD' _BY			// July 2014
-			if _rc & `"`byad'"'!=`""' gen _BY==1
-			
-			* if `"`byIPD'"'!=`""' & "`subgroup'"==`""' {
-			*	rename `byIPD' _BY
-			*}
-			*else if `"`byad'"'!=`""' gen _BY = 1
+			cap rename `byIPD' _BY
+			if _rc & `"`byad'"'!=`""' qui gen byte _BY==1
 			
 			qui merge 1:1 `_by' `_over' `_study' using `pfile', assert(match using)
 			qui count if _merge==2
-			if r(N) {						// July 2014: can only be "using" obs if no cclist (subgroup/overall not applicable for svars alone)
+			if r(N) {						// can only be "using" obs if no cclist (subgroup/overall not applicable for svars alone)
 				assert `"`cclist'"'==`""'
 				assert inlist(_USE, 3, 5) if _merge==2
 			}
@@ -1370,20 +1315,26 @@ program ipdmetan, rclass sortpreserve
 			
 			qui save `pfile', replace
 			
-		}	// end if `"`cclist'"'!=`""' | `"`svars'"'!=`""'
+		}		// end if `"`cclist'"'!=`""' | `"`svars'"'!=`""'
 	}		// end if `"`cmdname'"'!=`""'
 	
 	
-	*** Analysis of AD (whether in memory or in external dataset)
+	
+	******************
+	* Analysis of AD *   (whether in memory or in external dataset)
+	******************
+	
 	if `"`ad'"'!=`""' {
 	
 		assert (`"`ADfile'"'!=`""') == (`"`ADonly'"'==`""')
+		tempvar obsAD
 	
 		* Data setup
 		if `"`ADfile'"'==`""' {
 			cap drop _rsample
 			gen long _rsample = `sgroup'	// store `sgroup' values so that _rsample may be formed later
 			cap preserve
+			gen int `obsAD' = `obs'
 		}
 		else {
 			cap preserve
@@ -1404,8 +1355,16 @@ program ipdmetan, rclass sortpreserve
 					disp as err `"variable `plotvar' not found in either IPD or AD dataset"'
 					exit 111
 				}
-			}					
+			}
+
+			* Now the AD is in memory, we can process [if] and [in]
+			local 0 `lhs'
+			syntax [if] [in]
+			marksample touse
+			cap sort `sortby'			// if sort fails, defaults to current ordering ("_n")
+			gen int `obsAD' = _n	
 		}
+		
 		if `"`npts'"'!=`""' {
 			cap confirm var `npts'
 			if _rc {
@@ -1414,11 +1373,9 @@ program ipdmetan, rclass sortpreserve
 			}
 		}
 		
-		* Now the AD is in memory, we can process [if] and [in]
-		local 0 `lhs'
-		syntax [anything] [if] [in]
-		cap ProcessAD `if' `in', `ADonly' vars(`vars') npts(`npts') keep(`lrcols' `sgroup') ztol(`ztol') level(`level') ///
-			study(`study') sortby(`sortby') `smaxopt' studylab(``study'lab') by(`by') `bymaxopt' byad(`byad') bylab(`bylab') bylist(`bylist') ///
+		sort `obsAD'
+		cap ProcessAD if `touse', `ADonly' vars(`vars') npts(`npts') keep(`lrcols' `sgroup') ztol(`ztol') level(`level') ///
+			study(`study') `smaxopt' studylab(``study'lab') by(`by') `bymaxopt' byad(`byad') bylab(`bylab') nby(`nby') ///
 			`subgroup' `overall' `smissing' `bymissing'
 		* (N.B. `sgroup' in keep() is needed for admetan)
 		local notsample `"`r(notsample)'"'		// also for admetan
@@ -1427,7 +1384,7 @@ program ipdmetan, rclass sortpreserve
 		if !`ADfail' & `"`ADonly'"'==`""' {		// "if IPD + AD, and AD data is valid"
 			local bylistAD `"`r(bylistAD)'"'
 
-			qui gen `sgroup' = _n		// ProcessAD has already put the data into the correct order
+			qui gen long `sgroup' = _n		// ProcessAD has already put the data into the correct order
 			qui merge 1:1 `_by' _STUDY _USE using `pfile', nolabel assert(master using)
 			
 			if `"`byad'"'!=`"byad"' {
@@ -1442,7 +1399,7 @@ program ipdmetan, rclass sortpreserve
 					tokenize `r(numlist)'
 					local minADby = `1'							// `minADby' = lowest AD value
 					qui replace _BY = _BY - (2 - `minADby') if !missing(_BY)
-					local byad									// reset byad (see line 551)
+					local byad									// reset byad (see line 593)
 				}
 				else local minADby = 2
 						
@@ -1458,7 +1415,7 @@ program ipdmetan, rclass sortpreserve
 			}
 		}
 		else if `ADfail' {			// N.B. `ADfail' implies external data used (`"`ADonly'"'==`""')
-			use `pfile', clear		//  ...else error 2000 would have been trapped earlier (line 389)
+			use `pfile', clear		//  ...else error 2000 would have been trapped earlier (line 494)
 			cap do `labfile'
 			cap do `bylabfile'
 			gen _SOURCE=1
@@ -1471,7 +1428,6 @@ program ipdmetan, rclass sortpreserve
 		}
 
 		* Create observations to hold subgroup effects, if don't exist yet
-		* local newobs=0
 		if `"`_by'"'!=`""' & `"`subgroup'"'==`""' {
 			forvalues i=1/`nby' {
 				local byi : word `i' of `bylist'
@@ -1498,9 +1454,15 @@ program ipdmetan, rclass sortpreserve
 		cap do `bylabfile'		// re-load "by" value label
 	}
 	
+	
+	
+	*********************
+	* Checks/tidying up *   ...following IPD/AD analysis 
+	*********************
+	
 	qui count if _USE == 5
 	assert `r(N)' == (`"`overall'"'==`""')
-
+	
 	* Availablility of participant numbers per study
 	cap confirm var _NN
 	if !_rc {
@@ -1509,7 +1471,7 @@ program ipdmetan, rclass sortpreserve
 		cap confirm var _NN
 		if !_rc local _NN "_NN"		// macro `_NN' is a marker of whether or not pt nos. are available
 	}
-	if "`reModel'"=="b0" {			// if B0 estimator, must have _NN for all _USE==1
+	if "`reModel'"=="b0" {			// if B0 estimator, must have _NN for all studies with an effect size (i.e. _USE==1)
 		cap assert _NN>=0 & !missing(_NN) if _USE==1
 		if _rc {
 			disp as err "Participant numbers not available for all studies; cannot calculate tau`=char(178)' estimator B0"
@@ -1518,7 +1480,7 @@ program ipdmetan, rclass sortpreserve
 	}
 
 	* Store value labels in new var "_LABELS"
-	* (the only way for "over", and needs to be done anyway if graph/saving)
+	//  (the only way for "over", and needs to be done anyway if graph/saving)
 	qui gen _LABELS=""
 	forvalues h=1/`overlen' {
 		local overh : word `h' of `study'
@@ -1544,201 +1506,363 @@ program ipdmetan, rclass sortpreserve
 	}
 	
 	* Remove excluded studies if appropriate, and check that at least one valid estimate exists
-	* (N.B. otherwise, identified by "_USE==2")
+	//  (N.B. otherwise, identified by "_USE==2")
 	if `"`keepall'"'==`""' qui drop if _USE==2
 	qui summ _ES, meanonly
 	if !`r(N)' {
 		disp as err `"No estimates found. Check:"'
-		disp as err `"- specification of interaction option"'
 		disp as err `"- model is able to be fitted within the entire dataset and/or a specific study"'
+		disp as err `"- specification of exp_list and/or interaction option (if applicable)"'
 		exit 198
 	}
 	qui count if _USE==1
 	local countK = r(N)
-
 	
-	*** Get inverse-variance weights and perform pooled analysis
-	
-	* Confidence limits for study estimates are based on SE + normal distribution
-	* This also applies to subgroup/overall estimates if "ipdover"
-	* Hence, just calculate limits for entire dataset, and replace within subsequent subroutines if necessary
-	tempname crit
-	scalar `crit' = invnorm(.5+`level'/200)		// normal distribution
-	qui gen _LCI = _ES - `crit'*_seES
-	qui gen _UCI = _ES + `crit'*_seES
-	
-	* Subgroups -- loop over bylist first, then over, to match with display output
-	qui gen sgwt=.
-	tempname Q Qsum Qdiff tcrit
-	scalar `Q'=0
-	scalar `Qsum'=0
-	scalar `Qdiff'=0
-	local n=1
-	forvalues i=1/`nby' {				// this will be 1/1 if no subgroups
-		if `"`_by'"'!=`""' {
-			local byi : word `i' of `bylist'
+	* Calculate confidence limits for original study estimates using specified `citype'
+	//   plus any *pooled* estimates using SE + normal.
+	// Then, if necessary (e.g. specific RE models), replace limits for pooled estimates within subsequent subroutines.
+	// (N.B. If only a single estimate, RE model defaults back to FE)
+	tempvar crit
+	if `"`citype'"'=="normal" {						// normal distribution - default
+		qui gen `crit' = invnorm(.5+`level'/200)
+		qui gen double _LCI = _ES - `crit'*_seES
+		qui gen double _UCI = _ES + `crit'*_seES
+	}
+	else if `"`citype'"'=="t" {						// t distribution (if e(df_r) exists)
+		summ `_df', meanonly
+		if r(min) == . {
+			disp as err "Estimation command does not return e(df_r); cannot specify citype(t)"
+			exit 198
 		}
-
-		forvalues j=1/`overlen' {		// if over() not specified this will be 1/1
-
-			qui gen `touse' = (_USE==1)
-			if `"`_by'"'!=`""' {
-				qui replace `touse' = `touse'*(_BY==`byi')
-			}
-			if `"`_over'"'!=`""' {
-				qui replace `touse' = `touse'*(_OVER==`j')
-			}
-		
-			cap mata: GetEstimates("`touse'", "sgwt", "`reModel'", `reps', `maxtausq', `itol', `maxiter', `quadpts', `level', `isq')
-			if _rc>=3000 {
-				disp as err "Mata error"
-				exit _rc
-			}
-			else if !_rc {		// if weights were calculated, i.e. if subgroup could be analysed
-				
-				* Subgroup results for ipdmetan (already done for ipdover)
-				if `"`_by'"'!=`""' & `"`ipdover'"'==`""' {
-
-					* Store scalars
-					foreach x in eff se_eff Q K tausq sigmasq {
-						tempname `x'`i'
-						scalar ``x'`i'' = r(`x')
-					}
-					tempname Qr`i' Isq`i'
-					if `"`r(Qr)'"'!=`""' {
-						scalar `Qr`i'' = r(Qr)
-					}
-					else scalar `Qr`i'' = r(Q)
-					scalar `Isq`i''=`tausq`i''/(`tausq`i''+`sigmasq`i'')	// General formula for Isq (including D+L)
-					scalar `Qsum' = `Qsum' + `Q`i''
-
-					* Store effect size, SE and confidence limits in the dataset
-					qui replace _ES = `eff`i'' if _USE==3 & _BY==`byi'			// subgroup ES
-					qui replace _seES = `se_eff`i'' if _USE==3 & _BY==`byi'		// subgroup seES
-					if "`reModel'"=="pl" {
-						qui replace _LCI = r(eff_lci) if _USE==3 & _BY==`byi'
-						qui replace _UCI = r(eff_uci) if _USE==3 & _BY==`byi'
-					}
-					else {
-						if "`reModel'"=="dlt" {
-							scalar `se_eff`i'' = `se_eff`i'' * sqrt(`Qr`i''/(`K`i''-1))		// Hartung-Knapp variance estimator
-							scalar `crit' = invttail(`K`i''-1, .5-`level'/200)				// t-distribution critical value
-						}
-						qui replace _LCI = `eff`i'' - `crit'*`se_eff`i'' if _USE==3 & _BY==`byi'
-						qui replace _UCI = `eff`i'' + `crit'*`se_eff`i'' if _USE==3 & _BY==`byi'
-					}
-					tempname tstat`i'			// test statistic
-					scalar `tstat`i'' = `eff`i''/`se_eff`i''
-
-					* Subgroup numbers of patients
-					if `"`_NN'"'!=`""' {
-						tempname totnpts`i'
-						summ _NN if `touse', meanonly
-						cap assert `r(N)'==`=`K`i'''
-						if !_rc {
-							scalar `totnpts`i'' = r(sum)
-							qui replace _NN = r(sum) if _USE==3 & _BY==`byi'
-						}
-						else scalar `totnpts`i'' = .
-					}
-				}		// end if `"`_by'"'!=`""' & `"`ipdover'"'==`""' 
-			}		// end if !_rc
-			
-			drop `touse'
-			local ++n
-			
-		}		// end forvalues j=1/`overlen'
-	}		// end forvalues i=1/`nby'
-	
-	* Overall
-	tempname K
-	qui gen ovwt=.
-	if `"`_over'"'!=`""' {
-		forvalues j=1/`overlen' {
-			qui gen `touse' = (_USE==1)*(_OVER==`j')
-			cap mata: GetEstimates("`touse'", "ovwt", "`reModel'", `reps', `maxtausq', `itol', `maxiter', `quadpts', `level', `isq')
-			if _rc>=3000 {
-				disp as err "Mata error"
-				exit _rc
-			}
-			drop `touse'
+		qui gen double `crit' = invttail(`_df', .5-`level'/200)
+		qui gen double _LCI = _ES - `crit'*_seES
+		qui gen double _UCI = _ES + `crit'*_seES
+	}
+	else if `"`citype'"'=="logit" {					// logit, proportions only
+		summ _ES, meanonly
+		if r(min)<0 | r(max)>1 {
+			disp as err "citype(logit) may only be used with proportions"
+			exit 198
 		}
-		scalar `K' = `countK'
+		qui gen double `crit' = invttail(`_df', .5-`level'/200)
+		qui gen double _LCI = invlogit(logit(_ES) - `crit'*_seES/(_ES*(1 - _ES)))
+		qui gen double _UCI = invlogit(logit(_ES) + `crit'*_seES/(_ES*(1 - _ES)))
 	}
 	else {
-		qui gen `touse' = (_USE==1)
-		cap mata: GetEstimates("`touse'", "ovwt", "`reModel'", `reps', `maxtausq', `itol', `maxiter', `quadpts', `level', `isq')
+		disp as err "invalid citype"
+		exit 198
+	}
+	return local citype `"`citype'"'		// return citype info
+	
+
+	
+	*****************************
+	* Inverse-variance analysis *
+	*****************************
+	
+	* Subgroups and/or cumulative MA
+	qui gen double sgwt=.
+	tempname Q K Qsum Qdiff critval /*totnpts*/
+	scalar `Q' = 0
+	scalar `K' = 0	
+	scalar `Qsum'=0
+	scalar `Qdiff'=0
+	
+	if `"`_by'`cumulative'"'!=`""' & "`ipdover'"=="" {		// by (within metan) or cumul; NOT ipdover
+		tempvar obsj
+		qui gen long `obsj' = .
+		
+		if `"`cumulative'"'!=`""' {
+			tempvar _ES2 _seES2 _LCI2 _UCI2 use3
+			foreach x in _Q  _tausq _sigmasq `_ES2' `_seES2' `_LCI2' `_UCI2' _WT {
+				qui gen double `x' = .
+			}
+			qui gen byte `use3' = 0
+			if "`reModel'"=="dlt" cap gen int `_df' = .			// "cap" since may already exist (if citype!=normal)
+			else if "`reModel'"=="kr" cap gen double `_df' = .	// same
+		}
+
+		forvalues i=1/`nby' {				// this will be 1/1 if no subgroups
+			local sumFEwt = 0				// initialise
+
+			qui gen byte `touse' = (_USE==1)
+			if `"`_by'"'!=`""' {
+				local byi : word `i' of `bylist'
+				qui replace `touse' = `touse'*(_BY==`byi')
+			}
+
+			qui bys `touse' (`sgroup') : replace `obsj' = _n if `touse'
+			qui count if `touse'
+			local jmax = cond(`"`cumulative'"'!=`""', `r(N)', 1)
+			forvalues j = 1/`jmax' {
+
+				clonevar `touse2' = `touse'
+				if `"`cumulative'"'!=`""' {
+					qui replace `touse2' = `touse' * inrange(`obsj', 1, `j')
+					
+					if "`reModel'"!="fe" {
+						summ _seES if `touse2' & `obsj'==`j', meanonly				// June 2015: manual calculation of FE SEs, for weighting
+						local sumFEwt = `sumFEwt' + (1/`r(min)'^2)					// [do this before GetEstimates so as not to disturb r()]
+						qui replace _WT = `sumFEwt' if `touse2' & `obsj'==`j'
+					}
+				}
+				local rc
+				qui count if `touse2'
+				local reModelSG = cond(r(N)>1, "`reModel'", "fe")		// revert to FE if only one study
+				cap mata: GetEstimates("`touse2'", "sgwt", "`reModelSG'", `reps', `maxtausq', `itol', `maxiter', `quadpts', `level', `isq')
+				local rc = _rc
+				if `rc' >= 3000 {
+					disp as err "Mata error"
+					exit `rc'
+				}
+				else if `rc'==111 {
+					disp as err "No data found in one or more subgroups"
+				}
+				else if `rc'>0 {
+					disp as err "Possible error in subgroup pooled estimate; please check"
+				}	
+				
+				* Cumulative meta-analysis: replace existing study estimates with GetEstimates output
+				//  (regardless of _by)
+				else if `"`cumulative'"'!=`""' {
+					qui replace `touse2' = `touse2' * (`obsj'==`j')
+				
+					if `j'==1 {
+						foreach x of varlist _ES _seES _LCI _UCI {
+							qui replace ``x'2' = `x' if `touse2'		// keep first observation as-is
+						}
+					}
+					else {
+						qui replace `_ES2' = r(eff) if `touse2'
+						qui replace `_seES2' = r(se_eff) if `touse2'
+						qui replace _Q = r(Q) if `touse2'
+						qui replace _tausq = r(tausq) if `touse2'
+						qui replace _sigmasq = r(sigmasq) if `touse2'
+						if "`reModelSG'"=="pl" {
+							qui replace `_LCI2' = r(eff_lci) if `touse2'
+							qui replace `_UCI2' = r(eff_uci) if `touse2'
+						}
+						else if "`reModelSG'"=="dlt" qui replace `_df' = r(K)-1 if `touse2'
+						else if "`reModelSG'"=="kr" qui replace `_df' = r(ddf) if `touse2'
+					}
+				}				// end else if `"`cumulative'"'!=`""'
+				drop `touse2'	// tidying up
+			}					// end forvalues j=`jmin'/`jmax'			
+			
+			// if cumulative, last run (`j'==`jmax') is still in memory
+			if `"`cumulative'"'!=`""' & !`rc' {
+				scalar `K' = `K' + r(K)														// store K
+				if "`reModel'"=="fe" qui replace _WT = (r(se_eff)/`_seES2')^2 if `touse'	// FE weights using r(se_eff) directly
+				else qui replace _WT = _WT / `sumFEwt' if `touse'							// FE weights using running sum (for RE)
+
+				qui replace `use3' = 1 if `touse' & `obsj'==`jmax'		// identifier of last estimate, for placement of dotted line in forestplot
+			}
+			
+			else {			// if not cumulative; hence "`_by'"
+
+				* Add to lists of subgroup scalars
+				if !`rc' {
+					local Qlist `"`Qlist' `r(Q)'"'
+					local Klist `"`Klist' `r(K)'"'
+					scalar `Qsum' = `Qsum' + r(Q)		// update running sums
+					scalar `K' = `K' + r(K)
+					
+					if `"`reModel'"'==`"`reModelSG'"' {
+						local tstatlist `"`tstatlist' `=r(eff)/r(se_eff)'"'
+						local Isqlist `"`Isqlist' `=r(tausq)/(r(tausq)+r(sigmasq))'"'
+					}
+					else {
+						local tstatlist `"`tstatlist' ."'
+						local Isqlist `"`Isqlist' ."'
+					}
+					if "`reModel'"=="kr" {
+						if "`r(ddf)'"!="" local ddflist `"`ddflist' `r(ddf)'"'		// If SPECIFIED model is Kenward-Roger...
+						else local ddflist `"`ddflist' ."'							//   ...save ddf in list (even if not actually used)
+					}
+					local totnptslist `"`totnptslist' `r(n)'"'
+				}
+				else {
+					local Qlist `"`Qlist' ."'
+					local Klist `"`Klist' ."'
+					local tstatlist `"`tstatlist' ."'
+					local Isqlist `"`Isqlist' ."'
+					if "`reModel'"=="kr" local ddflist `"`ddflist' ."'
+				}
+			
+				// if byad, store eff and se_eff as scalars
+				if `"`byad'"'!=`""' {
+					tempname eff`i'
+					tempname se_eff`i'
+					scalar `eff`i'' = cond(`rc', ., r(eff))
+					scalar `se_eff`i'' = cond(`rc', ., r(se_eff))
+				}
+			
+				if `"`reModel'"'!=`"`reModelSG'"' {
+					disp as err "Note: random-effects model cannot be used for subgroups containing only a single estimate"
+				}
+			
+				// store effect size, SE and confidence limits in the dataset
+				if !`rc' {
+					qui replace _ES = r(eff) if _USE==3 & _BY==`byi'				// subgroup ES
+					qui replace _seES = r(se_eff) if _USE==3 & _BY==`byi'			// subgroup seES
+					if "`reModelSG'"=="pl" {
+						qui replace _LCI = r(eff_lci) if _USE==3 & _BY==`byi'
+						qui replace _UCI = r(eff_uci) if _USE==3 & _BY==`byi'
+					}				
+					else {
+						scalar `critval' = invnorm(.5+`level'/200)											// default (normal) critical value
+						if "`reModelSG'"=="dlt" scalar `critval' = invttail(r(K)-1, .5-`level'/200)			// critical value for Hartung-Knapp
+						else if "`reModelSG'"=="kr" scalar `critval' = invttail(r(ddf), .5-`level'/200)		// critical value for Kenward-Roger
+						qui replace _LCI = r(eff) - `critval'*r(se_eff) if _USE==3 & _BY==`byi'
+						qui replace _UCI = r(eff) + `critval'*r(se_eff) if _USE==3 & _BY==`byi'
+					}
+				}
+			}			// end else (i.e. not cumulative)
+			
+			// subgroup numbers of patients
+			// (mostly for cumulative, but cross-check with previous calculations for "`_by'"
+			if `"`_NN'"'!=`""' & !`rc' {
+				tempname KSG
+				scalar `KSG' = r(K)
+				summ _NN if `touse', meanonly
+				assert `r(N)' == `KSG'				// June 2015: "capture" removed here
+				local totnptslist `"`totnptslist' `r(sum)'"'
+				if `"`_by'"'!=`""' {
+					scalar `totnpts' = `totnpts' + `r(sum)'
+				}
+				if `"`cumulative'"'==`""' {
+					qui replace _NN = r(sum) if _USE==3 & _BY==`byi'
+				}
+				else if `"`_by'"'==`""' {
+					scalar `K' = `KSG'
+					scalar `totnpts' = r(sum)
+				}
+			}
+			else local totnptslist `"`totnptslist' ."'
+		
+			drop `touse'	// tidying up
+		}					// end forvalues i=1/`nby'		
+		drop `obsj'			// tidying up
+		
+		* Finish sorting out cumulative MA (now we're outside the `by' loop)
+		if `"`cumulative'"'!=`""' {
+		
+			// sort out confidence limits if needed
+			if "`reModelSG'"!="pl" {										// PL already done (line 1641)
+				if inlist("`reModelSG'", "dlt", "kr") {
+					qui replace `crit' = invttail(`_df', .5-`level'/200) 	// t-distribution critical value
+				}
+				qui replace `_LCI2' = `_ES2' - `crit'*`_seES2' if !missing(`crit')
+				qui replace `_UCI2' = `_ES2' + `crit'*`_seES2' if !missing(`crit')
+			}
+			drop sgwt
+
+			// numbers of patients (by subgroup if appropriate)
+			if `"`_NN'"'!=`""' {
+				if `"`_by'"'!=`""' local byopt `"by `_by' :"'
+				sort `_by' `sgroup'
+				qui `byopt' replace _NN = sum(_NN)
+			}
+		
+			// rename effect size vars
+			foreach x of varlist _ES _seES _LCI _UCI {
+				drop `x'
+				rename ``x'2' `x'
+			}
+		}			// end if `"`cumulative'"'!=`""'
+	}				// end if `"`_by'`cumulative'"'!=`""' & "`ipdover'"==""
+	drop `crit'		// tidying up
+
+
+	* Overall (not necessary for cumulative)
+	if `"`_over'"'!=`""' {
+		tempname K
+		scalar `K' = `countK'
+	}
+	else if `"`cumulative'"'==`""' {
+		qui gen double ovwt=.
+		qui gen byte `touse' = (_USE==1)
+		qui count if `touse'
+		local reModelOV = cond(r(N)>1, "`reModel'", "fe")
+		cap mata: GetEstimates("`touse'", "ovwt", "`reModelOV'", `reps', `maxtausq', `itol', `maxiter', `quadpts', `level', `isq')
 		if _rc>=3000 {
 			disp as err "Mata error"
 			exit _rc
 		}
+		else if _rc==111 {		// N.B. rc=111 should never happen, since we have already checked that "some" data exists
+			disp as err "No data found"
+			exit `rc'
+		}
+		else if _rc>0 {
+			disp as err "Possible error in overall pooled estimate; please check"
+		}			
+		tempname K
 		scalar `K' = r(K)
 		
-		* Overall results for ipdmetan (already done for ipdover)
+		// overall results for ipdmetan (already done for ipdover)
 		if `"`ipdover'"'==`""' {
+			if `"`reModel'"'!=`"`reModelOV'"' {
+				disp as err "Only one estimate found; random-effects model not used"
+			}
 		
-			* Store scalars
-			foreach x in eff se_eff Q Qr /*K*/ sigmasq {
+			// store scalars
+			foreach x in eff se_eff Q tausq sigmasq {
 				tempname `x'
 				scalar ``x'' = r(`x')
 			}
-		
-			* Store effect size and confidence limits in the dataset
-			qui replace _ES = `eff' if _USE==5			// overall ES
-			qui replace _seES = `se_eff' if _USE==5		// overall seES
-			if "`reModel'"=="pl" {
+			tempname tstat Isq HsqM
+			scalar `tstat' = r(eff)/r(se_eff)
+			scalar `Isq' = cond("`reModelOV'"=="sa", `isq', `tausq'/(`tausq'+`sigmasq'))	// General formula for Isq (including D+L) (if not SA)
+			scalar `HsqM'=`tausq'/`sigmasq'													// General formula for HsqM (including D+L)	
+			scalar `Qdiff' = `Q' - `Qsum'			// tempname already defined, set to zero as default (line 1569)
+
+			// store effect size and confidence limits in the dataset
+			qui replace _ES = r(eff) if _USE==5				// overall ES
+			qui replace _seES = r(se_eff) if _USE==5		// overall seES
+			if "`reModelOV'"=="pl" {
 				qui replace _LCI = r(eff_lci) if _USE==5
 				qui replace _UCI = r(eff_uci) if _USE==5
 			}
 			else {
-				scalar `crit' = invnorm(.5+`level'/200)			// normal distribution critical value (default)
-				if "`reModel'"=="dlt" {
-					scalar `se_eff' = `se_eff' * sqrt(`Qr'/(`K'-1))		// Hartung-Knapp variance estimator
-					scalar `crit' = invttail(`K'-1, .5-`level'/200)				// t distribution critical value
-				}
-				qui replace _LCI = `eff' - `crit'*`se_eff' if _USE==5
-				qui replace _UCI = `eff' + `crit'*`se_eff' if _USE==5
+				scalar `critval' = invnorm(.5+`level'/200)										// default (normal) critical value
+				if "`reModelOV'"=="dlt" scalar `critval' = invttail(`K'-1, .5-`level'/200)		// crit. val. for Hartung-Knapp
+				else if "`reModelOV'"=="kr" {
+					tempname ddf											// Kenward-Roger variance estimator:
+					scalar `ddf' = r(ddf)									// denominator degrees of freedom
+					scalar `critval' = invttail(`ddf', .5-`level'/200)		// t-distribution critical value
+					return scalar df_kr = `ddf'								// return ddf (as "df_kr", for clarity)
+				}				
+				qui replace _LCI = r(eff) - `critval'*r(se_eff) if _USE==5
+				qui replace _UCI = r(eff) + `critval'*r(se_eff) if _USE==5
 			}
-			tempname tstat							// test statistic
-			scalar `tstat' = `eff'/`se_eff'
-			scalar `Qdiff' = `Q' - `Qsum'			// tempname already defined, set to zero as default (line 1536)
-		
+
 			* Heterogeneity stats
-			tempname tausq HsqM Isq
-			scalar `tausq' = r(tausq)
-			if "`reModel'"!="sa" {
-				scalar `Isq'=`tausq'/(`tausq'+`sigmasq')	// General formula for Isq (including D+L)
-			}
-			else scalar `Isq'=`isq'
-			scalar `HsqM'=`tausq'/`sigmasq'				// General formula for HsqM (including D+L)	
-			
 			if `"`overall'"'==`""' {
-				if "`reModel'"!="sa" return scalar Q=`Q'	// Q is meaningless for sensitivity analysis
-				return scalar sigmasq=`sigmasq'
-				return scalar tausq=`tausq'
-				return scalar Isq=`Isq'
-				if "`reModel'"!="sa" return scalar HsqM=`HsqM'
-				else return scalar HsqM=float(`HsqM')		// If user-defined I^2 is a round(ish) number, so should H^2 be
+				if "`reModelOV'"!="sa" return scalar Q = `Q'	// Q is meaningless for sensitivity analysis
+				return scalar sigmasq = `sigmasq'
+				return scalar tausq = `tausq'
+				return scalar Isq = `Isq'
+				return scalar HsqM = cond("`reModelOV'"=="sa", float(`HsqM'), `HsqM')	// If user-defined I^2 is a round(ish) number, so should H^2 be
 				
 				* Subgroup statistics
 				if `"`_by'"'!=`""' & `"`subgroup'"'==`""' {
 					tempname Fstat
 					scalar `Fstat' = (`Qdiff'/(`nby'-1)) / (`Q'/(`K'-1))
-					return scalar F=`Fstat'
-					return scalar nby=`nby'
+					return scalar F = `Fstat'
+					return scalar nby = `nby'
 				}
 			}
 			
-			if inlist(`"`reModel'"', "dlb", "gq", "bs", "ml", "pl", "reml") {		// confidence limits for tausq, Isq and Hsq
+			if inlist(`"`reModelOV'"', "dlb", "gq", "bs", "ml", "pl", "reml", "kr") {		// confidence limits for tausq, Isq and Hsq
 				tempname tsq_lci tsq_uci HsqM_lci HsqM_uci Isq_lci Isq_uci
 				scalar `tsq_lci' = r(tsq_lci)
 				scalar `tsq_uci' = r(tsq_uci)
 				
-				scalar `HsqM_lci'=`tsq_lci'/`sigmasq'
-				scalar `HsqM_uci'=`tsq_uci'/`sigmasq'
+				scalar `HsqM_lci' = `tsq_lci'/`sigmasq'
+				scalar `HsqM_uci' = `tsq_uci'/`sigmasq'
 
-				scalar `Isq_lci'=`tsq_lci'/(`tsq_lci'+`sigmasq')
-				scalar `Isq_uci'=`tsq_uci'/(`tsq_uci'+`sigmasq')
+				scalar `Isq_lci' = `tsq_lci'/(`tsq_lci'+`sigmasq')
+				scalar `Isq_uci' = `tsq_uci'/(`tsq_uci'+`sigmasq')
 				
 				if `"`overall'"'==`""' {
 					local rc_tausq = r(rc_tausq)
@@ -1748,10 +1872,10 @@ program ipdmetan, rclass sortpreserve
 					return scalar rc_tsq_lci = `rc_tsq_lci'		// whether tausq lower confidence limit converged
 					return scalar rc_tsq_uci = `rc_tsq_uci'		// whether tausq upper confidence limit converged
 					
-					return scalar tsq_lci=`tsq_lci'
-					return scalar tsq_uci=`tsq_uci'
+					return scalar tsq_lci = `tsq_lci'
+					return scalar tsq_uci = `tsq_uci'
 
-					if "`reModel'"=="pl" {
+					if "`reModelOV'"=="pl" {
 						local rc_eff_lci = r(rc_eff_lci)
 						local rc_eff_uci = r(rc_eff_uci)
 						return scalar rc_eff_lci = `rc_eff_lci'		// whether ES lower confidence limit converged
@@ -1760,7 +1884,7 @@ program ipdmetan, rclass sortpreserve
 						return scalar eff_lci = r(eff_lci)
 						return scalar eff_uci = r(eff_uci)
 					}
-					if "`reModel'"=="bs" {
+					if "`reModelOV'"=="bs" {
 						tempname tsq_var
 						scalar `tsq_var' = r(tsq_var)
 						if `"`overall'"'==`""' return scalar tsq_var = `tsq_var'
@@ -1768,57 +1892,88 @@ program ipdmetan, rclass sortpreserve
 				}
 			}
 		}				// end if `"`ipdover'"'==`""'
-
-		drop `touse'
-	}					// end else (i.e. if `"`_over'"'==`""')
-
-	* Total number of patients
-	if `totnpts'==. & `"`_NN'"'!=`""' {
-		summ _NN if _USE==1, meanonly
-		cap assert `r(N)'==`=`K''
-		if !_rc {
-			scalar `totnpts' = r(sum)
+	
+		* Total number of patients
+		if `"`_NN'"'!=`""' {
+		
+			summ _NN if inlist(_USE, 1, 2), meanonly
+			assert `r(N)' == `K'				// June 2015: "capture" removed here
+			
+			// if not ipdover, can simply go by _USE==1
+			// but for ipdover, _USE==1, 3, 5 could be different.
+			if `"`ipdover'"'!=`""' {
+				if `"`overall'"'==`""' summ _NN if _USE==5, meanonly
+				else if `"`subgroup'"'==`""' summ _NN if _USE==3, meanonly
+				else summ _NN if inlist(_USE, 1, 2), meanonly
+			}
+			else summ _NN if inlist(_USE, 1, 2), meanonly
+			
+			if !inlist(`totnpts', 0, .) assert `r(sum)'==`totnpts'
+			else scalar `totnpts' = r(sum)
 			qui replace _NN = r(sum) if _USE==5
 		}
-	}
-	
-	* Finalise weights...
-	qui replace ovwt = 1 if _USE==5									// "overall weight" total (100%)
-	if `"`_by'"'!=`""' {
-		forvalues i=1/`nby' {
-			local byi : word `i' of `bylist'
-			qui replace sgwt = 1 if _USE==3 & _BY==`byi'			// "subgroup weight" total (100%)
-			summ ovwt if _BY==`byi', meanonly
-			qui replace ovwt = r(sum) if _USE==3 & _BY==`byi'		// subgroup-specific "overall weight" totals
-		}
-	}
-	
-	* ...and keep just one weight variable, dropping the other
-	* cap drop _WT
-	if `"`sgwt'`ovwt'"'!=`""' {								// if sgwt/ovwt specified, do as requested
-		drop `=cond(`"`sgwt'"'!=`""', "ovwt", "sgwt")'
-		rename `sgwt'`ovwt' _WT
-	}
-	else {													// otherwise, follow default behaviour
-		drop `=cond(`"`_by'"'!=`""' & `"`overall'"'!=`""' & `"`subgroup'"'==`""', "ovwt", "sgwt")'
-		rename `=cond(`"`_by'"'!=`""' & `"`overall'"'!=`""' & `"`subgroup'"'==`""', "sgwt", "ovwt")' _WT
-	}
-	
-	
-	*** Return other statistics
 
-	* For matrix of coefficients, first need to sort.
-	* Missing values in _BY may cause problems, so need to be careful!
+		drop `touse'
+		
+		* Finalise weights...
+		qui replace ovwt = 1 if _USE==5									// "overall weight" total (100%)
+		if `"`_by'"'!=`""' {
+			forvalues i=1/`nby' {
+				local byi : word `i' of `bylist'
+				qui replace sgwt = 1 if _USE==3 & _BY==`byi'			// "subgroup weight" total (100%)
+				summ ovwt if _BY==`byi', meanonly
+					qui replace ovwt = r(sum) if _USE==3 & _BY==`byi'		// subgroup-specific "overall weight" totals
+			}
+		}
+
+		* ...and keep just one weight variable, dropping the other
+		//    (N.B. if `dispNN', these will both be dropped eventually anyway, in favour of _NN)
+		if `"`sgwt'`ovwt'"'!=`""' {								// if sgwt/ovwt specified, do as requested
+			drop `=cond(`"`sgwt'"'!=`""', "ovwt", "sgwt")'
+			rename `sgwt'`ovwt' _WT
+		}
+		else {													// otherwise, follow default behaviour
+			drop `=cond(`"`_by'"'!=`""' & `"`overall'"'!=`""' & `"`subgroup'"'==`""', "ovwt", "sgwt")'
+			rename `=cond(`"`_by'"'!=`""' & `"`overall'"'!=`""' & `"`subgroup'"'==`""', "sgwt", "ovwt")' _WT
+		}		
+	}					// end else if `"`cumulative'"'==`""'
+
+
+	
+	*********************
+	* Return statistics *
+	*********************
+
+	// need to sort before forming matrix
+	// missing values in _BY may cause problems, so need to be careful!
 	tempvar use5
-	qui gen `use5' = (_USE==5)
+	qui gen byte `use5' = (_USE==5)
+	qui gen byte `touse' = inlist(_USE, 1, 2)
 	sort `use5' `_by' `_over' _USE `_source' `sgroup'
 
-	* Return matrix of coefficients (with weights)
+	// return matrix of coefficients
+	if `"`ipdover'"'!=`""' | (`"`cumulative'"'!=`""' & `"`reModel'"'!="fe") {		// indicator of whether to display NN or WT
+		local dispNN "dispnn"
+	}																	
+	local _WT = cond("`dispNN'"=="", "_WT", "")
 	tempname coeffs
-	mkmat `_over' `_by' `_study' _ES _seES `_NN' _WT if inlist(_USE, 1, 2), matrix(`coeffs')
+	mkmat `_over' `_by' `_study' _ES _seES `_NN' `_WT' if `touse', matrix(`coeffs')
 	return matrix coeffs=`coeffs'
 
+	// check lengths of stat lists if _by and not ipdover/cumulative
+	if `"`_by'"'!=`""' & "`ipdover'`cumulative'"=="" {
+		foreach x in K Q tstat Isq totnpts {
+			assert `: word count ``x'list'' == `nby'
+		}
+		if "`remodel'"=="kr" assert `: word count `ddflist'' == `nby'
+	}
+	
+	// return scalars
 	if `"`byad'"'!=`""' {
+		forvalues i=1/2 {
+			local K`i' : word `i' of `Klist'
+			local totnpts`i' : word `i' of `totnptslist'
+		}
 		foreach x in K1 K2 totnpts1 totnpts2 eff1 eff2 se_eff1 se_eff2 {
 			if `"``x''"'==`""' local `x'=.
 		}
@@ -1834,11 +1989,10 @@ program ipdmetan, rclass sortpreserve
 		return scalar se_eff2=`se_eff2'
 	}	
 	else {
-		if `"`totnpts'"'==`""' local totnpts=.
-		return scalar k=`K'
-		return scalar n=`totnpts'
+		return scalar k = `K'
+		return scalar n = cond(`totnpts'==0, ., `totnpts')
 		
-		* Pooled estimates
+		// pooled estimates
 		if `"`ipdover'"'==`""' & `"`overall'"'==`""' {
 			return scalar eff=`eff'
 			return scalar se_eff=`se_eff'
@@ -1851,7 +2005,7 @@ program ipdmetan, rclass sortpreserve
 	* Print summary info to screen *
 	********************************
 	
-	* Full method names
+	* Full RE model names
 	if "`reModel'"=="fe" local reDesc "Fixed-effects"
 	else if "`reModel'"=="dl" local reDesc "Random-effects; DerSimonian-Laird estimator"
 	else if "`reModel'"=="sa" local reDesc "Random-effects; Sensitivity analysis with user-defined I`=char(178)'"
@@ -1864,27 +2018,28 @@ program ipdmetan, rclass sortpreserve
 	else if "`reModel'"=="ml" local reDesc "Random-effects; ML estimator"
 	else if "`reModel'"=="pl" local reDesc "Random-effects; Profile ML estimator"
 	else if "`reModel'"=="reml" local reDesc "Random-effects; REML estimator"
+	else if "`reModel'"=="kr" local reDesc "Random-effects; REML with Kenward-Roger variance estimator"
 	else if "`reModel'"=="bp" local reDesc "Random-effects; Rukhin BP estimator"
 	else if "`reModel'"=="b0" local reDesc "Random-effects; Rukhin B0 estimator"
 	
 	* Print number of studies/patients to screen
-	* (NB nos. actually analysed as opposed to the number supplied in original data)
+	//  (NB nos. actually analysed as opposed to the number supplied in original data)
 	if `"`ADfile'"'!=`""' {
 		if `"`byad'"'==`""' {
 			tempname KIPD totnptsIPD
-			qui count if inlist(_USE, 1, 2) & _SOURCE==1
+			qui count if `touse' & _SOURCE==1
 			scalar `KIPD' = r(N)
 			if r(N) {
-				summ _NN if inlist(_USE, 1, 2) & _SOURCE==1, meanonly
+				summ _NN if `touse' & _SOURCE==1, meanonly
 				scalar `totnptsIPD' = cond(r(N), r(sum), .)			// if KIPD>0 but no _NN, set to missing
 			}
 			else scalar `totnptsIPD' = 0
 
 			tempname KAD totnptsAD
-			qui count if inlist(_USE, 1, 2) & _SOURCE==2
+			qui count if `touse' & _SOURCE==2
 			scalar `KAD' = r(N)
 			if r(N) {
-				summ _NN if inlist(_USE, 1, 2) & _SOURCE==2, meanonly
+				summ _NN if `touse' & _SOURCE==2, meanonly
 				scalar `totnptsAD' = cond(r(N), r(sum), .)			// if KAD>0 but no _NN, set to missing
 			}
 			else scalar `totnptsAD' = 0
@@ -1934,15 +2089,15 @@ program ipdmetan, rclass sortpreserve
 
 	
 	
-	**************************
-	* Print output to screen *
-	**************************
+	***************************
+	* Print results to screen *
+	***************************
 	
 	if `"`table'"'==`""' {
 
-		* Find maximum length of labels in LHS column
+		// find maximum length of labels in LHS column
 		tempvar vlablen
-		qui gen `vlablen' = length(_LABELS)
+		qui gen long `vlablen' = length(_LABELS)
 		if `"`_by'"'!=`""' {
 			tempvar bylabels
 			if `"`bylab'"'!=`""' qui decode _BY, gen(`bylabels')
@@ -1962,66 +2117,49 @@ program ipdmetan, rclass sortpreserve
 			}
 		}
 		
-		* Prepare heterogeneity stats for presentation
-		if `"`ipdover'"'==`""' & `"`overall'"'==`""' & (`"`_by'"'==`""' | `"`subgroup'"'!=`""') {
-			local isqlist `Isq'
-			local hsqlist `HsqM'
-			local tsqlist `tausq'
-			if inlist("`reModel'", "dlb", "gq", "bs", "ml", "pl", "reml") {
-				local isqlist `"`isqlist' `Isq_lci' `Isq_uci'"'
-				local hsqlist `"`hsqlist' `HsqM_lci' `HsqM_uci'"'
-				local tsqlist `"`tsqlist' `tsq_lci' `tsq_uci'"'
-			}
-			local isqlist `"isq(`isqlist')"'
-			local hsqlist `"hsq(`hsqlist')"'
-			local tsqlist `"tausq(`tsqlist')"'
-		}
-		if `"`_by'"'!=`""' & `"`subgroup'"'==`""' {
-			forvalues i=1/`nby' {
-				local Qlist `"`Qlist' `Q`i''"'
-				local tstatlist `"`tstatlist' `tstat`i''"'		// test statistics for effect size
-			}
-		}
-		
 		if `"`ipdover'"'!=`""' & `overlen'>1 local stitle "Subgroup"
 		else local stitle `"`varlab1'"'
 		if `"`_by'"'!=`""' local stitle `"`byvarlab' and `stitle'"'
-
-		sort `use5' `_by' `_over' _USE `_source' `sgroup'
-		qui gen long `obs'=_n
-		DrawTable, sortby(`obs') overlen(`overlen') lablen(`lablen') stitle(`stitle') etitle(`effect') `varlabopt' `eform' ///
-			bylab(`bylab') bylist(`bylist') remodel(`reModel') q(`Q') qlist(`Qlist') qdiff(`Qdiff') tstat(`tstat') tstatlist(`tstatlist') ///
-			`isqlist' `hsqlist' `tsqlist' `overall' `subgroup' `ipdover'
-		drop `obs'
+	}
 		
-		if `"`messages'"'!=`""' {
-			disp _n _c
-			if inlist("`reModel'", "gq", "bs", "ml", "pl", "reml") {
-			
-				if "`reModel'"!="bs" {		// confidence interval only
-					if `rc_tausq'==0 disp as text "tau{c 178} point estimate converged successfully"
-					if `rc_tausq'==1 disp as err "tau{c 178} point estimate failed to converge within `maxiter' iterations"
-					if `rc_tausq'>1 disp as err "tau{c 178} point estimate failed to converge: invalid search interval"
-				}
-				if `rc_tsq_lci'==0 disp as text "Lower confidence limit of tau{c 178} converged successfully"
-				if `rc_tsq_lci'==1 disp as err "Lower confidence limit of tau{c 178} failed to converge within `maxiter' iterations"
-				if `rc_tsq_lci'==2 disp as text "Lower confidence limit of tau{c 178} truncated at zero"
-				if `rc_tsq_lci'==3 disp as text "Lower confidence limit of tau{c 178} greater than `maxtausq'"
+	if "`reModelOV'" != "`reModel'" local het "nohet"				// don't present overall het stats if only one estimate
+
+	sort `use5' `_by' `_over' _USE `_source' `sgroup'
+	qui gen long `obs'=_n
+	DrawTable, sortby(`obs') overlen(`overlen') lablen(`lablen') stitle(`"`stitle'"') etitle(`"`effect'"') ///
+		bylab(`bylab') bylist(`bylist') `eform' remodel(`reModelOV') `varlabopt' ///
+		tstatlist(`tstatlist') tstat(`tstat') qlist(`Qlist') q(`Q') qdiff(`Qdiff') ddflist(`ddflist') ddf(`ddf') ///
+		isq(`Isq' `Isq_lci' `Isq_uci') hsq(`HsqM' `HsqM_lci' `HsqM_uci') tausq(`tausq' `tsq_lci' `tsq_uci') ///
+		`table' `het' `overall' `subgroup' `dispNN'
+	drop `obs'
+
+	if `"`messages'"'!=`""' {
+		disp _n _c
+		if inlist("`reModel'", "gq", "bs", "ml", "pl", "reml", "kr") {
+
+			if "`reModel'"!="bs" {		// confidence interval only
+				if `rc_tausq'==0 disp as text "tau{c 178} point estimate converged successfully"
+				if `rc_tausq'==1 disp as err "tau{c 178} point estimate failed to converge within `maxiter' iterations"
+				if `rc_tausq'>1 disp as err "tau{c 178} point estimate failed to converge: invalid search interval"
+			}
+			if `rc_tsq_lci'==0 disp as text "Lower confidence limit of tau{c 178} converged successfully"
+			if `rc_tsq_lci'==1 disp as err "Lower confidence limit of tau{c 178} failed to converge within `maxiter' iterations"
+			if `rc_tsq_lci'==2 disp as text "Lower confidence limit of tau{c 178} truncated at zero"
+			if `rc_tsq_lci'==3 disp as text "Lower confidence limit of tau{c 178} greater than `maxtausq'"
+
+			if `rc_tsq_uci'==0 disp as text "Upper confidence limit of tau{c 178} converged successfully"
+			if `rc_tsq_uci'==1 disp as err "Upper confidence limit of tau{c 178} failed to converge within `maxiter' iterations"
+			if `rc_tsq_uci'==2 disp as text "Upper confidence limit of tau{c 178} truncated at zero"
+			if `rc_tsq_uci'==3 disp as text "Upper confidence limit of tau{c 178} greater than `maxtausq'"
+
+			if "`reModel'"=="pl" {
+				if `rc_eff_lci'==0 disp as text "Lower confidence limit of ES converged successfully"
+				if `rc_eff_lci'==1 disp as err "Lower confidence limit of ES failed to converge within `maxiter' iterations"
+				if `rc_eff_lci'>1 disp as err "Lower confidence limit of ES failed to converge: invalid search interval"
 				
-				if `rc_tsq_uci'==0 disp as text "Upper confidence limit of tau{c 178} converged successfully"
-				if `rc_tsq_uci'==1 disp as err "Upper confidence limit of tau{c 178} failed to converge within `maxiter' iterations"
-				if `rc_tsq_uci'==2 disp as text "Upper confidence limit of tau{c 178} truncated at zero"
-				if `rc_tsq_uci'==3 disp as text "Upper confidence limit of tau{c 178} greater than `maxtausq'"
-				
-				if "`reModel'"=="pl" {
-					if `rc_eff_lci'==0 disp as text "Lower confidence limit of ES converged successfully"
-					if `rc_eff_lci'==1 disp as err "Lower confidence limit of ES failed to converge within `maxiter' iterations"
-					if `rc_eff_lci'>1 disp as err "Lower confidence limit of ES failed to converge: invalid search interval"
-					
-					if `rc_eff_uci'==0 disp as text "Upper confidence limit of ES converged successfully"
-					if `rc_eff_uci'==1 disp as err "Upper confidence limit of ES failed to converge within `maxiter' iterations"
-					if `rc_eff_uci'>1 disp as err "Upper confidence limit of ES failed to converge: invalid search interval"
-				}
+				if `rc_eff_uci'==0 disp as text "Upper confidence limit of ES converged successfully"
+				if `rc_eff_uci'==1 disp as err "Upper confidence limit of ES failed to converge within `maxiter' iterations"
+				if `rc_eff_uci'>1 disp as err "Upper confidence limit of ES failed to converge: invalid search interval"
 			}
 		}
 	}
@@ -2037,9 +2175,9 @@ program ipdmetan, rclass sortpreserve
 		quietly {
 			
 			if `"`saving'"'!=`""' {
-				* Would like to use _prefix_saving here,
-				* but ipdmetan's 'saving' option has additional sub-options
-				* so have to parse manually
+				// would like to use _prefix_saving here,
+				// but ipdmetan's 'saving' option has additional sub-options
+				// so have to parse manually
 				local 0 `saving'
 				cap nois syntax anything(id="file name" name=filename) [, REPLACE STACKlabel]
 				local rc = `c(rc)'
@@ -2055,26 +2193,33 @@ program ipdmetan, rclass sortpreserve
 				}
 			}
 			
-			* Apply variable labels and formats to lcols/rcols "returned data"
+			// variable name (titles) for "_LABELS"... also "_NN" (if appropriate)
+			// also format _NN
+			label var _LABELS `"`stitle'"'
+			if `"`stacklabel'"'!=`""' label var _LABELS "Study ID"
+			tempvar strlen
+			if `"`_NN'"'!=`""' {
+				if `"`: variable label _NN'"'==`""' label var _NN "No. pts"
+				gen `strlen' = length(string(_NN))
+				summ `strlen', meanonly
+				local fmtlen = max(`r(max)', 3)		// min of 3, otherwise title ("No. pts") won't fit
+				format _NN %`fmtlen'.0f				// right-justified; fixed format (for integers)
+				drop `strlen'
+			}
+			
+			// apply variable labels and formats to lcols/rcols "returned data"
 			forvalues i=1/`nr' {
 				local temp : word `i' of `namesr'
 				label var `temp' `"`nrlab`i''"'
 			}
 			
-			* Variable name (titles) for "_LABELS"... also "_NN" (if appropriate)
-			label var _LABELS `"`stitle'"'
-			if `"`stacklabel'"'!=`""' label var _LABELS "Study ID"
-			if `"`_NN'"'!=`""' {
-				if `"`: variable label _NN'"'==`""' label var _NN "No. pts"
-			}			
-			
-			* Apply variable labels and formats to lcols/rcols only present in aggregate data
+			// apply variable labels and formats to lcols/rcols only present in aggregate data
 			forvalues i=1/`na' {
 				local temp : word `i' of `ADvars'
 				label var `temp' `"`nalab`i''"'
 			}
 
-			* Apply formats to lcols/rcols
+			// apply formats to lcols/rcols
 			if `"`fmts'"'!=`""' {
 				forvalues i=1/`ni' {
 					local temp : word `i' of `lrcols'
@@ -2086,9 +2231,9 @@ program ipdmetan, rclass sortpreserve
 				}
 			}
 				
-			*** Insert extra rows for headings, labels, spacings etc.
-			* Note: in the following routines, "half" values of _USE are used temporarily to get correct order
-			*       and are then replaced with whole numbers at the end
+			** Insert extra rows for headings, labels, spacings etc.
+			//  Note: in the following routines, "half" values of _USE are used temporarily to get correct order
+			//        and are then replaced with whole numbers at the end
 
 			* Subgroup headings and spacings ("by", "over", both)
 			if `"`_by'"'!=`""' | `"`_over'"'!=`""' {
@@ -2096,10 +2241,10 @@ program ipdmetan, rclass sortpreserve
 				bysort `_by' `_over' : gen byte `expand' = 1 + 2*(_n==1)*(!`use5')
 				expand `expand'
 				gsort `_by' `_over' -`expand' _USE `_source' `sgroup'
-				by `_by' `_over' : replace _USE=0 if `expand'>1 & _n==2		/* row for headings */
-				by `_by' `_over' : replace _USE=4 if `expand'>1 & _n==3		/* row for blank line */
+				by `_by' `_over' : replace _USE=0 if `expand'>1 & _n==2		// row for headings
+				by `_by' `_over' : replace _USE=4 if `expand'>1 & _n==3		// row for blank line
 				if `"`_over'"'!=`""' {
-					drop if _USE==0 & missing(_OVER)		/* ...but not needed for missing _over */
+					drop if _USE==0 & missing(_OVER)		// ...but not needed for missing _over
 				}
 				drop `expand'
 				
@@ -2109,10 +2254,10 @@ program ipdmetan, rclass sortpreserve
 					bysort _BY : gen byte `expand' =  1 + 3*(_n==1)*(!`use5')
 					expand `expand'
 					gsort _BY -`expand' _USE `_source' `sgroup'
-					by _BY : replace _USE=-1 if `expand'>1 & _n==2  		/* row for "by" label (title) */
-					by _BY : replace _USE=-0.5 if `expand'>1 & _n==3		/* row for blank line below title */
-					by _BY : replace _USE=4.5 if `expand'>1 & _n==4		/* row for blank line to separate "by" groups */
-					drop if _USE==4.5 & missing(_OVER)						/* ...but not needed for missing _OVER */
+					by _BY : replace _USE=-1 if `expand'>1 & _n==2  		// row for "by" label (title)
+					by _BY : replace _USE=-0.5 if `expand'>1 & _n==3		// row for blank line below title
+					by _BY : replace _USE=4.5 if `expand'>1 & _n==4			// row for blank line to separate "by" groups
+					drop if _USE==4.5 & missing(_OVER)						// ...but not needed for missing _OVER
 					replace _OVER=. if _USE==4.5
 					drop `expand'
 				}
@@ -2128,10 +2273,10 @@ program ipdmetan, rclass sortpreserve
 				expand `expand'
 				gsort _BY -`expand' _USE `_source' `sgroup'
 				if `"`_over'"'!=`""' {
-					by _BY : replace _USE=2.5 if `expand'>1 & _n==2		/* row for blank line ("over" only) */
+					by _BY : replace _USE=2.5 if `expand'>1 & _n==2		// row for blank line ("over" only)
 				}
 				if `HetOnNewLine' {
-					by _BY : replace _USE=3.5 if `expand'>1 & _n==2		/* extra row for het if lcols */
+					by _BY : replace _USE=3.5 if `expand'>1 & _n==2		// extra row for het if lcols
 				}
 				drop `expand'
 			}
@@ -2144,7 +2289,7 @@ program ipdmetan, rclass sortpreserve
 			}
 			
 			* Blank out effect sizes etc. in new rows
-			foreach x of varlist _LABELS _ES _seES _LCI _UCI _WT `_NN' `lrcols' {
+			foreach x of varlist _LABELS _ES _seES _LCI _UCI `_WT' `_NN' `lrcols' {
 				cap confirm numeric var `x'
 				if !_rc replace `x' = . if !inlist(_USE, 1, 2, 3, 5)
 				else replace `x' = "" if !inlist(_USE, 1, 2, 3, 5)
@@ -2152,8 +2297,8 @@ program ipdmetan, rclass sortpreserve
 			replace `_study'=. if !inlist(_USE, 1, 2)
 			if `"`_source'"'!=`""' replace `_source'=. if !inlist(_USE, 1, 2)
 
-			*** Now insert label info into new rows
-			* over() labels
+			** Now insert label info into new rows
+			//  over() labels
 			if `"`_over'"'!=`""' {
 				forvalues h=1/`overlen' {
 					replace _LABELS = `"`varlab`h''"' if _USE==0 & _OVER==`h'
@@ -2162,8 +2307,8 @@ program ipdmetan, rclass sortpreserve
 				label values _OVER _OVER
 			}
 			
-			* Extra row to contain what would otherwise be the leftmost column heading
-			*   if `stacklabel' specified (i.e. so that heading can be used for forestplot stacking)
+			// extra row to contain what would otherwise be the leftmost column heading if `stacklabel' specified
+			// (i.e. so that heading can be used for forestplot stacking)
 			else if `"`stacklabel'"' != `""' {
 				local nobs1 = _N+1
 				set obs `nobs1'
@@ -2171,13 +2316,13 @@ program ipdmetan, rclass sortpreserve
 				replace `use5' = -1 in `nobs1'
 				replace _LABELS = `"`varlab1'"' in `nobs1'
 			}
-			
-			* "Overall" labels
+
+			// "overall" labels
 			if `"`overall'"'==`""' {
 				local ovlabel
 				if `"`het'"'==`""' {				// if "nohet" not specified -- this implies no "over"
-					local df=`K' - 1
-					local qpval=chi2tail(`df', `Q')
+					local df = `K' - 1
+					local qpval = chi2tail(`df', `Q')
 					if "`ovstat'"=="q" {
 						local ovlabel "(Q = " + string(`Q', "%5.2f") + " on `df' df, p = " + string(`qpval', "%5.3f") + ")"
 					}
@@ -2191,33 +2336,31 @@ program ipdmetan, rclass sortpreserve
 				}
 				replace _LABELS = "Overall `ovlabel'" if _USE==5
 			}
-					
-			* Subgroup ("by") headings & labels
+			
+			// subgroup ("by") headings & labels
 			if `"`_by'"'!=`""' {
 				forvalues i=1/`nby' {
-					local byi: word `i' of `bylist'
+					local byi : word `i' of `bylist'
+					local Ki : word `i' of `Klist'
+					local Qi : word `i' of `Qlist'
+					local Isqi : word `i' of `Isqlist'
 							
-					* Headings
+					// headings
 					local bytext : label `bylab' `byi'
 					if `"`_over'"'!=`""' replace _LABELS = "`bytext'" if _USE==-1 & _BY==`byi'
 					else replace _LABELS = "`bytext'" if _USE==0 & _BY==`byi'
 							
-					* Labels + heterogeneity
+					// labels + heterogeneity
 					if `"`subgroup'"'==`""' {
 					
 						local ovlabel
 						if `"`het'"'==`""' {		// if "nohet" not specified -- this implies no "over"
-							local df = `K`i'' - 1
-							local qpval = chi2tail(`df', `Q`i'')
-								
-							/* RMH I-squared added in next line
-								RJH- also p-val as recommended by Mike Bradburn */
-							if "`ovstat'"=="q" {
-								local ovlabel "(Q = " + string(`Q`i'', "%5.2f") + " on `df' df, p = " + string(`qpval', "%5.3f") + ")"
-							}
-							else {
-								local ovlabel "(I-squared = " + string(100*`Isq`i'', "%5.1f")+ "%, p = " + string(`qpval', "%5.3f") + ")"
-							}
+							local df = `Ki' - 1
+							local qpval = chi2tail(`df', `Qi')
+							local ovlabel = cond("`ovstat'"=="q" ///
+								, "(Q = " + string(`Qi', "%5.2f") + " on `df' df, p = " + string(`qpval', "%5.3f") + ")" ///
+								, "(I-squared = " + string(100*`Isqi', "%5.1f")+ "%, p = " + string(`qpval', "%5.3f") + ")")
+
 							if `HetOnNewLine' {
 								replace _LABELS = "`ovlabel'" if _USE==3.5 & _BY==`byi'
 								local ovlabel			// ovlabel on line below so no conflict with lcols; then clear macro
@@ -2226,7 +2369,7 @@ program ipdmetan, rclass sortpreserve
 						replace _LABELS = "Subtotal `ovlabel'" if _USE==3 & _BY==`byi'
 					}
 				}
-				* Add between-group heterogeneity info if appropriate
+				// add between-group heterogeneity info if appropriate
 				if `"`ipdover'"'==`""' & `"`overall'"'==`""' & `"`het'"'==`""' {
 					local nobs1 = _N+1
 					set obs `nobs1'
@@ -2237,14 +2380,24 @@ program ipdmetan, rclass sortpreserve
 				}
 			}
 			
-			order _USE `_by' `_over' `_source' `_study' _LABELS _ES _seES _LCI _UCI _WT `lcols' `rcols'
+			* Tidy up
+			order _USE `_by' `_over' `_source' `_study' _LABELS _ES _seES _LCI _UCI `_WT' `_NN' `lcols' `rcols'
 			sort `use5' `_by' `_over' _USE `_source' `sgroup'
-			drop `use5' `sgroup'
+			drop `use5' `sgroup' `touse'
+			cap drop `_df'
 
 			replace _USE = 0 if _USE == -1
 			replace _USE = 6 if _USE == 4
 			replace _USE = 4 if inlist(_USE, -0.5, -1.5, 2.5, 3.5, 4.5, 5.5)
-			
+
+			// having added "overall", het. info etc., re-format _LABELS using study names only
+			gen `strlen' = length(_LABELS)
+			summ `strlen' if inlist(_USE, 1, 2), meanonly
+			format _LABELS %-`r(max)'s		// left-justified; length equal to longest study name
+			drop `strlen'
+
+			compress			
+
 		}	// end quietly
 
 		* Save dataset 
@@ -2254,14 +2407,29 @@ program ipdmetan, rclass sortpreserve
 		
 		* Pass to forestplot
 		if `"`graph'"'==`""' {
-			if "`reModel'"!="fe" local reDesc `"NOTE: Weights are from `reDesc'"'	// random-effects note
+			if "`reModel'"!="fe" & `"`warning'"'==`""' {
+				if `"`cumulative'"'==`""' local reDesc `"NOTE: Weights are from `reDesc'"'		// usual random-effects note
+				else local reDesc `"NOTE: Weighted using cumulative fixed-effects weights"'		// random-effects note if cumulative
+			}
 			else local reDesc
 			
-			gettoken word1 rest : lcols
-			if `"`word1'"'==`"`plotvar'"' local lcols `"`rest'"'	// remove `plotvar' from `lcols' (see line 619)
-
-			forestplot, nopreserve `ipdover' `name' labels(_LABELS) by(`_by') plotid(`plotid') ///
-				renote(`reDesc') `interaction' `eform' effect(`effect') lcols(`lcols') rcols(`rcols') `fplotopts'
+			if `PlotVarInLCols' {
+				gettoken word1 rest : lcols
+				if `"`word1'"'==`"`plotvar'"' local lcols `"`rest'"'	// remove `plotvar' from `lcols' (see line 662)
+			}
+			if `DFRInRCols' {
+				gettoken word1 rest : rcols
+				if `"`word1'"'==`"`_df'"' local rcols `"`rest'"'		// remove residual df from `rcols' (see line 807)
+			}
+			
+			if "`cumulative'"!="" {					// JUNE 2015
+				qui replace _USE = 3 if `use3'
+				drop `use3'
+			}
+			
+			forestplot, nopreserve `dispNN' `cumulative' labels(_LABELS) by(`_by') plotid(`plotid') ///
+				renote(`reDesc') `interaction' `eform' `keepall' effect(`effect') lcols(`lcols') rcols(`rcols') `fplotopts'
+			return add
 		}
 
 	}	// end if `"`saving'"'!=`""' | `"`graph'"'==`""'
@@ -2276,6 +2444,10 @@ program ipdmetan, rclass sortpreserve
 	}
 	
 end
+
+
+
+
 
 
 ********************************************************
@@ -2572,12 +2744,12 @@ program GetOpStat
 		cap syntax [, mean median sd SEMean SEBinomial SEPoisson ///
 			sum rawsum count max min iqr first firstnm last lastnm null]
 		
-		/* fix thing if abbreviated */
+		// fix thing if abbreviated
 		if "`semean'" != "" local thing "semean"
 		if "`sebinomial'" != "" local thing "sebinomial"
 		if "`sepoisson'" != "" local thing "sepoisson"
 
-		/* If syntax executed without error, simply update locals and exit */
+		// if syntax executed without error, simply update locals and exit
 		if _rc == 0 {
 			c_local `mstat' `thing'
 			c_local `mrest' `"`nline'"'
@@ -2585,7 +2757,7 @@ program GetOpStat
 			exit
 		}
 		
-		/* If not, check for percentile stats */
+		// if not, check for percentile stats
 		local thing = trim("`thing'")
 		if (substr("`thing'",1,1) == "p") {
 			local thing = substr("`thing'",2,.)
@@ -2601,19 +2773,177 @@ program GetOpStat
 	}
 		
 	* Otherwise, assume `thing' is an expression (this will be tested later by _prefix_explist)
-	* update locals and return to main loop
+	//  update locals and return to main loop
 	c_local `mstat' "`stat'"
 	c_local `mrest' `"`line'"'
 		
 end
 
 
+
+* Parse output of initial model fitted to entire dataset to identify "estvar" and associated info
+program define FindEstVar, rclass
+
+	syntax [, EXPLIST(string) STATSRN(string) NRN(integer 0) POOLVAR(string) INTERACTION]
+	local exp_list `"`explist'"'
+
+	* Parse <exp_list>
+	local nexp=0
+	local neexp=0
+	_prefix_explist `exp_list', stub(_df_) edefault
+	if `"`exp_list'"'!=`""' {
+		assert `s(k_eexp)'==0 & inlist(`s(k_exp)', 2, 3)		// if exp_list supplied, must be 2 or 3 exps, no eexps
+		local nexp = `s(k_exp)'
+	}
+	else {
+		assert `s(k_eexp)'==1 & `s(k_exp)'==0		// otherwise, must be a single eexp (_b) and no exps
+		local neexp = `s(k_eexp)'
+	}
+	local eqlist	`"`s(eqlist)'"'
+	local idlist	`"`s(idlist)'"'
+	local explist	`"`s(explist)'"'
+	local eexplist	`"`s(eexplist)'"'
+
+	* Expand <exp_list>
+	tempname b
+	cap _prefix_expand `b' `explist' `statsrn', stub(_df_) eexp(`eexplist') colna(`idlist') coleq(`eqlist') eqstub(_df)
+	if _rc {
+		disp as err "explist error. Possible reasons include:"
+		disp as err "- coefficient in poolvar() not found in the model"
+		disp as err "- an expression in lcols/rcols that evaluates to a string"
+		disp as err "- an expression not enclosed in parentheses"
+		exit _rc
+	}
+	local nexp = cond(`neexp', `s(k_eexp)', `nexp')		// if eexps, update `neexp' and rename it to `nexp'
+
+	* Form list of "returned statistic" expressions to post
+	forvalues j=1/`nrn' {
+		local i = `nexp' + `j'
+		return local us_`j' `"`s(exp`i')'"'
+	}
+	
+	* Identify estvar
+	if `"`exp_list'"'!=`""' & `"`poolvar'"'==`""' {		// non e-class
+		local beta `"`s(exp1)'"'
+		local sebeta `"`s(exp2)'"'
+		local nbeta = cond(`nexp'==3, `"`s(exp3)'"', ".")
+	}
+	else {
+		* If e-class, parse e(b) using _ms_parse_parts
+		* Choose the first suitable coeff, then check for conflicts with other coeffs (e.g. interactions)
+		* Can we also check for badly-fitted coeffs here?  i.e. v high/low b or se?
+		local ecolna `"`s(ecolna)'"'	// from _prefix_expand
+		local ecoleq `"`s(ecoleq)'"'	// from _prefix_expand
+		local colna : colnames e(b)		// from e(b)
+		local coleq : coleq e(b)		// from e(b)
+
+		* If not poolvar (i.e. basic syntax), results from _prefix_expand should match those from e(b)
+		assert (`"`ecolna'"'!=`""') == (`"`poolvar'"'==`""')
+		assert (`"`ecoleq'"'!=`""') == (`"`poolvar'"'==`""')
+
+		if `"`poolvar'"'==`""' {				// MAY 2014: only check for conflicts if poolvar not supplied
+			assert `"`ecolna'"'==`"`colna'"'
+			if substr(`"`coleq'"', 1, 1)!=`"_"' {
+				assert `"`ecoleq'"'==`"`coleq'"'
+			}
+			local name1
+			local name2
+
+			forvalues i=1/`nexp' {
+				local colnai : word `i' of `colna'
+				local coleqi : word `i' of `coleq'
+
+				_ms_parse_parts `colnai'
+				if !r(omit) {
+
+					* If estvar already exists, check for conflicts with subsequent coeffs
+					* (cannot currently check for difference between, e.g. "arm" and "1.arm"
+					*   - i.e. how to tell when a var is factor if not made explicit... is this a problem?)
+					if `"`estvar'"'!=`""' {
+						if `"`coleqi'"'==`"`estvareq'"' {			// can only be a conflict if same eq
+							if `"`r(type)'"'=="interaction" {
+								local rname1 = cond(`"`r(op1)'"'==`""', `"`r(name1)'"', `"`r(op1)'.`r(name1)'"')
+								local rname2 = cond(`"`r(op2)'"'==`""', `"`r(name2)'"', `"`r(op2)'.`r(name2)'"')
+
+								if (`"`interaction'"'!=`""' & ///
+										( inlist(`"`name1'"',`"`rname1'"',`"`rname2'"') ///
+										| inlist(`"`name2'"',`"`rname1'"',`"`rname2'"') )) ///
+									| (`"`interaction'"'==`""' & inlist(`"`estvar'"',`"`rname1'"',`"`rname2'"')) {
+									disp as err "Automated identification of estvar failed; please use poolvar() option or supply exp_list"
+									exit 198
+								}
+							}
+							else if inlist(`"`r(type)'"', "variable", "factor") {
+								local rname = cond(`"`r(op)'"'==`""', `"`r(name)'"', `"`r(op)'.`r(name)'"')
+
+								if (`"`interaction'"'!=`""' & inlist(`"`rname'"',`"`name1'"',`"`name2'"')) ///
+									| (`"`interaction'"'==`""' & `"`rname'"'==`"`estvar'"') {
+									disp as err "Automated identification of estvar failed; please use poolvar() option or supply exp_list"
+									exit 198
+								}
+							}
+						}
+					}		// end if `"`estvar'"'!=`""'
+
+					* Else define estvar
+					else if `"`interaction'"'!=`""' {
+						if `"`r(type)'"'=="interaction" {
+							local estvar `colnai'
+							local estvareq `coleqi'
+							local name1 `"`r(name1)'"'
+							local name2 `"`r(name2)'"'
+						}
+					}
+					else {
+						local estvar `colnai'
+						local estvareq `coleqi'							
+					}		// end else
+				}		// end if !r(omit)
+			}		// end forvalues i=1/`nexp'
+
+			if `"`estvar'"'==`""' {
+				disp as err "Automated identification of estvar failed; please use poolvar() option or supply exp_list"
+				exit 198
+			}
+			
+			if inlist(`"`estvareq'"', "_", "") local estexp `"`estvar'"'
+			else local estexp `"`estvareq':`estvar'"'
+
+		}		// end if `"`poolvar'"'==`""'
+
+		else {		// parse `poolvar' -- assume "estvareq:estvar" format
+			local estexp `poolvar'
+			cap _on_colon_parse `estexp'
+			if _rc local estvar `"`estexp'"'	// no colon found
+			else {
+				local estvareq `"`s(before)'"'
+				local estvar `"`s(after)'"'
+			}
+		}
+
+		local beta `"_b[`estexp']"'
+		local sebeta `"_se[`estexp']"'
+		local nbeta `"e(N)"'
+
+	}		// end else (i.e. if eclass)
+	
+	* Return macros
+	return local estvar `"`estvar'"'
+	return local estvareq `"`estvareq'"'
+	return local estexp `"`estexp'"'
+	return local beta `"`beta'"'
+	return local sebeta `"`sebeta'"'
+	return local nbeta `"`nbeta'"'
+
+end
+
+
 * Routine to process aggregate data
 prog define ProcessAD, rclass
 	
-	syntax [if] [in], VARS(varlist min=2 max=3 numeric) ZTOL(real) LEVEL(real) ///
-		STUDY(name) SORTBY(name) [SMAX(integer 0) STUDYLAB(name) ///
-		ADONLY BY(name) BYAD(string) BYLIST(numlist integer miss) BYMAX(integer 1) BYLAB(name) ///
+	syntax [if] /*[in]*/, VARS(varlist min=2 max=3 numeric) ZTOL(real) LEVEL(real) ///
+		STUDY(name) /*SORTBY(namelist)*/ [SMAX(integer 0) STUDYLAB(name) ///
+		ADONLY BY(name) BYAD(string) /*BYLIST(numlist integer miss)*/ BYMAX(integer 1) NBY(integer 1) BYLAB(name) ///
 		KEEP(namelist) NPTS(name) noSUBGROUP noOVERALL SMISSING BYMISSING]
 
 	marksample touse
@@ -2631,12 +2961,8 @@ prog define ProcessAD, rclass
 	qui keep if `touse'
 	
 	tempvar obsAD
-	cap sort `sortby'			// if sort fails, defaults to current ordering ("_n")
-	gen int `obsAD' = _n
+	gen int `obsAD' = _n		// use current sort order (should have been sorted correctly before calling subroutine)
 
-	if `"`bylist'"'==`""' local bylist 1
-	local nby : word count `bylist'
-	
 	** External aggregate data (to combine with IPD)
 	if `"`adonly'"'==`""' {
 		tempvar studyAD
@@ -2663,7 +2989,7 @@ prog define ProcessAD, rclass
 		}
 		
 		* Same for subgroup value label (if applicable)
-		* Here, if `by' is string, map onto the existing `bylab' using -encode-
+		//  if `by' is string, map onto the existing `bylab' using -encode-
 		local nbyAD = 1					// default
 		cap confirm numeric var `by'
 		if !_rc {						// `by' is numeric in AD dataset
@@ -2718,8 +3044,8 @@ prog define ProcessAD, rclass
 
 	
 	** Parse `vars' namelist
-	* Syntax is vars(ES seES) or vars(ES lci uci)
-	* whether data is external or in memory
+	//  syntax is vars(ES seES) or vars(ES lci uci)
+	//  whether data is external or in memory
 	local nvars : word count `vars'
 	tokenize `vars'
 	local _ES `1'
@@ -2743,7 +3069,7 @@ prog define ProcessAD, rclass
 			exit 198
 		}
 		tempvar _seES
-		qui gen `_seES' = (`_UCI'-`_LCI')/(2*invnorm(.5 + `level'/200))
+		qui gen double `_seES' = (`_UCI'-`_LCI')/(2*invnorm(.5 + `level'/200))
 	}
 
 	* Identify "bad" estimates and replace with missing if necessary
@@ -2763,7 +3089,7 @@ prog define ProcessAD, rclass
 	if `"`by'"'!=`""' cap rename `by' _BY
 	cap rename `_ES' _ES
 	cap rename `_seES' _seES
-	qui gen _USE = missing(_ES) + 1
+	qui gen _USE = missing(_ES) + 1				// _USE == 1 or 2
 
 	* if ADonly, return list of study numbers (according to `sgroup') with "bad" estimates
 	if `"`adonly'"'!=`""' {
@@ -2792,216 +3118,227 @@ end
 * therefore looks better (I hope!)
 program DrawTable
 
-	syntax, SORTBY(varname) OVERLEN(integer) LABLEN(integer) STITLE(string asis) ETITLE(string asis) ///
-		[BYLAB(name) BYLIST(numlist integer miss) REMODEL(string) TSTAT(name) TSTATLIST(namelist) ///
-		Q(name) QLIST(namelist) QDIFF(name) ISQ(namelist) HSQ(namelist) TAUSQ(namelist) ///
-		EFORM noOVERALL noSUBGROUP IPDOVER *]
+	syntax, SORTBY(varname) OVERLEN(integer) [LABLEN(integer 0) STITLE(string asis) ETITLE(string asis) ///
+		BYLAB(name) BYLIST(numlist integer miss) REMODEL(string) TSTAT(name) TSTATLIST(numlist miss) ///
+		Q(name) QLIST(numlist miss) QDIFF(name) ISQ(namelist) HSQ(namelist) TAUSQ(namelist) DDF(name) DDFLIST(numlist miss) ///
+		EFORM noTABLE noHET noOVERALL noSUBGROUP /*IPDOVER CUMULATIVE*/ DISPNN *]
 	
-	if `overlen'>1 {						// if "over", parse "variable label" options
-		forvalues h=1/`overlen' {
-			local 0 `", `options'"'
-			syntax, VARLAB`h'(string) *
-		}
-	}
-
-	* Find maximum length of study title and effect title
-	* Allow them to spread over several lines, but only up to a maximum number of chars
-	* If a single line must be more than 32 chars, truncate and stop
-	local uselen = cond(`"`ipdover'"'=="", 21, 25)				// default (minimum); max is 32
-	if `lablen'>21 local uselen=min(`lablen', 32)
-	SpreadTitle `"`stitle'"', target(`uselen') maxwidth(32)		// study (+ subgroup) title
-	local swidth = max(`uselen', `r(maxwidth)')
-	local slines = r(nlines)
-	forvalues i=1/`slines' {
-		local stitle`i' `"`r(title`i')'"'
-	}
-	SpreadTitle `"`etitle'"', target(10) maxwidth(15)		// effect title (i.e. "Odds ratio" etc.)
-	local ewidth = max(10, `r(maxwidth)')
-	local elines = r(nlines)
-	local diff = `elines' - `slines'
-	if `diff'<=0 {
-		forvalues i=1/`slines' {
-			local etitle`i' `"`r(title`=`i'+`diff'')'"'		// stitle uses most lines (or equal): line up etitle with stitle
-		}
-	}
-	else {
-		forvalues i=`elines'(-1)1 {					// run backwards, otherwise macros are deleted by the time they're needed
-			local etitle`i' `"`r(title`i')'"'
-			local stitle`i' = cond(`i'>=`diff', `"`stitle`=`i'-`diff'''"', `""')	// etitle uses most lines: line up stitle with etitle
-		}
-	}
+	local dispNN `dispnn'		// for clarity
+	local swidth = cond(`"`dispNN'"'=="", 21, 25)		// define `swidth' in case noTAB
+	if `"`table'"'==`""' {
 	
-	* Now display the title lines, starting with the "extra" lines and ending with the row including CI & weight
-	di as text _n "{hline `swidth'}{c TT}{hline `=`ewidth'+35'}"
-	local nl = max(`elines', `slines')
-	if `nl' > 1 {
-		forvalues i=1/`=`nl'-1' {
-			di as text "`stitle`i''{col `=`swidth'+1'}{c |} " %~`ewidth's `"`etitle`i''"'
-		}
-	}
-	cap confirm var _NN
-	if !_rc local _NN "_NN"
-	if `"`ipdover'"'==`""' local final "{col `=`swidth'+`ewidth'+27'}% Weight"
-	else if `"`_NN'"'!=`""' local final "{col `=`swidth'+`ewidth'+27'}No. pts"
-	di as text "`stitle`nl''{col `=`swidth'+1'}{c |} " %~10s `"`etitle`nl''"' "{col `=`swidth'+`ewidth'+4'}[`c(level)'% Conf. Interval]`final'"
-	local final
-
-
-	*** Loop over studies, and subgroups if appropriate
-	local nby=1
-	cap confirm var _BY
-	if !_rc {
-		local _by "_BY"
-		local nby : word count `bylist'
-		assert `nby'>0
-	}
-	else assert `"`bylist'"'==""		// July 2014: establish that "`_by'" <==> "`bylist'"
-	
-	cap confirm var _OVER
-	if !_rc local _over "_OVER"
-	
-	sort `sortby'
-	tempvar touse
-	forvalues i=1/`nby' {				// this will be 1/1 if no subgroups
-
-		di as text "{hline `swidth'}{c +}{hline `=`ewidth'+35'}"
-
-		qui gen `touse' = 1
-		if `"`bylist'"'!=`""' {
-			local byi : word `i' of `bylist'
-			qui replace `touse' = `touse' * (_BY==`byi')
-			summ _ES if `touse' & _USE==1, meanonly
-			if !r(N) local nodata "{col `=`swidth'+4'} (No subgroup data)"
-			else local K`i' = r(N)
-			
-			local bytext : label `bylab' `byi'
-			di as text substr(`"`bytext'"', 1, `=`swidth'-1') + "{col `=`swidth'+1'}{c |}`nodata'"
-			local nodata	// clear macro
-		}
-		if "`eform'"!=`""' local xexp `"exp"'
-
-		tempvar touse2
-		forvalues h=1/`overlen' {
-			clonevar `touse2' = `touse'
-			if `"`_over'"'!=`""' {
-				qui replace `touse2' = `touse2' * (_OVER==`h')
+		if `overlen'>1 {						// if "over", parse "variable label" options
+			forvalues h=1/`overlen' {
+				local 0 `", `options'"'
+				syntax, VARLAB`h'(string) *
 			}
-			summ `sortby' if inlist(_USE, 1, 2) & `touse2', meanonly
-			if `overlen'>1 {
-				di as text "{col `=`swidth'+1'}{c |}"
-				if !r(N) local nodata "{col `=`swidth'+4'} (Insufficient data)"
-				di as text substr(`"`varlab`h''"', 1, `=`swidth'-1') "{col `=`swidth'+1'}{c |}`nodata'"
+		}
+
+		* Find maximum length of study title and effect title
+		* Allow them to spread over several lines, but only up to a maximum number of chars
+		* If a single line must be more than 32 chars, truncate and stop
+		local uselen = cond(`"`dispNN'"'=="", 21, 25)				// default (minimum); max is 32
+		if `lablen'>21 local uselen=min(`lablen', 32)
+		SpreadTitle `stitle', target(`uselen') maxwidth(32)		// study (+ subgroup) title
+		local swidth = max(`uselen', `r(maxwidth)')
+		local slines = r(nlines)
+		forvalues i=1/`slines' {
+			local stitle`i' `"`r(title`i')'"'
+		}
+		SpreadTitle `etitle', target(10) maxwidth(15)		// effect title (i.e. "Odds ratio" etc.)
+		local ewidth = max(10, `r(maxwidth)')
+		local elines = r(nlines)
+		local diff = `elines' - `slines'
+		if `diff'<=0 {
+			forvalues i=1/`slines' {
+				local etitle`i' `"`r(title`=`i'+`diff'')'"'		// stitle uses most lines (or equal): line up etitle with stitle
+			}
+		}
+		else {
+			forvalues i=`elines'(-1)1 {					// run backwards, otherwise macros are deleted by the time they're needed
+				local etitle`i' `"`r(title`i')'"'
+				local stitle`i' = cond(`i'>=`diff', `"`stitle`=`i'-`diff'''"', `""')	// etitle uses most lines: line up stitle with etitle
+			}
+		}
+		
+		* Now display the title lines, starting with the "extra" lines and ending with the row including CI & weight
+		di as text _n "{hline `swidth'}{c TT}{hline `=`ewidth'+35'}"
+		local nl = max(`elines', `slines')
+		if `nl' > 1 {
+			forvalues i=1/`=`nl'-1' {
+				di as text "`stitle`i''{col `=`swidth'+1'}{c |} " %~`ewidth's `"`etitle`i''"'
+			}
+		}
+		cap confirm var _NN
+		if !_rc local _NN "_NN"
+		if /*`"`ipdover'`cumulative'"'==`""'*/ "`dispNN'"=="" local final "{col `=`swidth'+`ewidth'+27'}% Weight"
+		else if `"`_NN'"'!=`""' local final "{col `=`swidth'+`ewidth'+27'}No. pts"
+		di as text "`stitle`nl''{col `=`swidth'+1'}{c |} " %~10s `"`etitle`nl''"' "{col `=`swidth'+`ewidth'+4'}[`c(level)'% Conf. Interval]`final'"
+		local final
+
+
+		*** Loop over studies, and subgroups if appropriate
+		local nby=1
+		cap confirm var _BY
+		if !_rc {
+			local _by "_BY"
+			local nby : word count `bylist'
+			assert `nby'>0
+		}
+		else assert `"`bylist'"'==""		// July 2014: establish that "`_by'" <==> "`bylist'"
+		
+		cap confirm var _OVER
+		if !_rc local _over "_OVER"
+		
+		sort `sortby'
+		tempvar touse touse2
+		forvalues i=1/`nby' {				// this will be 1/1 if no subgroups
+
+			di as text "{hline `swidth'}{c +}{hline `=`ewidth'+35'}"
+
+			qui gen byte `touse' = 1
+			if `"`bylist'"'!=`""' {
+				local byi : word `i' of `bylist'
+				qui replace `touse' = `touse' * (_BY==`byi')
+				summ _ES if `touse' & _USE==1, meanonly
+				if !r(N) local nodata "{col `=`swidth'+4'} (No subgroup data)"
+				else local K`i' = r(N)
+				
+				local bytext : label `bylab' `byi'
+				di as text substr(`"`bytext'"', 1, `=`swidth'-1') + "{col `=`swidth'+1'}{c |}`nodata'"
 				local nodata	// clear macro
 			}
-			if r(N) {
-				local min=r(min)
-				local max=r(max)
-				forvalues k=`min'/`max' {
-					local _ES_ = _ES[`k']
-					local _LCI_ = _LCI[`k']
-					local _UCI_ = _UCI[`k']
-					local _labels_ = _LABELS[`k']
+			if "`eform'"!=`""' local xexp `"exp"'
 
-					if `"`ipdover'"'!=`""' {
-						if `"`_NN'"'!=`""' {
+			forvalues h=1/`overlen' {
+				clonevar `touse2' = `touse'
+				if `"`_over'"'!=`""' {
+					qui replace `touse2' = `touse2' * (_OVER==`h')
+				}
+				summ `sortby' if inlist(_USE, 1, 2) & `touse2', meanonly
+				if `overlen'>1 {
+					di as text "{col `=`swidth'+1'}{c |}"
+					if !r(N) local nodata "{col `=`swidth'+4'} (Insufficient data)"
+					di as text substr(`"`varlab`h''"', 1, `=`swidth'-1') "{col `=`swidth'+1'}{c |}`nodata'"
+					local nodata	// clear macro
+				}
+				if r(N) {
+					local min=r(min)
+					local max=r(max)
+					forvalues k=`min'/`max' {
+						local _ES_ = _ES[`k']
+						local _LCI_ = _LCI[`k']
+						local _UCI_ = _UCI[`k']
+						local _labels_ = _LABELS[`k']
+
+						if /*`"`ipdover'`cumulative'"'==`""'*/ "`dispNN'"=="" {
+							local final `"%7.2f `=100*_WT[`k']'"'
+						}
+						else if `"`_NN'"'!=`""' {
 							local final `"%7.0f `=_NN[`k']'"'
 						}
-					}
-					else local final `"%7.2f `=100*_WT[`k']'"'
-					
-					if missing(`_ES_') {
-						di as text substr(`"`_labels_'"',1, 32) "{col `=`swidth'+1'}{c |}{col `=`swidth'+4'} (Insufficient data)"
-					}
-					else {
-						di as text substr(`"`_labels_'"',1, 32) "{col `=`swidth'+1'}{c |}{col `=`swidth'+`ewidth'-6'}" ///
-							as res %7.3f `=`xexp'(`_ES_')' "{col `=`swidth'+`ewidth'+5'}" ///
-							as res %7.3f `=`xexp'(`_LCI_')' "{col `=`swidth'+`ewidth'+15'}" ///
-							as res %7.3f `=`xexp'(`_UCI_')' "{col `=`swidth'+`ewidth'+26'}" `final'
+						if missing(`_ES_') {
+							di as text substr(`"`_labels_'"',1, 32) "{col `=`swidth'+1'}{c |}{col `=`swidth'+4'} (Insufficient data)"
+						}
+						else {
+							di as text substr(`"`_labels_'"',1, 32) "{col `=`swidth'+1'}{c |}{col `=`swidth'+`ewidth'-6'}" ///
+								as res %7.3f `=`xexp'(`_ES_')' "{col `=`swidth'+`ewidth'+5'}" ///
+								as res %7.3f `=`xexp'(`_LCI_')' "{col `=`swidth'+`ewidth'+15'}" ///
+								as res %7.3f `=`xexp'(`_UCI_')' "{col `=`swidth'+`ewidth'+26'}" `final'
+						}
 					}
 				}
-			}
-			drop `touse2'
+				drop `touse2'
 
-		}		// end forvalues j=1/`overlen'
-		drop `touse'
+			}		// end forvalues j=1/`overlen'
+			drop `touse'
 
-		* Subgroup effects
-		if `"`bylist'"'!=`""' & `"`subgroup'"'==`""' {
-			local byi: word `i' of `bylist'
-			summ `sortby' if _BY==`byi' & _USE==3, meanonly
-			if !r(N) local _ES_=.
-			else {		
-				local _ES_ = _ES[`r(min)']
-				local _LCI_ = _LCI[`r(min)']
-				local _UCI_ = _UCI[`r(min)']
-			
-				if `"`ipdover'"'!=`""' {
-					if `"`_NN'"'!=`""' {
+			* Subgroup effects
+			if `"`bylist'"'!=`""' & `"`subgroup'"'==`""' {
+				local byi: word `i' of `bylist'
+				summ `sortby' if _BY==`byi' & _USE==3, meanonly
+				if !r(N) local _ES_=.
+				else {		
+					local _ES_ = _ES[`r(min)']
+					local _LCI_ = _LCI[`r(min)']
+					local _UCI_ = _UCI[`r(min)']
+				
+					if /*`"`ipdover'"'==`""'*/ "`dispNN'"=="" {
+						local final `"%7.2f `=100*_WT[`r(min)']'"'
+					}
+					else if `"`_NN'"'!=`""' {
 						local final `"%7.0f `=_NN[`r(min)']'"'
 					}
 				}
-				else local final `"%7.2f `=100*_WT[`r(min)']'"'
-			}
 
-			di as text "{col `=`swidth'+1'}{c |}"
-			if `"`ipdover'"'!=`""' local sgeffect "Effect in subset"
-			else local sgeffect "Subgroup effect"
-			if missing(`_ES_') {
-				di as text "`sgeffect'{col `=`swidth'+1'}{c |}{col `=`swidth'+4} (Insufficient data)"
+				di as text "{col `=`swidth'+1'}{c |}"
+				if /*`"`ipdover'"'!=`""'*/ "`dispNN'"!="" local sgeffect "Effect in subset"
+				else local sgeffect "Subgroup effect"
+				if missing(`_ES_') {
+					di as text "`sgeffect'{col `=`swidth'+1'}{c |}{col `=`swidth'+4'} (Insufficient data)"
+				}
+				else {
+					di as text "`sgeffect'{col `=`swidth'+1'}{c |}{col `=`swidth'+`ewidth'-6'}" ///
+						as res %7.3f `=`xexp'(`_ES_')' "{col `=`swidth'+`ewidth'+5'}" ///
+						as res %7.3f `=`xexp'(`_LCI_')' "{col `=`swidth'+`ewidth'+15'}" ///
+						as res %7.3f `=`xexp'(`_UCI_')' "{col `=`swidth'+`ewidth'+26'}" `final'
+				}
 			}
-			else {
-				di as text "`sgeffect'{col `=`swidth'+1'}{c |}{col `=`swidth'+`ewidth'-6'}" ///
-					as res %7.3f `=`xexp'(`_ES_')' "{col `=`swidth'+`ewidth'+5'}" ///
-					as res %7.3f `=`xexp'(`_LCI_')' "{col `=`swidth'+`ewidth'+15'}" ///
-					as res %7.3f `=`xexp'(`_UCI_')' "{col `=`swidth'+`ewidth'+26'}" `final'
-			}
-		}
-	}		// end forvalues i=1/`nby'
+		}		// end forvalues i=1/`nby'
+			
+
+		*** Overall effect
+		if `"`overall'"'==`""' {
+			di as text "{hline `swidth'}{c +}{hline `=`ewidth'+35'}"
 		
+			summ `sortby' if _USE==5, meanonly
+			local _ES_ = _ES[`r(min)']
+			local _LCI_ = _LCI[`r(min)']
+			local _UCI_ = _UCI[`r(min)']
+				
+			if /*`"`ipdover'"'==`""'*/ "`dispNN'"=="" {
+				local final `"%7.2f `=100*_WT[`r(min)']'"'
+			}
+			else if `"`_NN'"'!=`""' {
+				local final `"%7.0f `=_NN[`r(min)']'"'
+			}		
+			di as text %-20s "Overall effect{col `=`swidth'+1'}{c |}{col `=`swidth'+`ewidth'-6'}" ///
+				as res %7.3f `=`xexp'(`_ES_')' "{col `=`swidth'+`ewidth'+5'}" ///
+				as res %7.3f `=`xexp'(`_LCI_')' "{col `=`swidth'+`ewidth'+15'}" ///
+				as res %7.3f `=`xexp'(`_UCI_')' "{col `=`swidth'+`ewidth'+26'}" `final'
+		}
+		di as text "{hline `swidth'}{c BT}{hline `=`ewidth'+35'}"
+	
+	}	// end if `"`table'"'==`""'
 
-	*** Overall effect
 	if `"`overall'"'==`""' {
-		di as text "{hline `swidth'}{c +}{hline `=`ewidth'+35'}"
-
 		summ `sortby' if _USE==1, meanonly
 		local K = r(N)
-		local df = `K' - 1
-	
-		summ `sortby' if _USE==5, meanonly
-		local _ES_ = _ES[`r(min)']
-		local _LCI_ = _LCI[`r(min)']
-		local _UCI_ = _UCI[`r(min)']
-			
-		if `"`ipdover'"'!=`""' {
-			if `"`_NN'"'!=`""' {
-				local final `"%7.0f `=_NN[`r(min)']'"'
-			}
-		}
-		else local final `"%7.2f `=100*_WT[`r(min)']'"'
-				
-		di as text %-20s "Overall effect{col `=`swidth'+1'}{c |}{col `=`swidth'+`ewidth'-6'}" ///
-			as res %7.3f `=`xexp'(`_ES_')' "{col `=`swidth'+`ewidth'+5'}" ///
-			as res %7.3f `=`xexp'(`_LCI_')' "{col `=`swidth'+`ewidth'+15'}" ///
-			as res %7.3f `=`xexp'(`_UCI_')' "{col `=`swidth'+`ewidth'+26'}" `final'
+		local tdf = `K' - 1
 	}
-	di as text "{hline `swidth'}{c BT}{hline `=`ewidth'+35'}"
-
+	
 	* Tests, heterogeneity etc. -- only for pooled analysis (i.e. no ipdover)
-	if `"`ipdover'"'==`""' {
+	if /*`"`ipdover'"'==`""'*/ "`dispNN'"=="" {
 		
 		* Test of pooled effect equal to zero
 		local null = (`"`eform'"'!=`""')
 		
-		if `"`bylist'"'==`""' | `"`subgroup'"'!=`""' {
+		if `"`bylist'"'==`""' | `"`subgroup'"'!=`""' {		// no subgroups
 			if `"`overall'"'==`""' {
-				local pvalue=2*normal(-abs(`tstat'))
-				local dist "z"
-				if `"`remodel'"'==`"dlt"' {
-					local pvalue=2*ttail(`K'-1, abs(`tstat'))
+				if !inlist("`remodel'", "dlt", "kr") {
+					local pvalue = 2*normal(-abs(`tstat'))
+					local dist "z"
+				}
+				else {
+					if "`ddf'"=="" local ddf = .
+					local df = cond("`remodel'"=="kr", `ddf', `tdf')
+					local pvalue = 2*ttail(`df', abs(`tstat'))
 					local dist "t"
+					if "`remodel'"=="kr" local fmtdf "%6.2f"
+					local distdf `"" on " as res `fmtdf' `df' as text " df,""'
 				}
 				di as text _n "Test of overall effect = " as res `null' as text ":  `dist' = " ///
-					as res %7.3f `tstat' as text "  p = " as res %7.3f `pvalue'
+					as res %7.3f `tstat' as text `distdf' "  p = " as res %5.3f `pvalue'
 			}
 		}
 		else {
@@ -3012,122 +3349,138 @@ program DrawTable
 			
 				local tstati : word `i' of `tstatlist'
 				if `"`tstati'"'!=`""' {
-					local pvalue=2*normal(-abs(`tstati'))
-					local dist "z"
-					if `"`remodel'"'==`"dlt"' {
-						local pvalue=2*ttail(`K`i''-1, abs(`tstati'))
-						local dist "t"
+					if !inlist("`remodel'", "dlt", "kr") {
+						local pvalue=2*normal(-abs(`tstati'))
+						local dist "z"
 					}
-					di as text substr("`bylabi'", 1, `=`swidth'-1') "{col `=`swidth'+1'}`dist' = " as res %7.3f `tstati' as text "  p = " as res %7.3f `pvalue'
+					else {
+						local ddfi : word `i' of `ddflist'
+						if "`ddfi'"=="" local ddfi = .
+						local df = cond("`remodel'"=="kr", `ddfi', `K`i''-1)
+						local pvalue = 2*ttail(`df', abs(`tstati'))
+						local dist "t"
+						if "`remodel'"=="kr" local fmtdf "%6.2f"
+						local distdf `"" on " as res `fmtdf' `df' as text " df,""'						
+					}
+					di as text substr("`bylabi'", 1, `=`swidth'-1') "{col `=`swidth'+1'}`dist' = " as res %7.3f `tstati' as text `distdf' " p = " as res %5.3f `pvalue'
 				}
 				else di as text substr("`bylabi'", 1, `=`swidth'-1') "{col `=`swidth'+1'}(Insufficient data)"
 			}
 
 			if `"`overall'"'==`""' {
-				local pvalue=2*normal(-abs(`tstat'))
-				local dist "z"
-				if `"`remodel'"'==`"dlt"' {
-					local pvalue=2*ttail(`K'-1,abs(`tstat'))
-					local dist "t"
+				if !inlist("`remodel'", "dlt", "kr") {
+					local pvalue=2*normal(-abs(`tstat'))
+					local dist "z"
 				}
-				di as text "Overall{col `=`swidth'+1'}`dist' = " as res %7.3f `tstat' as text "  p = " as res %7.3f `pvalue'
+				else {
+					if "`ddf'"=="" local ddf = .
+					local df = cond("`remodel'"=="kr", `ddf', `tdf')
+					local pvalue = 2*ttail(`df', abs(`tstat'))
+					local dist "t"
+					if "`remodel'"=="kr" local fmtdf "%6.2f"
+					local distdf `"" on " as res `fmtdf' `df' as text " df,""'
+				}				
+				di as text "Overall{col `=`swidth'+1'}`dist' = " as res %7.3f `tstat' as text `distdf' " p = " as res %5.3f `pvalue'
 			}
 		}
-			
-		* Heterogeneity measures box: no subgroups
-		if `"`overall'"'==`""' & (`"`bylist'"'==`""' | `"`subgroup'"'!=`""') {
-			if "`remodel'"=="sa" local extratext `" as res " (user-defined)""'
-			di as text _n(2) "Heterogeneity Measures" `extratext'
+		
+		if `"`het'"'==`""' {
+		
+			* Heterogeneity measures box: no subgroups
+			if `"`overall'"'==`""' & (`"`bylist'"'==`""' | `"`subgroup'"'!=`""') {
+				if "`remodel'"=="sa" local extratext `" as res " (user-defined)""'
+				di as text _n(2) "Heterogeneity Measures" `extratext'
 
-			* Q, I2, H2
-			if "`remodel'"=="sa" {
-				di as text "{hline `swidth'}{c TT}{hline 13}"
-				di as text `"{col `=`swidth'+1'}{c |}{col `=`swidth'+7'}Value"'
-				di as text "{hline `swidth'}{c +}{hline 13}"
+				* Q, I2, H2
+				if "`remodel'"=="sa" {
+					di as text "{hline `swidth'}{c TT}{hline 13}"
+					di as text `"{col `=`swidth'+1'}{c |}{col `=`swidth'+7'}Value"'
+					di as text "{hline `swidth'}{c +}{hline 13}"
+				}
+				else {
+					di as text "{hline `swidth'}{c TT}{hline 35}"
+					di as text `"{col `=`swidth'+1'}{c |}{col `=`swidth'+7'}Value{col `=`swidth'+18'}df{col `=`swidth'+25'}p-value"'
+					di as text "{hline `swidth'}{c +}{hline 35}"
+					local qpval = chi2tail(`tdf', `q')
+					di as text "Cochran Q {col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
+						as res %7.2f `q' "{col `=`swidth'+16'}" %3.0f `tdf' "{col `=`swidth'+23'}" %7.3f `qpval'
+				}
+				if `: word count `tausq''==1 {
+					di as text "I{c 178} (%) {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" as res %7.1f 100*`isq' "%"
+					di as text "Modified H{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" as res %7.3f `hsq'
+					di as text "tau{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" as res %8.4f `tausq'
+				}
+				else {		// display second box with CIs for tausq etc.
+					foreach x in isq hsq tausq {
+						tokenize ``x''
+						local `x'_est `1'
+						local `x'_lci `2'
+						local `x'_uci `3'
+					}
+					di as text "{hline `swidth'}{c BT}{hline 35}"
+					di as text _n "{hline `swidth'}{c TT}{hline 35}"
+					di as text "{col `=`swidth'+1'}{c |}{col `=`swidth'+7'}Value{col `=`swidth'+15'}[`level'% Conf. Interval]"
+					di as text "{hline `swidth'}{c +}{hline 35}"
+					di as text "I{c 178} (%) {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" ///
+						as res %7.1f 100*`isq_est' "%{col `=`swidth'+14'}" ///
+						as res %7.1f 100*`isq_lci' "%{col `=`swidth'+24'}" %7.1f 100*`isq_uci' "%"
+					di as text "Modified H{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
+						as res %7.3f `hsq_est' "{col `=`swidth'+15'}" ///
+						as res %7.3f `hsq_lci' "{col `=`swidth'+25'}" %7.3f `hsq_uci'
+					di as text "tau{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" ///
+						as res %8.4f `tausq_est' "{col `=`swidth'+14'}" ///
+						as res %8.4f `tausq_lci' "{col `=`swidth'+24'}" %8.4f `tausq_uci'
+				}
+				if "`remodel'"=="sa" di as text "{hline `swidth'}{c BT}{hline 13}"
+				else di as text "{hline `swidth'}{c BT}{hline 35}"
+					
+				* Display explanations
+				di as text _n `"I{c 178} = between-study variance (tau{c 178}) as a percentage of total variance"'
+				di as text `"Modified H{c 178} = ratio of tau{c 178} to typical within-study variance"'
 			}
-			else {
+
+			* Heterogeneity measures box: subgroups (just present Q statistics)
+			if `"`bylist'"'!=`""' & `"`subgroup'"'==`""' {
+				
+				di as text _n(2) "Q statistics for heterogeneity (calculated using fixed-effects inverse-variance weights)"
 				di as text "{hline `swidth'}{c TT}{hline 35}"
-				di as text `"{col `=`swidth'+1'}{c |}{col `=`swidth'+7'}Value{col `=`swidth'+18'}df{col `=`swidth'+25'}p-value"'
+				di as text "{col `=`swidth'+1'}{c |}{col `=`swidth'+7'}Value{col `=`swidth'+17'}df{col `=`swidth'+24'}p-value"
 				di as text "{hline `swidth'}{c +}{hline 35}"
-				local qpval = chi2tail(`df', `q')
-				di as text "Cochrane Q {col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
-					as res %7.2f `q' "{col `=`swidth'+16'}" %3.0f `df' "{col `=`swidth'+23'}" %7.3f `qpval'
-			}
-			if `: word count `tausq''==1 {
-				di as text "I{c 178} (%) {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" as res %7.1f 100*`isq' "%"
-				di as text "Modified H{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" as res %7.3f `hsq'
-				di as text "tau{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" as res %8.4f `tausq'
-			}
-			else {		// display second box with CIs for tausq etc.
-				foreach x in isq hsq tausq {
-					tokenize ``x''
-					local `x'_est `1'
-					local `x'_lci `2'
-					local `x'_uci `3'
+
+				forvalues i=1/`nby' {
+					local byi: word `i' of `bylist'
+					local bylabi : label `bylab' `byi'
+					if `"`bylabi'"'!="." local bylabi = substr(`"`bylabi'"', 1, `=`swidth'-1')
+					
+					local Q`i' : word `i' of `qlist'
+					if `"`Q`i''"'!=`""' {
+						local tdf`i' = cond("`K`i''"=="", ., `K`i'' - 1)
+						local qpval = chi2tail(`tdf`i'', `Q`i'')
+						local dfcol = cond(`"`overall'"'==`""', 18, 16)
+						di as text "`bylabi'{col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
+							as res %7.2f `Q`i'' "{col `=`swidth'+`dfcol''}" %3.0f `tdf`i'' "{col `=`swidth'+23'}" %7.3f `qpval'
+					}
+					else di as text "`bylabi'{col `=`swidth'+1'}{c |}{col `=`swidth'+5'}(Insufficient data)"
+				}
+					
+				if `"`overall'"'==`""' {
+					local qpval = chi2tail(`tdf', `q')
+					di as text "Overall{col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
+						as res %7.2f `q' "{col `=`swidth'+18'}" %3.0f `tdf' "{col `=`swidth'+23'}" %7.3f `qpval'
+
+					local qdiffpval = chi2tail(`=`nby'-1', `qdiff')
+					di as text "Between{col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
+						as res %7.2f `qdiff' "{col `=`swidth'+18'}" %3.0f `=`nby'-1' "{col `=`swidth'+23'}" %7.3f `qdiffpval'
+						
+					tempname Fstat
+					scalar `Fstat' = (`qdiff'/(`nby'-1)) / (`q'/`tdf')
+					local Fpval = Ftail(`=`nby'-1', `tdf', `Fstat')
+					di as text "Between:Within (F){col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
+						as res %7.2f `Fstat' "{col `=`swidth'+14'}" %3.0f `=`nby'-1' as text "," as res %3.0f `tdf' "{col `=`swidth'+23'}" %7.3f `Fpval'
 				}
 				di as text "{hline `swidth'}{c BT}{hline 35}"
-				di as text _n "{hline `swidth'}{c TT}{hline 35}"
-				di as text "{col `=`swidth'+1'}{c |}{col `=`swidth'+7'}Value{col `=`swidth'+15'}[`level'% Conf. Interval]"
-				di as text "{hline `swidth'}{c +}{hline 35}"
-				di as text "I{c 178} (%) {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" ///
-					as res %7.1f 100*`isq_est' "%{col `=`swidth'+14'}" ///
-					as res %7.1f 100*`isq_lci' "%{col `=`swidth'+24'}" %7.1f 100*`isq_uci' "%"
-				di as text "Modified H{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
-					as res %7.3f `hsq_est' "{col `=`swidth'+15'}" ///
-					as res %7.3f `hsq_lci' "{col `=`swidth'+25'}" %7.3f `hsq_uci'
-				di as text "tau{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" ///
-					as res %8.4f `tausq_est' "{col `=`swidth'+14'}" ///
-					as res %8.4f `tausq_lci' "{col `=`swidth'+24'}" %8.4f `tausq_uci'
 			}
-			if "`remodel'"=="sa" di as text "{hline `swidth'}{c BT}{hline 13}"
-			else di as text "{hline `swidth'}{c BT}{hline 35}"
-				
-			* Display explanations
-			di as text _n `"I{c 178} = between-study variance (tau{c 178}) as a percentage of total variance"'
-			di as text `"Modified H{c 178} = ratio of tau{c 178} to typical within-study variance"'
-		}
-
-		* Heterogeneity measures box: subgroups (just present Q statistics)
-		if `"`bylist'"'!=`""' & `"`subgroup'"'==`""' {
-			
-			di as text _n(2) "Q statistics for heterogeneity (calculated using Inverse Variance weights)"
-			di as text "{hline `swidth'}{c TT}{hline 35}"
-			di as text "{col `=`swidth'+1'}{c |}{col `=`swidth'+7'}Value{col `=`swidth'+17'}df{col `=`swidth'+24'}p-value"
-			di as text "{hline `swidth'}{c +}{hline 35}"
-
-			forvalues i=1/`nby' {
-				local byi: word `i' of `bylist'
-				local bylabi : label `bylab' `byi'
-				if `"`bylabi'"'!="." local bylabi = substr(`"`bylabi'"', 1, `=`swidth'-1')
-				
-				local Q`i' : word `i' of `qlist'
-				if `"`Q`i''"'!=`""' {
-					local df`i' = `K`i'' - 1
-					local qpval = chi2tail(`df`i'', `Q`i'')
-					local dfcol = cond(`"`overall'"'==`""', 18, 16)
-					di as text "`bylabi'{col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
-						as res %7.2f `Q`i'' "{col `=`swidth'+`dfcol''}" %3.0f `df`i'' "{col `=`swidth'+23'}" %7.3f `qpval'
-				}
-				else di as text "`bylabi'{col `=`swidth'+1'}{c |}{col `=`swidth'+5'}(Insufficient data)"
-			}
-				
-			if `"`overall'"'==`""' {
-				local qpval = chi2tail(`df', `q')
-				di as text "Overall{col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
-					as res %7.2f `q' "{col `=`swidth'+18'}" %3.0f `df' "{col `=`swidth'+23'}" %7.3f `qpval'
-
-				local qdiffpval = chi2tail(`=`nby'-1', `qdiff')
-				di as text "Between{col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
-					as res %7.2f `qdiff' "{col `=`swidth'+18'}" %3.0f `=`nby'-1' "{col `=`swidth'+23'}" %7.3f `qdiffpval'
-					
-				tempname Fstat
-				scalar `Fstat' = (`qdiff'/(`nby'-1)) / (`q'/`df')
-				local Fpval = Ftail(`=`nby'-1', `df', `Fstat')
-				di as text "Between:Within (F){col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
-					as res %7.2f `Fstat' "{col `=`swidth'+14'}" %3.0f `=`nby'-1' as text "," as res %3.0f `df' "{col `=`swidth'+23'}" %7.3f `Fpval'
-			}
-			di as text "{hline `swidth'}{c BT}{hline 35}"
-		}
+		}	// end if `"`het'"'==`""'
 	}	// end if `"`ipdover'"'==`""'
 
 end
@@ -3138,12 +3491,17 @@ end
 * Updated July 2014
 program SpreadTitle, rclass
 
-	syntax anything(name=title id="title string"), [TArget(integer 0) MAXWidth(integer 0) MAXLines(integer 0)]
+	syntax anything(name=title id="title string"), [TArget(integer 0) MAXWidth(integer 0) MAXLines(integer 0) FORCE]
 	* Target = aim for this width, but allow expansion if alternative is wrapping "too early" (i.e before line is adequately filled)
 	* Maxwidth = absolute maximum width.
 	
+	if `"`title'"'==`""' {
+		return scalar nlines = 0
+		return scalar maxwidth = 0
+		exit
+	}
 	if !`target' {
-		if !`maxwidth' {
+		if !`maxwidth' & "`force'"=="" {
 			disp as err "must specify at least one of target or maxwidth"
 			exit 198
 		}
@@ -3170,7 +3528,7 @@ program SpreadTitle, rclass
 	local newwidth = length(`"`title1'"')
 	local next = word(`title', 2)
 	
-	while `"`next'"' != "" {
+	while `"`next'"' != `""' {
 		local check = trim(`"`title`line''"' + " " +`"`next'"')			// (potential) next iteration of `title`line''
 		if length(`"`check'"') > `titlelen'/`spread' {					// if too long
 																		// and further from target than before, or greater than maxwidth
@@ -3192,7 +3550,7 @@ program SpreadTitle, rclass
 
 		local ++count
 		local next = word(`title', `count')
-		local newwidth = max(`newwidth', length(`"`title`line''"'))		// update `newwidth'
+		local newwidth = max(`newwidth', length(`"`title`line''"'))			// update `newwidth'
 	}
 
 	* If last string is too long (including in above case), truncate
@@ -3308,30 +3666,48 @@ void GetEstimates(string scalar touse, string scalar wtvec, string scalar model,
 		MLPL_subr(yi, vi, wi, tausq_dl, level, maxtausq, itol, maxiter, model)
 	}
 	
-	else if (model=="reml") {
+	else if (model=="reml" | model=="kr") {
 		REML_subr(yi, vi, wi, level, maxtausq, itol, maxiter)
+		
+		if (model=="kr") {				// Kenward-Roger variance estimator (Biometrics 1997; 53: 983-97)
+			real scalar wi2, nwi2, nwi3, I, var_eff, ddf
+			wi1 = sum(wi)				// sum of weights
+			wi2 = cross(wi, wi)			// sum of squared weights
+			wi3 = cross(wi:^2, wi)		// sum of cubed weights
+			nwi2 = mean(wi, wi)			// "normalised" sum of squared weights [i.e. sum(wi:^2)/sum(wi)]
+			nwi3 = mean(wi:^2,wi)		// "normalised" sum of cubed weights [i.e. sum(wi:^3)/sum(wi)]
+			
+			I = wi2/2 - nwi3 + (nwi2^2)/2								// expected information
+			var_eff = (1/wi1) + 2*(wi3 - (wi2^2)/wi1)/((wi1^2) * I)		// corrected var(eff) (Phi_A in Kenward-Roger papers)
+			se_eff = sqrt(var_eff)
+			ddf = 2 * I / ((var_eff * wi2)^2)							// denominator degrees of freedom (using expected)
+			st_numscalar("r(ddf)", ddf)
+		}
 	}
 	
 	else {
 		printf("Invalid type")
 	}
-
+	
 	/* Calculate final results if not done yet */
 	if (model!="vc") {
-		eff=mean(yi, wi)							// random-effects estimate
-		if (model!="bs") {							// SE of random-effects estimate
-			se_eff=1/sqrt(sum(wi))				// (defined differently for BS model)
+		eff=mean(yi, wi)						// random-effects estimate
+		if (model!="bs" & model!="kr")	 {		// SE of random-effects estimate
+			se_eff = 1/sqrt(sum(wi))			// (defined differently for BS and KR models)
 		}
-		Qr = crossdev(yi, eff, wi, yi, eff)	// "random-effects Q"
+		Qr = crossdev(yi, eff, wi, yi, eff)		// "random-effects Q"
+		if (model=="dlt") {
+			se_eff = se_eff * sqrt(Qr/(k-1))	// Hartung-Knapp variance estimator
+		}
 	}
+
 	st_numscalar("r(eff)", eff)
 	st_numscalar("r(se_eff)", se_eff)
 	st_numscalar("r(Qr)", Qr)	
-
+	
 	/* Output matrix plus weights, and summary stats */
 	wi=wi/sum(wi)							// normalise weights
 	st_store(st_viewobs(yi), wtvec, wi)		// store weights
-
 }
 
 
@@ -3363,7 +3739,7 @@ void Q_subr(real colvector yi, real colvector vi, real colvector wi, real scalar
 	// (e.g. Sidik & Jonkman Stat Med 2007; 26: 1964-81)
 	// and converges more quickly
 	real scalar k, rc_tausq, tausq
-	k=length(yi)
+	k = length(yi)
 	rc_tausq = mm_root(tausq=., &Q_crit(), 0, maxtausq, itol, maxiter, yi, vi, k, k-1)
 	wi = 1:/(vi:+tausq)
 	st_numscalar("r(tausq)", tausq)
@@ -3489,7 +3865,7 @@ void REML_subr(real colvector yi, real colvector vi, real colvector wi, real sca
 	st_numscalar("r(tausq)", tausq)
 	st_numscalar("r(rc_tausq)", rc_tausq)
 	
-	// Confidence interval using likelihood profiling
+	// Confidence interval for tausq using likelihood profiling
 	real scalar eff_reml, ll_reml
 	wi = 1:/(vi:+tausq)
 	eff_reml = mean(yi, wi)
@@ -3502,8 +3878,6 @@ void REML_subr(real colvector yi, real colvector vi, real colvector wi, real sca
 	st_numscalar("r(rc_tsq_lci)", rc_tsq_lci)
 	st_numscalar("r(rc_tsq_uci)", rc_tsq_uci)
 }
-
-
 
 
 /* *** Iteration functions *** */
@@ -3530,20 +3904,20 @@ real scalar Q_crit(real scalar tausq, real colvector yi, real colvector vi, real
 	real colvector wi
 	real scalar eff, newtausq
 
-	wi=1:/(vi:+tausq)
-	eff=mean(yi, wi)
-	newtausq = (k/crit)*crossdev(yi, eff, wi, yi, eff)/sum(wi) + mean(vi, wi)
-	return(tausq-newtausq)
+	wi = 1:/(vi:+tausq)
+	eff = mean(yi, wi)
+	newtausq = (k/crit)*crossdev(yi, eff, wi, yi, eff)/sum(wi) - mean(vi, wi)	// corrected June 2015
+	return(tausq - newtausq)
 }
 
 /* Approximate Gamma - tausq */
 real scalar gamma_crit(real scalar tausq, real scalar tausq_m, real scalar k, real scalar c, real scalar d, real scalar crit) {
 	real scalar lambda, r, limit
 
-	lambda=((k-1) + c*tausq)/(2*(k-1) + 4*c*tausq + 2*d*(tausq^2))
-	r=((k-1) + c*tausq)*lambda
-	limit=lambda*(c*tausq_m + (k-1))
-	return(gammap(r,limit)-crit)
+	lambda = ((k-1) + c*tausq)/(2*(k-1) + 4*c*tausq + 2*d*(tausq^2))
+	r = ((k-1) + c*tausq)*lambda
+	limit = lambda*(c*tausq_m + (k-1))
+	return(gammap(r,limit) - crit)
 }
 /* Approximate Gamma - ES */
 real rowvector Intgrnd(real rowvector t, real rowvector params) {
@@ -3563,30 +3937,30 @@ real scalar ML_est(real scalar tausq, real colvector yi, real colvector vi, | re
 	real colvector wi
 	real scalar newtausq
 
-	wi=1:/(vi:+tausq)
-	if (eff==.) eff=mean(yi, wi)
+	wi = 1:/(vi:+tausq)
+	if (eff==.) eff = mean(yi, wi)
 	newtausq = crossdev(yi, eff, wi:^2, yi, eff)/sum(wi:^2) - mean(vi, wi:^2)
-	return(tausq-newtausq)
+	return(tausq - newtausq)
 }
 /* ML profiling - tausq */
 real scalar ML_profile_tausq(real scalar tausq, real colvector yi, real colvector vi, real scalar crit) {
 	real colvector wi
 	real scalar eff, ll
 
-	wi=1:/(vi:+tausq)
-	eff=mean(yi, wi)
+	wi = 1:/(vi:+tausq)
+	eff = mean(yi, wi)
 	ll = 0.5*sum(ln(wi)) - 0.5*crossdev(yi, eff, wi, yi, eff)
-	return(ll-crit)
+	return(ll - crit)
 }
 /* ML profiling - mu */
 real scalar ML_profile_mu(real scalar mu, real colvector yi, real colvector vi, real scalar crit, real scalar maxtausq, real scalar itol, real scalar maxiter) {
 	real colvector wi
 	real scalar tausq, rc, ll
 
-	rc=mm_root(tausq=., &ML_est(), 0, maxtausq, itol, maxiter, yi, vi, mu)
-	wi=1:/(vi:+tausq)
+	rc = mm_root(tausq=., &ML_est(), 0, maxtausq, itol, maxiter, yi, vi, mu)
+	wi = 1:/(vi:+tausq)
 	ll = 0.5*sum(ln(wi)) - 0.5*crossdev(yi, mu, wi, yi, mu)
-	return(ll-crit)
+	return(ll - crit)
 }
 
 /* REML */
@@ -3594,20 +3968,20 @@ real scalar REML_est(real scalar tausq, real colvector yi, real colvector vi) {
 	real colvector wi
 	real scalar eff, newtausq
 
-	wi=1:/(vi:+tausq)
-	eff=sum(wi:*yi)/sum(wi)
+	wi = 1:/(vi:+tausq)
+	eff = sum(wi:*yi)/sum(wi)
 	newtausq = crossdev(yi, eff, wi:^2, yi, eff)/sum(wi:^2) - mean(vi, wi:^2) + (1/sum(wi)) 
-	return(tausq-newtausq)
+	return(tausq - newtausq)
 }
 /* REML profiling */
 real scalar REML_profile(real scalar tausq, real colvector yi, real colvector vi, real scalar crit) {
 	real colvector wi
 	real scalar eff, ll
 	
-	wi=1:/(vi:+tausq)
-	eff=sum(wi:*yi)/sum(wi)
+	wi = 1:/(vi:+tausq)
+	eff = sum(wi:*yi)/sum(wi)
 	ll = 0.5*sum(ln(wi)) - 0.5*ln(sum(wi)) - 0.5*crossdev(yi, eff, wi, yi, eff)
-	return(ll-crit)
+	return(ll - crit)
 }
 
 end

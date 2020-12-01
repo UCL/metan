@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 1.02  David Fisher  23jul2014}{...}
+{* *! version 1.03  David Fisher  29jun2015}{...}
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "metan" "help metan"}{...}
@@ -93,19 +93,20 @@ see {help ipdmetan##options:ipdmetan} or {help forestplot##options:forestplot}.
 {marker saved_results}{...}
 {title:Saved results}
 
-{pstd}
-{cmd:ipdover} saves the following in {cmd:r()}:
+{pstd}{cmd:ipdover} saves the following in {cmd:r()}:{p_end}
+{pstd}(in addition to any scalars saved by {bf:{help forestplot}}){p_end}
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Scalars}{p_end}
-{synopt:{cmd:r(k)}}Number of included trials {it:k}{p_end}
-{synopt:{cmd:r(n)}}Number of included patients{p_end}
-{synopt:{cmd:r(mu_hat)}}Overall effect size{p_end}
-{synopt:{cmd:r(se_mu_hat)}}Standard error of overall effect size{p_end}
+{synopt:{cmd:r(k)}}Number of subgroups{p_end}
+{synopt:{cmd:r(n)}}Total number of included patients{p_end}
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Macros}{p_end}
-{synopt:{cmd:r(estvar)}}Name of stored coefficient{p_end}
+{synopt:{cmd:r(citype)}}Method of constructing confidence intervals{p_end}
+{synopt:{cmd:r(command)}}Full estimation command-line{p_end}
+{synopt:{cmd:r(cmdname)}}Estimation command name{p_end}
+{synopt:{cmd:r(estvar)}}Name of effect size variable{p_end}
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Matrices}{p_end}
@@ -123,7 +124,7 @@ see {help ipdmetan##options:ipdmetan} or {help forestplot##options:forestplot}.
 {pmore}
 {cmd:. webuse lbw, clear}{p_end}
 {pmore}
-{cmd:. ipdover, over(race smoke ht) or forestplot(favours("Odds of LBW decrease" "as age increases" # "Odds of LBW increase" "as age increases") fp(0.5)): logistic low age}{p_end}
+{cmd:. ipdover, over(race smoke ht) or forestplot(favours("Odds of LBW decrease" "as age increases" # "Odds of LBW increase" "as age increases")) : logistic low age}{p_end}
 
 {pstd} Example 2: Treatment effect by covariate subgroup by trial, using the example IPD meta-analysis dataset from {help ipdmetan}:
 

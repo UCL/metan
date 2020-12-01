@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 1.03  David Fisher  23jul2014}{...}
+{* *! version 1.04  David Fisher  29jun2015}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "admetan" "help admetan"}{...}
@@ -27,6 +27,8 @@
 {synoptline}
 {syntab :Main}
 {synopt :{cmd:by(}{it:varname} [{cmd:, {ul:m}issing}]{cmd:)}}group the studies in the output{p_end}
+{synopt :{opt citype(string)}}specify method of constructing confidence intervals for individual studies (not pooled results){p_end}
+{synopt :{opt cumul:ative}}perform cumulative meta-analysis{p_end}
 {synopt :{it:{help eform_option}}}exponentiate effect sizes and confidence limits{p_end}
 {synopt :{opt eff:ect(string)}}title for "effect size" column in the output{p_end}
 {synopt :{opt inter:action}}automatically identify and pool a treatment-covariate interaction{p_end}
@@ -37,7 +39,8 @@
 {synopt :{opt noov:erall}}suppress overall pooling{p_end}
 {synopt :{opt nosu:bgroup}}suppress pooling within subgroups{p_end}
 {synopt :{opt notab:le}}suppress printing the table of effect sizes to screen{p_end}
-{synopt :{opt notot:al}}suppress fitting of {it:command} to the entire dataset{p_end}
+{synopt :{opt notot:al}}suppress initial fitting of {it:command} to the entire dataset{p_end}
+{synopt :{opt nowarn:ing}}suppress random-effects warning note on forest plot{p_end}
 {synopt :{opt ovwt sgwt}}over-ride default choice of whether to display overall weights or subgroup weights{p_end}
 {synopt :{opt pool:var(model_coefficient)}}specify explicitly the coefficient to pool{p_end}
 {synopt :{opt re}}specify the DerSimonian & Laird random-effects model{p_end}
@@ -55,7 +58,7 @@ display (and/or save) columns of additional data{p_end}
 {synopt :{cmd:plotid(}{it:varname}{cmd:|_BYAD} [{cmd:, {ul:l}ist {ul:nogr}aph}]{cmd:)}}
 define groups of observations in which to apply specific plot rendition options{p_end}
 {synopt :{cmdab:sa:ving(}{it:{help filename}} [{cmd:, replace} {cmdab:stack:label}]{cmd:)}}save results in the form of a "forestplot dataset" to {it:filename}{p_end}
-{synopt :{cmdab:forest:plot(}{help forestplot##options:{it:forestplot_options}}{cmd:)}}other options to pass to {help forestplot}{p_end}
+{synopt :{cmdab:forest:plot(}{help forestplot##options:{it:forestplot_options}}{cmd:)}}other options to pass to {bf:{help forestplot}}{p_end}
 {synoptline}
 
 {pstd}
@@ -64,33 +67,34 @@ or an interaction involving continuous variables (c.f. syntax of {help test})
 
 {marker cols_info}{...}
 {pstd}
-and where {it:cols_info} has the following syntax, which is based on that of {help collapse}:
+and where {it:cols_info} has the following syntax, which is based on that of {bf:{help collapse}}:
 
 {pmore}
 [{opt (stat)}] [{it:newname}=]{it:item} [{it:%fmt} {cmd:"}{it:label}{cmd:"}] [[{it:newname}=]{it:item} [{it:%fmt} {cmd:"}{it:label}{cmd:"}] ] {it:...} [ [{opt (stat)}] {it:...}]
 
 {pmore}
-where {it:stat} is as defined in {help collapse};
+where {it:stat} is as defined in {bf:{help collapse}};
 {it:newname} is an optional user-specified variable name;
-{it:item} is the name of either a numeric returned quantity from {it:command} (in parentheses, see {help exp_list})
+{it:item} is the name of either a numeric returned quantity from {it:command} (in parentheses, see {it:{help exp_list}})
 or a variable currently in memory; {it:%fmt} is an optional {help format}; and {cmd:"}{it:label}{cmd:"} is an optional variable label.
 
 {marker re_model}{...}
 {synopthdr :re_model}
 {synoptline}
-{synopt :{opt dl}}DerSimonian-Laird estimator{p_end}
+{synopt :{opt dl}}DerSimonian-Laird estimator (equivalent to specifying {opt re} alone, with no sub-option){p_end}
+{synopt :{opt dlt}, {opt hk} or {opt kh}}DerSimonian-Laird with Hartung-Knapp t-based variance estimator{p_end}
 {synopt :{opt bdl} or {opt dlb}}Bootstrap DerSimonian-Laird estimator (due to Kontopantelis) {p_end}
-{synopt :{opt dlt} or {opt hk}}DerSimonian-Laird with Hartung-Knapp t-based variance estimator{p_end}
-{synopt :{opt vc}, {opt ca} or {opt he}}Hedges variance-component aka Cochran estimator{p_end}
+{synopt :{opt ca}, {opt he} or {opt vc}}Cochran ANOVA-like estimator aka Hedges aka "variance component" estimator{p_end}
 {synopt :{opt sj}}Sidik-Jonkman two-step estimator{p_end}
 {synopt :{opt b0}}Rukhin B0 estimator{p_end}
 {synopt :{opt bp}}Rukhin BP estimator{p_end}
 {synopt :{opt bs}, {opt bt} or {opt gamma}}Biggerstaff-Tweedie approximate Gamma model{p_end}
-{synopt :{opt vb}, {opt q}, {opt genq} or {opt eb}}Mandel-Paule aka Generalised Q aka "empirical Bayes" estimator{p_end}
+{synopt :{opt eb}, {opt gq}, {opt genq}, {opt mp} or {opt q}}Mandel-Paule aka Generalised Q aka "empirical Bayes" estimator{p_end}
 {synopt :{opt ml}}(simple) maximum likelihood (ML) estimator{p_end}
 {synopt :{opt pl}}"Profile" maximum likelihood model{p_end}
 {synopt :{opt reml}}Restricted maximum likelihood (REML) estimator{p_end}
-{synopt :{opt sa} [{cmd:, isq(}{it:real}{cmd:)}]}Sensitivity analysis with user-defined I-squared (default is 0.8){p_end}
+{synopt :{opt kr}}REML with Kenward-Roger variance estimator (using expected information){p_end}
+{synopt :{opt sa} [{cmd:, isq(}{it:real}{cmd:)}]}Sensitivity analysis with user-defined I-squared (due to Kontopantelis); default is 0.8{p_end}
 {synoptline}
 
 {marker aggregate_data_options}{...}
@@ -136,17 +140,40 @@ where {it:varname} is the first independent variable within {it:command}.
 which must be either integer-valued or string.
 
 {pmore}
-{opt missing} requests that missing values be treated as potential study identifiers (the default is to exclude them).
+{opt missing} requests that missing values be treated as potential study identifiers; the default is to exclude them.
 
 {phang}
 {cmd:by(}{it:subgroup_ID} [{cmd:, missing}]{cmd:)} specifies a variable identifying subgroups of studies (and must therefore be constant within studies),
 which must be either integer-valued or string.
 
 {pmore}
-{opt missing} requests that missing values be treated as potential subgroup identifiers (the default is to exclude them).
+{opt missing} requests that missing values be treated as potential subgroup identifiers; the default is to exclude them.
 
 {phang}
-{it:{help eform_option}} specifies that effect sizes and confidence limits should be exponentiated in the output (table and forest plot).
+{opt citype(string)} specifies how confidence limits are constructed for individual studies.
+Note that confidence limits for {it:pooled} results are calculated consistently with the specified {help ipdmetan##re_model:{it:re_model}},
+ or using the Normal distribution if fixed-effects.
+
+{pmore}
+{cmd:citype(normal)} or {cmd:citype(z)} is the default, specifying use of the Normal distribution (i.e. a {it:z}-statistic)
+
+{pmore}
+{cmd:citype(t)} specifies use of the {it:t}-distribution based on {cmd:e(df_r)} degrees of freedom ({it:command} must be e-class and return this statistic)
+
+{pmore}
+{cmd:citype(logit)} recreates the logit-transformed confidence limits outputted by default (as of Stata 13) by {bf:{help proportion}}.
+
+{phang}
+{opt cumulative} requests that the meta-analysis be performed cumulatively; that is, performed repeatedly with one study being added each time, in the order specified by {cmd:sortby()}.
+Overall pooled effect information (tests of {it:z} = 0, heterogeneity etc.) is not reported.
+
+{pmore}
+Note that, in the forest plot, box sizing uses cumulative {it:fixed}-effects weights, even if the analyses themselves are random-effects.
+This is to maintain a monotone increase in box size reflecting the accumulating information,
+which due to heterogeneity would not not be guaranteed if random-effects weights were used.
+
+{phang}
+{it:{help eform_option}} specifies that effect sizes and confidence limits should be exponentiated in the table and forest plot.
 The option also generates a heading for the effect size column.
 
 {pmore}
@@ -165,7 +192,7 @@ This is intended as a helpful shortcut for simple interaction analyses, but it i
 The alternative is to supply the desired coefficient to be pooled directly to ipdmetan using {cmd:poolvar()}.
 
 {phang}
-{opt keepall} specifies that all values of {it:study_ID} should be visible in the output (table and forest plot),
+{opt keepall} specifies that all values of {it:study_ID} should be visible in the table and forest plot,
 even if no effect could be estimated (e.g. due to insufficient observations or missing data).
 For such studies, "(Insufficient data)" will appear in place of effect estimates and weights.
 
@@ -179,7 +206,7 @@ converged successfully.
 construction of the forest plot and the table of effect sizes.
 
 {phang}
-{opt nohet} suppresses all heterogeneity statistics.
+{opt nohet} suppresses heterogeneity statistics in both table and forest plot.
 
 {phang}
 {opt nooverall}, {opt nosubgroup} affect which groups of data are pooled, thus affecting both the table of effect sizes
@@ -198,9 +225,13 @@ returned expressions. If {opt nototal} is specified, either {opt poolvar()} or {
 and a message appears above the table of results warning that estimates should be double-checked by the user.
 
 {phang}
+{opt nowarning} suppresses the default display, in the forest plot, of a note warning
+that studies are weighted from random effects analyses.
+
+{phang}
 {opt ovwt}, {opt sgwt} over-ride the default choice of whether to display overall weights or within-subgroup weights
-in the screen output and forest plot. Note that, since weights are normalised, these options do not affect
-estimation of pooled effects or heterogeneity statistics.
+in the screen output and forest plot. Note that this makes no difference to the calculations,
+as weights are normalised anyway.
 
 {phang}
 {opt poolvar(model_coefficient)} allows the coefficient to be pooled to be explicitly stated in situations where it may not be obvious,
@@ -232,7 +263,7 @@ If {cmd:ad()} is specified, {it:filename} and {opt vars(varlist)} are required.
 {pmore}
 {opt vars(varlist)} contains the names of variables (within {it:filename})
 containing the effect size and either a standard error or lower and upper 95% confidence limits, on the linear scale.
-If confidence limits are supplied, they must be derived from a Normal distribution or the pooled result will not be accurate (see {help admetan}).
+If confidence limits are supplied, they must be derived from a Normal distribution or the pooled result will not be accurate (see {bf:{help admetan}}).
 
 {pmore}
 {opt npts(varname)} allows participant numbers (stored in {it:varname} within {it:filename}) to be displayed in tables and forestplots.
@@ -242,45 +273,45 @@ If confidence limits are supplied, they must be derived from a Normal distributi
 
 {pmore}
 Note that subgroups may be analysed in the same way as for IPD - that is, with the {opt by(varname)} option to {cmd:ipdmetan}.
-{it:varname} may be found in either the data in memory (IPD) or in the aggregate dataset, or both.
+{it:varname} may be found in either the data in memory (IPD), or in the aggregate dataset, or both.
 
 {dlgtab:Forest plots}
 
 {phang}
 {cmd:lcols(}{help ipdmetan##cols_info:{it:cols_info}}{cmd:)}, {cmd:rcols(}{help ipdmetan##cols_info:{it:cols_info}}{cmd:)} define columns of additional data to be presented to the left or right of the forest plot.
-These options are carried over from {help metan}, but in the IPD context they must first be generated from the existing dataset.
-{cmd:ipdmetan} creates a new dataset of effect sizes, weights, labels etc. to pass to {help forestplot},
+These options are carried over from {bf:{help metan}}, but in the IPD context they must first be generated from the existing dataset.
+{cmd:ipdmetan} creates a new dataset of effect sizes, weights, labels etc. to pass to {bf:{help forestplot}},
 which may also contain variables representing such additional columns.
 Hence, the syntax of {help ipdmetan##cols_info:{it:cols_info}} allows the user to specify characteristics of new variables
 such as name, title and format, which will be carried over to the forest plot.
 
 {pmore}
-Specifying {it:newname} is only necessary in circumstances where the name of the variable in the {help forestplot} dataset is important.
+Specifying {it:newname} is only necessary in circumstances where the name of the variable in the {bf:{help forestplot}} dataset is important.
 For example, you may have an aggregate dataset with a variable containing data equivalent to an {it:item},
 and wish for all such data (whether IPD or aggregate) to appear in a single column in the forest plot.
 To achieve this, specify {it:newname} as the name of the relevant variable in the aggregate dataset.
 Make sure that the variables in the IPD and aggregate datasets do not have conflicting formats (e.g. string and numeric)
-or a {help merge} error will be returned.
+or a {bf:{help merge}} error will be returned.
 
 {pmore}
 Note that {it:item} may be an existing string variable, in which case the first non-empty observation for each study will be used,
 and the {it:item} will not be displayed alongside overall or subgroup pooled estimates.
-To force this behaviour for a numeric variable, it must first be converted to string format using {help recode} or {help tostring}.
+To force this behaviour for a numeric variable, it must first be converted to string format using {bf:{help recode}} or {bf:{help tostring}}.
 
 {pmore}
-{cmd:lcols} and {cmd:rcols} may also be supplied directly to {help forestplot}, but as a list of existing variable names only.
+{cmd:lcols} and {cmd:rcols} may also be supplied directly to {bf:{help forestplot}}, but as a list of existing variable names only.
 
 {phang}
-{cmd:plotid(}{it:varname}{cmd:|_BYAD} [{cmd:, list nograph}]{cmd:)} is really a {help forestplot} option, but has a slightly
+{cmd:plotid(}{it:varname}{cmd:|_BYAD} [{cmd:, list nograph}]{cmd:)} is really a {bf:{help forestplot}} option, but has a slightly
 extended syntax when supplied to {cmd:ipdmetan}.  {it:varname} may be replaced with {cmd:_BYAD} if the {opt byad} suboption
 is supplied to {opt ad}, since in this case the subgrouping is not defined by an existing variable.
 
 {pmore}
-For further details of this option and the {opt list} and {opt nograph} suboptions, see {help forestplot}.
+For further details of this option and the {opt list} and {opt nograph} suboptions, see {bf:{help forestplot}}.
 
 {phang}
 {cmd:saving(}{it:{help filename}} [{cmd:, replace} {cmd:stacklabel}]{cmd:)} saves the forestplot "results set" created by
-{cmd:ipdmetan} in a Stata data file for further use or manipulation. See {help forestplot} for further details.
+{cmd:ipdmetan} in a Stata data file for further use or manipulation. See {bf:{help forestplot}} for further details.
 
 {pmore}
 {opt replace} overwrites {it:filename}
@@ -288,21 +319,21 @@ For further details of this option and the {opt list} and {opt nograph} suboptio
 {pmore}
 {opt stacklabel} is a subtlety: it takes the {it:{help label:variable label}} from the left-most column variable (usually {it:study_ID}),
 which would usually appear outside the plot region as the column heading, and copies it into a new first row in {it:filename}.
-This allows multiple such datasets to be {help append}ed without this information being overwritten.
+This allows multiple such datasets to be {bf:{help append}}ed without this information being overwritten.
 
 
 {marker saved_results}{...}
 {title:Saved results}
 
-{pstd}
-{cmd:ipdmetan} saves the following in {cmd:r()} (with some variation):
+{pstd}{cmd:ipdmetan} saves the following in {cmd:r()}:{p_end}
+{pstd}(with some variation, and in addition to any scalars saved by {bf:{help forestplot}}){p_end}
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Scalars}{p_end}
 {synopt:{cmd:r(k)}}Number of included studies {it:k}{p_end}
 {synopt:{cmd:r(n)}}Number of included participants{p_end}
-{synopt:{cmd:r(eff)}}Overall (pooled) effect size{p_end}
-{synopt:{cmd:r(se_eff)}}Standard error of overall (pooled) effect size{p_end}
+{synopt:{cmd:r(eff)}}Overall pooled effect size{p_end}
+{synopt:{cmd:r(se_eff)}}Standard error of overall pooled effect size{p_end}
 {synopt:{cmd:r(Q)}}Q statistic of heterogeneity (N.B. has degrees of freedom {it:k}–1){p_end}
 {synopt:{cmd:r(tausq)}}Between-study variance tau-squared{p_end}
 {synopt:{cmd:r(sigmasq)}}Average within-study variance{p_end}
@@ -311,7 +342,8 @@ This allows multiple such datasets to be {help append}ed without this informatio
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Macros}{p_end}
-{synopt:{cmd:r(command)}}Full estimation command-line {p_end}
+{synopt:{cmd:r(citype)}}Method of constructing confidence intervals{p_end}
+{synopt:{cmd:r(command)}}Full estimation command-line{p_end}
 {synopt:{cmd:r(cmdname)}}Estimation command name{p_end}
 {synopt:{cmd:r(estvar)}}Name of pooled coefficient{p_end}
 {synopt:{cmd:r(re_model)}}Random-effects model used{p_end}
@@ -414,13 +446,13 @@ Email {browse "mailto:d.fisher@ucl.ac.uk":d.fisher@ucl.ac.uk}{p_end}
 {title:Acknowledgments}
 
 {pstd}
-Thanks to the authors of {help metan}, upon which this code is based;
+Thanks to the authors of {bf:{help metan}}, upon which this code is based;
 paticularly Ross Harris for his comments and good wishes.
 
 
 {title:Reference}
 
-{phang}Fisher D. yyyy. Two-stage individual participant data meta-analysis and generalised forest plots.
-Stata Journal vv: pp-pp{p_end}
+{phang}Fisher D. 2015. Two-stage individual participant data meta-analysis and generalised forest plots.
+Stata Journal 15: 369-96{p_end}
 
 

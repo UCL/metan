@@ -15,12 +15,20 @@
 * and is therefore designed to handle TWO treatment groups only.
 * For more general log-rank tests, use "sts test" as documented in the Stata manuals.
 
-*! version 1.0  David Fisher  31jan2014
+*! version 1.01  David Fisher  31jan2014
+
+*! version 1.01.1 (beta)  David Fisher, November 2014
+* Added glab label values
+* Various refinements
+
+* To do:
+* Make -petometan- call -admetan- to draw tables/forestplot?? -- NO, TOO DIFFERENT
+*   also display p-value and HRs plus O-E/V??
 
 * Syntax:
 * petometan trt_var [if] [in], [study(trial_id) by(subgroup) strata(other_strata)]
 * where
-* trt_var = treatment arm variable (coded such that treatment has largest value - so trt=1, control=0 or trt=2, control=1)
+* trt_var = treatment arm variable (coded such that trt=1, control=0)
 * trial_id = trial identifier
 * subgroup = optional trial-level subgroup identifier
 
@@ -61,7 +69,73 @@ program define petometan, rclass sortpreserve
 	mark `touse' `if' `in' [`weight'`exp']
 	markout `touse' `t1' `dead'
 	markout `touse' `arm' `study' `by' `strata', strok
-	markout `touse' `t0'
+	
+	* start of added section Nov 2014 (from logrank.ado)
+	if `"`t0'"'!=`""' & `"`id'"'!=`""' {
+		local id
+	}
+	if `"`t0'"'==`""' & `"`id'"'==`""' {
+		tempvar t0
+		qui gen byte `t0' = 0
+	}
+	else if `"`t0'"' != `""' { 
+		markout `touse' `t0'
+	}
+	else if `"`id'"'!=`""' {
+		markout `touse' `id'
+		quietly {
+			sort `touse' `id' `t1'
+			local ty : type `t1'
+			by `touse' `id': gen `ty' `t0' = cond(_n==1, 0, `t1'[_n-1])
+		}
+		capture assert `t1'>`t0'
+		if _rc {
+			di in red `"repeated records at same `t1' within `id'"'
+			exit 498
+		}
+		* N.B. `id' is not needed any more
+	}
+
+	capture assert `t1'>0 if `touse'
+	if _rc { 
+		di in red `"survival time `t1' <= 0"'
+		exit 498
+	}
+	capture assert `t0'>=0 if `touse'
+	if _rc { 
+		di in red `"entry time `t0' < 0"'
+		exit 498
+	}
+	capture assert `t1'>`t0' if `touse'
+	if _rc {
+		di in red `"entry time `t0' >= survival time `t1'"'
+		exit 498
+	}
+	capture assert `dead'==0 if `touse'
+	if _rc==0 {
+		di in red `"no test possible because there are no failures"'
+		exit 2000
+	}
+	if `"`strata'"' != "" {
+		tempvar isdead
+		sort `strata'
+		qui by `strata': gen long `isdead' = sum(`dead')
+		qui by `strata': replace `isdead' = . if _n<_N
+		qui count if `isdead' == 0 & `touse'
+		local n_omit = r(N)
+		if `n_omit' > 0 {
+			if `n_omit' == 1 {
+				local endng um
+			}
+			else {
+				local endng a
+			}
+			local note `"Note: `n_omit' strat`endng' omitted because of no failures"'
+		}
+	}
+	* end of added section
+	
+	* markout `touse' `t0'
 	
 	qui count if `touse'
 	if !r(N) {
@@ -72,10 +146,24 @@ program define petometan, rclass sortpreserve
 	tempvar obs
 	qui gen long `obs'=_n
 	
-	* Sort out treatment arm variable
-	* We want "`g'==2" to be the treatment group, and "`g'==1" the control, for consistency in later code.
-	* This code assumes that the largest value of `by' is the treatment, whether coded (1,0) or (2,1) for (trt, control).
-	* (If string, then this just sorts alphabetically)
+	* Treatment arm variable should be coded such that "`arm'==1" denotes treatment and "`arm'==0" control
+	summ `arm' if `touse', meanonly
+	local armok = `r(min)'==0 & `r(max)'==1
+	qui tab `arm' if `touse'
+	local armok = `armok' * (`r(r)'==2)
+	if !`armok' {
+		di as err _n `"Treatment arm should be coded 0 = control, 1 = research"'
+		exit 498
+	}
+	local g `arm'
+	local glab : value label `g'
+	
+	if "`glab'"==`""' {
+		tempname glab
+		label define `glab' 0 "Control" 1 "Treatment"
+	}
+	
+	/*
 	tempvar g
 	qui bysort `arm': gen long `g' = (_n==1)
 	qui replace `g' = sum(`g')
@@ -83,6 +171,7 @@ program define petometan, rclass sortpreserve
 		di in red `"`by' variable is not binary"'
 		exit 498
 	}
+	
 	* Transfer labels, values or strings to new treatment arm variable
 	tempname glab
 	capture confirm string variable `arm'
@@ -94,9 +183,11 @@ program define petometan, rclass sortpreserve
 		else {
 			summ `arm' if `g'==`i', meanonly
 			local glabi : label (`arm') `r(min)'		// N.B. will return `r(min)' if no label
+			local glabi = cond("`glabi'"=="`r(min)'", cond(`i'==1, "Treatment", "Control"), "`glabi'")
 		}
 		label define `glab' `i' `"`glabi'"', add
 	}
+	*/
 	* Store variable label
 	local gvarlab : variable label `arm'
 	if `"`gvarlab'"'==`""' local gvarlab `"`arm'"'
@@ -172,34 +263,22 @@ program define petometan, rclass sortpreserve
 		disp as err "Cannot specify 'by' without 'study'"
 		exit 198
 	}
-		
-	if `"`strata'"' != `""' {
-		* Find (and subsequently omit) strata in which there are no failures
-		* (code taken directly from logrank.ado)
-		tempvar isdead
-		sort `strata'
-		qui by `strata': gen long `isdead' = sum(`dead')
-		qui by `strata': replace `isdead' = . if _n<_N
-		qui count if `isdead' == 0 & `touse'
-		local n_omit = r(N)
-		if `n_omit' > 0 {
-			if `n_omit' == 1 local endng um
-			else local endng a
-			local note `"Note: `n_omit' strat`endng' omitted because of no failures"'
-		}
-	}
 
+	
 	* Begin manipulating data
 	preserve 
 	
-		if `"`weight'"' != `""' { 
-			tempvar w 
-			qui gen double `w' `exp' if `touse'
-			local wv `"`w'"'
-		}
-		else local w 1
-		tempvar op n d
-	
+	if `"`weight'"' != `""' { 
+		tempvar w 
+		qui gen double `w' `exp' if `touse'
+		local wv `"`w'"'
+		local wntype "double"	// "gen double `n`i''" if weights
+	}
+	else {
+		local w 1
+		local wntype "long"		// "gen long `n`i''" if no weights (since in that case must be whole numbers)
+	}
+	tempvar op n d
 	quietly {
 		keep if `touse'
 		qui count
@@ -213,7 +292,8 @@ program define petometan, rclass sortpreserve
 		if trim(`"`study' `by'"') != `""' {
 			local bystr `"by `by' `s':"'
 		}
-		forvalues i=1/2 {
+		* forvalues i=1/2 {
+		forvalues i=0/1 {
 			sort `by' `s' `g' `t1'
 			tempvar NN`i'
 			`bystr' gen long `NN`i''=sum(cond(`g'==`i',1,0))
@@ -236,64 +316,64 @@ program define petometan, rclass sortpreserve
 		replace `op' = cond(`dead'==0,2/*cens*/,1/*death*/) in `N'/l
 
 		sort `s' `strata' `t1' `op' `g'
-		`bystr' gen double `n' = sum(cond(`op'==3,`w',-`w'))
-		by `s' `strata' `t1': gen `d' = sum(`w'*(`op'==1))
+		`bystr' gen `wntype' `n' = sum(cond(`op'==3,`w',-`w'))
+		by `s' `strata' `t1': gen `wntype' `d' = sum(`w'*(`op'==1))
 
 		* Numbers at risk, and observed number of events (failures)
-		forvalues i=1/2 {
+		* forvalues i=1/2 {
+		forvalues i=0/1 {
 			tempvar ni`i' di`i'
-			`bystr' gen double `ni`i'' = sum(cond(`g'==`i', cond(`op'==3,`w',-`w'), 0))
-			by `s' `strata' `t1': gen double `di`i'' = sum(cond(`g'==`i', `w'*(`op'==1), 0))	
+			`bystr' gen `wntype' `ni`i'' = sum(cond(`g'==`i', cond(`op'==3,`w',-`w'), 0))
+			by `s' `strata' `t1': gen `wntype' `di`i'' = sum(cond(`g'==`i', `w'*(`op'==1), 0))
+			* N.B. `w' is not needed any more
 		}
 		by `s' `strata' `t1': keep if _n==_N		// keep unique times only
 
 		* Shift `n' up one place so it lines up
 		tempvar newn
-		`bystr' gen double `newn' = `n'[_n-1]
+		`bystr' gen `wntype' `newn' = `n'[_n-1]
 		drop `n' 
 		rename `newn' `n'
 		
 		* Shift each of the `ni's up one place so they line up
-		forvalues i=1/2 {
-			local ni : word `i' of `nlist'
-			`bystr' gen double `newn' = `ni`i''[_n-1] if _n>1
+		* forvalues i=1/2 {
+		forvalues i=0/1 {
+			`bystr' gen `wntype' `newn' = `ni`i''[_n-1] if _n>1
 			drop `ni`i''
 			rename `newn' `ni`i''	
 		}
-		drop if `d'==0				// keep failure times only
+		* drop if `d'==0			// keep failure times only - DON'T DO THIS, IN CASE SOME STUDIES HAVE NO FAILURES
 		capture drop `strata'		// don't need strata vars anymore (and there may be many of them)
 
-		* Calculate E and V
-		tempvar Vcons V
-		qui gen double `Vcons' = `d'*(`n'-`d')/(`n'*`n'*(`n'-1))
-		forvalues i=1/2 {
-			* Expected number of events (failures)
+		* Calculate E (expected number of events/failures)
+		* forvalues i=1/2 {
+		forvalues i=0/1 {
 			tempvar ei`i'
 			gen double `ei`i'' = `ni`i''*`d'/`n'
-
-			* Hypergeometric variance
-			tempvar vi`i'
-			gen double `vi`i'' = `ni`i''*(`n'-`ni`i'')*`Vcons'
 		}
-		assert `vi1'==`vi2'
-		drop `vi1' `Vcons'
-		rename `vi2' `V'
-		
+		* Calculate V (hypergeometric variance)
+		tempvar V
+		assert float(`ni0' + `ni1') == float(`n')		// arithmetic check
+		gen double `V' = `ni0'*`ni1'*`d'*(`n'-`d')/(`n'*`n'*(`n'-1))
+
+		* Calculate O - E
 		tempvar OE OEsq
-		gen `OE'=`di2'-`ei2'
-		* At this point we have one obs per unique failure time per arm per trial.
+		gen double `OE'=`di1'-`ei1'						// use treatment arm
+		assert float(`OE') == float(`ei0'-`di0')		// arithmetic check
 		
+		* At this point we have one obs per unique failure time per arm per trial.
 		* Now "collapse" to one obs per study (or just one obs), plus (sub)totals
 		if `"`study'"'!=`""' {
 			sort `s'
 			local bys `"by `s':"'
 		}
-		foreach x of varlist `OE' `V' `di1' `di2' {
+		* foreach x of varlist `OE' `V' `di1' `di2' {
+		foreach x of varlist `OE' `V' `di0' `di1' {
 			`bys' replace `x' = sum(`x')
 		}
 		`bys' keep if (_n == _N)
 		tempvar obs
-		gen `obs' = 1
+		gen long `obs' = 1
 		
 		* Generate new obs for subgroup/overall statistics
 		if `"`study'"'!=`""' {
@@ -302,10 +382,11 @@ program define petometan, rclass sortpreserve
 			local newn = `ns' + (`"`overall'"'==`""') + (`"`subgroup'"'==`""')*`nby'	// create rows to hold subgroup & overall totals
 			set obs `newn'
 			tempvar newobs
-			gen `newobs' = (_n > `ns')		// flag new observations
+			gen byte `newobs' = (_n > `ns')		// flag new observations
 			
 			tempvar Q
-			gen `Q'=.
+			gen double `Q'=.
+			label var `Q' "Q"
 			
 			* Subgroup totals
 			if `"`by'"'!=`""' & `"`subgroup'"'==`""' {
@@ -314,13 +395,14 @@ program define petometan, rclass sortpreserve
 					replace `by' = `i' in `ii'
 				}
 				sort `by' `s'
-				foreach x of varlist `V' `OE' `di1' `di2' `NN1' `NN2' `obs' {
+				* foreach x of varlist `V' `OE' `di1' `di2' `NN1' `NN2' `obs' {
+				foreach x of varlist `V' `OE' `di0' `di1' `NN0' `NN1' `obs' {
 					tempvar bysum`x'
 					by `by' : gen double `bysum`x'' = sum(`x')
 					by `by' : replace `bysum`x'' = `bysum`x''[_N]
 				}
 				tempvar qpart
-				by `by' : gen `qpart' = sum(`V'*(((`OE'/`V')-(`bysum`OE''/`bysum`V''))^2))
+				by `by' : gen double `qpart' = sum(`V'*(((`OE'/`V')-(`bysum`OE''/`bysum`V''))^2))
 				by `by' : replace `qpart' = `qpart'[_N]
 				replace `Q' = `qpart' if `newobs' & !missing(`by')
 				drop `qpart'
@@ -328,7 +410,8 @@ program define petometan, rclass sortpreserve
 
 			* Overall totals
 			if `"`overall'"'==`""' {
-				foreach x of varlist `V' `OE' `di1' `di2' `NN1' `NN2' `obs' {
+				* foreach x of varlist `V' `OE' `di1' `di2' `NN1' `NN2' `obs' {
+				foreach x of varlist `V' `OE' `di0' `di1' `NN0' `NN1' `obs' {
 					tempvar sum`x'
 					gen double `sum`x'' = sum(`x')
 					replace `sum`x'' = `sum`x''[_N]
@@ -336,8 +419,8 @@ program define petometan, rclass sortpreserve
 				}
 			
 				tempvar Vsq qtot 
-				gen `Vsq' = `V'^2
-				gen `qtot'=sum(`V'*(((`OE'/`V')-(`sum`OE''/`sum`V''))^2))
+				gen double `Vsq' = `V'^2
+				gen double `qtot'=sum(`V'*(((`OE'/`V')-(`sum`OE''/`sum`V''))^2))
 				replace `qtot' = `qtot'[_N]
 				replace `Q' = `qtot' if `newobs' & missing(`Q')
 				
@@ -348,8 +431,9 @@ program define petometan, rclass sortpreserve
 		else {						// if `"`study'"'==`""'
 			local OEtot = `OE'
 			local Vtot = `V'
+			local sum`di0' = `di0'
 			local sum`di1' = `di1'
-			local sum`di2' = `di2'
+			* local sum`di2' = `di2'
 		}
 
 		if `"`overall'"'==`""' {
@@ -357,7 +441,8 @@ program define petometan, rclass sortpreserve
 			local selnHR = 1/sqrt(`Vtot')
 			local chi2 = (`OEtot'^2)/`Vtot'			
 
-			return scalar o = `sum`di1''+`sum`di2''
+			* return scalar o = `sum`di1''+`sum`di2''
+			return scalar o = `sum`di0''+`sum`di1''
 			return scalar OE = `OEtot'
 			return scalar V = `Vtot'
 			return scalar lnHR =`lnHR'
@@ -367,23 +452,28 @@ program define petometan, rclass sortpreserve
 		
 		if `"`study'"'!=`""' {
 			if `"`overall'"'==`""' {
-				drop `sum`di1'' `sum`di2'' `sum`NN1'' `sum`NN2'' `sum`OE'' `sum`V''
+				* drop `sum`di1'' `sum`di2'' `sum`NN1'' `sum`NN2'' `sum`OE'' `sum`V''
+				drop `sum`di0'' `sum`di1'' `sum`NN0'' `sum`NN1'' `sum`OE'' `sum`V''
 			}
 			if `"`by'"'!=`""' & `"`subgroup'"'==`""' {
-				foreach x of varlist `V' `OE' `di1' `di2' `NN1' `NN2' `obs' {
+				* foreach x of varlist `V' `OE' `di1' `di2' `NN1' `NN2' `obs' {
+				foreach x of varlist `V' `OE' `di0' `di1' `NN0' `NN1' `obs' {
 					replace `x' = `bysum`x'' if `newobs' & !missing(`by')	// insert totals in new rows
 				}
-				drop `bysum`di1'' `bysum`di2'' `bysum`NN1'' `bysum`NN2'' `bysum`OE'' `bysum`V''
+				* drop `bysum`di1'' `bysum`di2'' `bysum`NN1'' `bysum`NN2'' `bysum`OE'' `bysum`V''
+				drop `bysum`di0'' `bysum`di1'' `bysum`NN0'' `bysum`NN1'' `bysum`OE'' `bysum`V''
 			}
 		}
 	}			// end "quietly"
 	
 	* Print to screen
-	tempvar counts1 counts2
+	tempvar counts0 counts1 /*counts2*/
+	qui gen str `counts0' = string(`di0') + "/" + string(`NN0')		// don't use tempvar here so can send to forestplot
 	qui gen str `counts1' = string(`di1') + "/" + string(`NN1')		// don't use tempvar here so can send to forestplot
-	qui gen str `counts2' = string(`di2') + "/" + string(`NN2')
-	label var `counts1' "Treatment"									// REVISIT: replace with glab value labels?
-	label var `counts2' "Control"
+	* qui gen str `counts2' = string(`di2') + "/" + string(`NN2')
+	label var `counts0' "`: label `glab' 0'"						// REVISIT: replace with glab value labels?
+	label var `counts1' "`: label `glab' 1'"						// REVISIT: replace with glab value labels?
+	* label var `counts2' "`: label `glab' 2'"
 	label var `OE' "o-E(o)"
 	label var `V' "Var(o)"
 
@@ -399,10 +489,11 @@ program define petometan, rclass sortpreserve
 	}
 	else {
 		tempvar s
-		qui gen `s'=1
+		qui gen byte `s'=1
 		label var `s' "Study"
 	}
-	tabdisp `s', cell(`counts1' `counts2' `OE' `V') format(%04.2f) totals concise `bystr'
+	* tabdisp `s', cell(`counts1' `counts2' `OE' `V') format(%04.2f) totals concise `bystr'
+	tabdisp `s', cell(`counts0' `counts1' `OE' `V') format(%04.2f) totals concise `bystr'
 	
 	* Display effect sizes & tests
 	if `"`overall'"'==`""' {
@@ -455,7 +546,8 @@ program define petometan, rclass sortpreserve
 	
 	* Matrix output
 	if `"`matsave'"'!=`""' {
-		qui mkmat `s' `by' `NN1' `NN2' `di1' `di2' `ei1' `OE' `V' if !missing(`s'), matrix(`matsave')
+		* qui mkmat `s' `by' `NN1' `NN2' `di1' `di2' `ei1' `OE' `V' if !missing(`s'), matrix(`matsave')
+		qui mkmat `s' `by' `NN0' `NN1' `di0' `di1' `ei1' `OE' `V' if !missing(`s'), matrix(`matsave')
 		if `"`by'"'!=`""' local byname "by"
 		matrix colnames `matsave' = s `byname' N1 N2 d1 d2 e OE V
 	}
@@ -464,15 +556,17 @@ program define petometan, rclass sortpreserve
 	if `"`graph'"'==`""' {
 
 		quietly {
-			drop `NN1' `NN2' `di1' `di2' `ei1' `ei2'		
+			* drop `NN1' `NN2' `di1' `di2' `ei1' `ei2'		
+			drop `NN0' `NN1' `di0' `di1' `ei0' `ei1'		
 			
 			rename `OE' OE
 			rename `V' V
 			format OE %5.2f
 			format V %5.2f
 
+			rename `counts0' counts0
 			rename `counts1' counts1
-			rename `counts2' counts2
+			* rename `counts2' counts2
 			rename `s' _STUDY
 			if `"`by'"'!=`""' {
 				rename `by' _BY
@@ -522,7 +616,7 @@ program define petometan, rclass sortpreserve
 			}
 			
 			* Blank out effect sizes etc. in new rows
-			foreach x of varlist _LABELS _ES _seES _WT counts1 counts2 OE V {
+			foreach x of varlist _LABELS _ES _seES _WT counts0 counts1 OE V {
 				capture confirm numeric variable `x'
 				if !_rc replace `x' = . if !inlist(_USE, 1, 3, 5)
 				else replace `x' = "" if !inlist(_USE, 1, 3, 5)
@@ -579,7 +673,7 @@ program define petometan, rclass sortpreserve
 		order _USE `_by' _STUDY _LABELS _ES _seES _LCI _UCI _WT
 
 		forestplot, nopreserve by(`_by') labels(_LABELS) eform ///
-				nowt nostats lcols(counts1 counts2) rcols(OE V)
+				nowt nostats lcols(counts0 counts1) rcols(OE V)
 	}
 
 end
