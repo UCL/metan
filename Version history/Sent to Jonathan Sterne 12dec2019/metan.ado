@@ -1,7 +1,7 @@
 * metan.ado
 * Study-level (aka "aggregate-data" or "published data") meta-analysis
 
-*! version 3.4 (beta)  12dec2019
+*! version 4.00  12dec2019
 *! Current version by David Fisher
 *! Previous versions by Ross Harris and Michael Bradburn
 
@@ -55,8 +55,6 @@
 // minor bug fixes
 // improvements to handling of zero cells;  added Tarone and CMH statistics for M-H
 // restored previous -metan- second() option, and extended to multiple models using model(.. \ .. \ ..)
-
-* version 3.4 (beta; never released)  David Fisher 12dec2019
 // added meta-analysis of proportions
 // restored previous -metan- behaviour of sorting string by() by order of appearance, rather than alphabetically
 
@@ -9502,6 +9500,11 @@ end
 
 // Also if M-H:  CMH with/without correction; "Old" Breslow/Day; "New" Breslow/Day/Tarone.
 
+* Current version 3.4 (beta; will be 4.0 upon release)  David Fisher 23oct2019
+
+// Fixed bug where main options (e.g. nograph) would be ignored under certain circumstances
+// Fixed bug where id would be repeated if given as lcols(id)
+
 // Major addition: multiple models, either as backslash-separated list e.g. model(fe\dl\reml\pl)
 //  or, as in -metan-  first() second()
 
@@ -9510,16 +9513,3 @@ end
 //  - test-based
 //  - noncentral Q
 //  - Q profiling
-
-
-* version 3.4 (beta; never released)  David Fisher 12dec2019
-
-// Fixed bug where main options (e.g. nograph) would be ignored under certain circumstances
-// Fixed bug where id would be repeated if given as lcols(id)
-
-// Major addition: added meta-analysis of proportions
-
-// Restored previous -metan- behaviour of sorting string by() by order of appearance, rather than alphabetically
-// Improved behaviour of -influence- : corrected bug in weight normalisation with subgroups;
-//    -forestplot- now by default displays -influence- pooled results as vertical lines rather than diamonds
-

@@ -75,12 +75,9 @@
 // some text in help file is updated
 // improved counting of rows in titles containing compound quotes
 
-* version 3.3 (beta)  David Fisher  14nov2019
+*! version 4.00  David Fisher  03dec2019
 // changes to `xlabopts'
 // upversioned to match with -metan-
-
-*! version 3.4 (beta)  David Fisher  12dec2019
-// no changes; upversioned to match with -metan-
 
 
 program define forestplot, sortpreserve rclass
