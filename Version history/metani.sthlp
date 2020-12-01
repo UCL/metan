@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.7 (beta)  David Fisher  10jul2020}{...}
+{* *! version 3.8 (beta)  David Fisher  19oct2020}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "" "--"}{...}

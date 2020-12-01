@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.7 (beta)  David Fisher  10jul2020}{...}
+{* *! version 3.8 (beta)  David Fisher  19oct2020}{...}
 {vieweralsosee "metan_model" "help metan_model"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
 {vieweralsosee "metan_continuous" "help metan_continuous"}{...}
@@ -91,7 +91,7 @@ Meta-analysis of {help metan_proportion:proportions in a single group}; note tha
 {pstd}
 {it:{help metan_model:model_spec}} specifies method(s) for meta-analytic pooling,
 including {help metan_model##options_test:test statistics} for the pooled effect,
-and estimates and confidence intervals for {help metan_model##options_het:between-study heterogeneity parameters}.
+and estimates and confidence intervals for {help metan_model##options_het:between-study heterogeneity statistics}.
 If no {it:model_spec} is supplied, the default for two-group comparison of binary outcomes is {opt mh:aenszel};
 otherwise the default is {opt common}.  The simplest alternative is {opt random}, specifying the DerSimonian-Laird random-effects model.
 
@@ -110,7 +110,7 @@ This incorporates all the functionalities of the previous version of {cmd:metan}
 {synopt :{it:{help metan_binary##options:options_binary}}}additional options specific to meta-analysis of two-group comparisons of binary outcomes{p_end}
 {synopt :{it:{help metan_continuous##options:options_continuous}}}additional options specific to meta-analysis of two-group comparisons of continuous outcomes{p_end}
 {synopt :{it:{help metan_proportion##options:options_proportion}}}additional options specific to meta-analysis of single-group proportion data{p_end}
-{synopt :{it:{help metan_model:model_spec}}}specify a model or method for meta-analytic pooling; test statistics; heterogeneity parameters{p_end}
+{synopt :{it:{help metan_model:model_spec}}}specify a model or method for meta-analytic pooling; test statistics; heterogeneity statistics{p_end}
 {synoptline}
 
 
@@ -124,11 +124,11 @@ This incorporates all the functionalities of the previous version of {cmd:metan}
 {synopt :{cmd:by(}{it:subgroup_id} [{cmd:, {ul:m}issing}]{cmd:)}}subgroup meta-analysis{p_end}
 {synopt :{opt cumul:ative}}cumulative meta-analysis{p_end}
 {synopt :{opt inf:luence}}investigate influence of each study in turn on the overall estimate{p_end}
-{synopt :{opt altw:t}}display study weights from the standard (non-cumulative or influence) meta-analysis{p_end}
+{synopt :{opt altw:t}}display study weights from the standard (that is, non-cumulative or non-influence) meta-analysis{p_end}
 
 {syntab :Options}
 {synopt :{opt ci:type(ci_type)}}method of constructing confidence intervals for reporting of individual studies ({ul:not} pooled results){p_end}
-{synopt :{opt level(#)} {opt il:evel(#)} {opt ol:evel(#)}}set confidence level for reporting confidence intervals; default is {cmd:level(95)}{p_end}
+{synopt :{opt level(#)} {opt il:evel(#)} {opt ol:evel(#)}}set confidence level for reporting confidence intervals. Default is {help creturn##output:c_level}; see {help set level}{p_end}
 {synopt :{opt eform}}display exponentiated (antilog) effect sizes and confidence limits{p_end}
 {synopt :{opt eff:ect(string)}}title for "effect size" column in the output{p_end}
 {synopt :{opt keepa:ll}}display all studies in the output, even those for which no effect could be estimated{p_end}
@@ -146,7 +146,7 @@ This incorporates all the functionalities of the previous version of {cmd:metan}
 {syntab :Forest plot and/or saved data}
 {synopt :{opt hetinfo(het_spec)}}specify heterogeneity information to display on the forest plot{p_end}
 {synopt :{cmd:extraline(yes|no)}}override the default placement of heterogeneity information in the forest plot{p_end}
-{synopt :{opt rfdist}, {opt rflevel(#)}}display approximate predictive interval, with optional coverage level (default is 95%){p_end}
+{synopt :{opt rfdist}, {opt rflevel(#)}}display approximate predictive interval, with optional coverage level (default is {help creturn##output:c_level}; see {help set level}){p_end}
 {synopt :{opt lcol:s(varlist)}, {opt rcol:s(varlist)}}display (and/or save) columns of additional data{p_end}
 {synopt :{opt plotid(varname)}}define groups of observations in which to apply specific plot rendition options{p_end}
 {synopt :{opt summaryonly}}show only summary estimates (diamonds) in the forest plot and on screen{p_end}
@@ -186,7 +186,7 @@ labels the studies in all output, using names or years or both.
 {pmore}
 {it:namevar} and/or {it:yearvar} may alternatively be specified as the first {it:varname}(s) in {opt lcols(varlist)}
 (see {help metan##fplotopts:Forest plot and/or saved data options}).
-In this case, {opt label()} is not necessary; note that {opt lcols()} and {opt label()} will both be honoured (if specified) by {bf:{help forestplot}}.
+In this case, {opt label()} is not necessary; note that if specified {opt lcols()} and {opt label()} will both be honoured by {bf:{help forestplot}}.
 
 {pmore}
 If neither {opt label()} or {opt lcols()} are supplied, studies will simply be labelled sequentially as "1", "2", etc.
@@ -212,6 +212,9 @@ Studies will be added in the order specified by {cmd:sortby()} if present, or el
 Pooled effect information (tests of {it:z} = 0, heterogeneity etc.) will be based on the model following the addition of the final study.
 An example of such an analysis is given in {help metan##refs:Lau et al (1992)}.
 
+{pmore}
+See also the notes following {opt influence} below.
+
 {phang}
 {opt influence} requests that each study in turn is removed from the meta-analysis to investigate its influence on the overall result.
 Pooled effect information on screen remains identical to that if {opt influence} were not specified.
@@ -219,14 +222,17 @@ However, in the forest plot the usual diamond shape representing the pooled effe
 to allow a visual assessment of influence. Note that no formal test of influence is given.
 
 {pmore}
-Note that for both {opt cumulative} and {opt influence}, use of random-effects and variance-correction models
+Note that for both {opt cumulative} and {opt influence}, use of random-effects or variance-correction models
 may result in weights greater than 100%, since weights are expressed relative to the total weight in the model with all studies included.
 Only a single pooling method may be used with {opt cumulative} and {opt influence}.
 
 {phang2}
-{opt altwt} does not alter the effect estimates, but presents the original weights (and participant numbers in the forest plot, if applicable)
-corresponding to each individual study, rather than the relative weights of each fitted {opt cumulative} or {opt influence} model.
+{opt altwt} does not alter the effect estimates, but presents the original weights corresponding to each individual study,
+rather than the relative weights of each fitted {opt cumulative} or {opt influence} model.
 In other words, presented weights are as if {opt cumulative} or {opt influence} were not specified.
+If applicable, presented participant numbers in the forest plot are treated similarly;
+that is, the original participant numbers are presented with {opt altwt},
+in preference to either a cumulative sum (if {opt cumulative}) or a difference from the total (if {opt influence}).
 
 
 {dlgtab:Options}
@@ -266,7 +272,7 @@ By default, such studies are moved to the end.
 {phang}
 {opt nograph}, {opt notable} request the suppression of, respectively,
 construction of the forest plot and the table of effect sizes.
-Additionally, the forest plot option {opt summaryonly} has a similar effect to {opt notable} on the printed output.
+Note also that the forest plot option {opt summaryonly} has a similar effect to {opt notable} on the printed output.
 
 {phang}
 {opt nohet} suppresses heterogeneity statistics in both table and forest plot.
@@ -343,7 +349,7 @@ The raw (non-normalised) numbers stored in {it:varname} may also be saved and/or
 {dlgtab:Forest plot and/or saved data}
 
 {phang}
-{opt hetinfo(het_spec)} specifies the heterogeneity information to be displayed on the forest plot, which by default is I-squared alone.
+{opt hetinfo(het_spec)} specifies the heterogeneity information to be displayed on the forest plot, which by default is {opt isq pvalue}.
 {it:het_spec} has the following syntax:
 
 {pmore2}
@@ -358,6 +364,10 @@ where {it:%fmt} is an optional {help format}; and {it:het_stat} may be any of th
 {p2col:{opt tausq}}tau-squared statistic{p_end}
 {p2col:{opt q}}Q statistic and degrees of freedom{p_end}
 {p2col:{opt p:value}}p-value corresponding to Q statistic{p_end}
+
+{phang2}
+Note that the statistics I-squared, H and H-squared are by default derived from Q and its degrees of freedom,
+unless option {opt isqparam} is specified; see {it:{help metan_model:metan_spec}}.
 
 {phang}
 {cmd:extraline(yes|no)} affects the placement of the heterogeneity information (see {opt hetinfo()}) within the plot.
@@ -379,7 +389,7 @@ For further information see {help metan##refs:Higgins and Thompson (2009)}.
 
 {pmore}
 {opt rflevel(#)} specifies the coverage (e.g. 95 percent) for the confidence interval of the predictive distribution.
-Default is {help creturn##output:c_level}.  See {help set level}.
+Default is {help creturn##output:c_level}; see {help set level}.
 
 {phang}
 {opt lcols(varlist)}, {opt rcols(varlist)} define columns of additional data to the left or right of the graph.
@@ -447,6 +457,8 @@ The following new variables may be added:
 {synopt:{cmd:r(eff)}}Overall pooled effect size{p_end}
 {synopt:{cmd:r(se_eff)}}Standard error of overall pooled effect size{p_end}
 {synopt:{cmd:r(Q)}}Q statistic of heterogeneity (with degrees of freedom {it:k-1}){p_end}
+{synopt:{cmd:r(Q_lci)}}Lower confidence limit for Q; see {it:{help metan_model:model_spec}}{p_end}
+{synopt:{cmd:r(Q_uci)}}Upper confidence limit for Q; see {it:{help metan_model:model_spec}}{p_end}
 {synopt:{cmd:r(Isq)}}Heterogeneity measure I-squared{p_end}
 {synopt:{cmd:r(H)}}Heterogeneity measure H{p_end}
 {synopt:{cmd:r(HsqM)}}Heterogeneity measure H-squared ({help metan##refs:Mittlb{c o:}ck} modification){p_end}
@@ -461,9 +473,13 @@ The following new variables may be added:
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Matrices}{p_end}
-{synopt:{cmd:r(ovstats)}}Matrix of overall effects, test statistics, heterogeneity statistics, p-values etc.{p_end}
-{synopt:{cmd:r(bystats)}}Matrix of effects, heterogeneity statistics etc. by subgroup, for a single pooling method{p_end}
-{synopt:{cmd:r(bystats}{it:#}{cmd:)}}Matrices of subgroup statistics for multiple pooling methods, if applicable{p_end}
+{synopt:{cmd:r(ovstats)}}Matrix of overall effects, standard errors, test statistics, p-values, and confidence intervals{p_end}
+{synopt:{cmd:r(bystats)}}Matrix of effects, standard errors etc. by subgroup, for a single pooling method{p_end}
+{synopt:{cmd:r(bystats}{it:#}{cmd:)}}Matrices of subgroup effect statistics for multiple pooling methods, if applicable{p_end}
+{synopt:{cmd:r(byQ)}}Matrix of subgroup-specific Q statistics{p_end}
+{synopt:{cmd:r(hetstats)}}Matrix of overall heterogeneity statistics, with confidence intervals where appropriate{p_end}
+{synopt:{cmd:r(byhet)}}Matrices of heterogeneity statistics by subgroup, for a single pooling method{p_end}
+{synopt:{cmd:r(byhet}{it:#}{cmd:)}}Matrices of heterogeneity statistics by subgroup for multiple pooling methods, if applicable{p_end}
 
 
 {pstd}
@@ -576,7 +592,7 @@ that the documented syntax has changed.
 Certain options, such as {opt nowt}, {opt nohet} and {opt summaryonly}, now affect the output in the Results Window as well as the forest plot.
 
 {pmore2}
-For details of other, more specific, changes to forest plot-related syntax and behaviour, see {bf:{help forestplot##diffs_metan9:forestplot}}.
+For details of other, more specific, changes to syntax and behaviour relating to the forest plot, see {bf:{help forestplot##diffs_metan9:forestplot}}.
 
 {phang2}
 Prediction intervals ({opt rfdist}) are no longer displayed with dotted lines if the number of studies is less than three;
@@ -610,17 +626,15 @@ continuity correction becomes necessary for Mantel-Haenszel Risk Ratios and Odds
 {pmore2}
 The above can be summarized as: by default, {cmd:metan} will analyse the available data in the best way possible.
 Note that any of the behaviour described above may be over-ridden by explicit use of the {opt cc()} option; see {it:{help metan_binary}}.
-
-{pmore2}
-If the option {cmd:cc(0.5)} is added to the command line, all results will match with those from {bf:{help metan9}}.
+In particular, if the option {cmd:cc(0.5)} is added to the command line then all results will match with those from {bf:{help metan9}}.
 
 {phang2}
 If a random-effects model is specified, overall and subgroup-specific Q statistics
 are based on the inverse-variance common-effect model.
 However, {ul:between}-subgroup heterogeneity is tested by considering the dispersal of subgroup-specific pooled effects
-from the weighted average of subgroup effects under the specified model ({help metan##refs:Borenstein et al 2009}, chapter 19).
+from the weighted average of subgroup effects under the specified model, as described in chapter 19 of {help metan##refs:Borenstein et al 2009}.
 Note that under the inverse-variance common-effect model, this approach is equivalent to variance partitioning
-as used in previous versions of {cmd:metan} (see {bf:{help metan9}}).
+as used in previous versions of {cmd:metan} (see {bf:{help metan9}} and {help metan##refs:Deeks et al 2001}).
 
 {pmore2}
 Similar behaviour is seen when specifying user-defined weights with {opt wgt()}, except that overall and subgroup-specific Q statistics
@@ -646,7 +660,7 @@ and {cmd:forestplot} provides far more flexibility to create non-standard plots.
 Plus, of course, {cmd:metan} is available to users of earlier versions of Stata.
 
 {pstd}
-More specifically: as of July 2020 (Stata version 16.1), Stata 16's {cmd:meta} suite is currently unable to:
+As of October 2020 (Stata version 16.1), Stata 16's {cmd:meta} suite is currently unable, amongst other things, to:
 
 {phang2}
 Display the results of analysis under multiple models in the same output,
@@ -660,6 +674,14 @@ Show predictive intervals for study subgroups;
 
 {phang2}
 Make use of marker label options to display text at the co-ordinates of study effect estimates (see Example 9 below).
+
+{pstd}
+Finally, note that there is an important difference in the way that {cmd:metan} and Stata 16's {cmd:meta} suite
+report heterogenity statistics with random-effects models.
+{cmd:metan} views I-squared (and its transformations H and H-squared) as being descriptive of the observed data,
+and therefore derives them from Q regardless of the specified model, unless option {opt isqparam} is specified (see {it:{help metan_model:model_spec}}).
+By constrast, Stata 16's {cmd:meta} suite reports I-squared based on Q if a common-effect model is specified,
+or based on tau-squared if a random-effects model is specified.
 
 
 {marker examples}{...}
@@ -689,8 +711,9 @@ rd random label(namevar=id, yearvar=year) counts{p_end}
 
 {pstd}
 Same again, but now with {help metan_model:three different pooling methods}: Mantel-Haenszel common-effect,
-DerSimonian-Laird random-effects, and REML random-effects with Hartung-Knapp-Sidik-Jonkman variance correction.
-Note that each method gives rise to a different estimate of I-squared and its confidence interval, each of which is displayed.
+Mandel-Paule random-effects, and REML random-effects with Hartung-Knapp-Sidik-Jonkman variance correction.
+Note that, although the two random-effects models give two different estimates of tau-squared,
+only a single estimate of I-squared is given, derived from the Q statistic of the first model.
 
 {cmd}{...}
 {* example_start - metan_ex1a}{...}
@@ -699,11 +722,30 @@ Note that each method gives rise to a different estimate of I-squared and its co
 {p 16 20 2}
 rd label(namevar=id, yearvar=year) counts{* ///}{p_end}
 {p 16 20 2}
-model(mh \ dl \ reml, hksj){p_end}
+model(mh \ mp \ reml, hksj){p_end}
 {* example_end}{...}
 {txt}{...}
 {pmore}
 {it:({stata metan_hlp_run metan_ex1a using metan.sthlp, restpres:click to run})}{p_end}
+
+
+{pstd}
+...and same again; but this time with the added option {opt isqparam} (see {it:{help metan_model:model_spec}})
+which requests additional derivations of I-squared
+based on the tau-squared parameter estimates from the random-effects models.
+
+{cmd}{...}
+{* example_start - metan_ex1b}{...}
+{pmore}
+. metan tdeath tnodeath cdeath cnodeath,{* ///}{p_end}
+{p 16 20 2}
+rd label(namevar=id, yearvar=year) counts{* ///}{p_end}
+{p 16 20 2}
+model(mh \ mp \ reml, hksj) isqparam{p_end}
+{* example_end}{...}
+{txt}{...}
+{pmore}
+{it:({stata metan_hlp_run metan_ex1b using metan.sthlp, restpres:click to run})}{p_end}
 
 
 {pstd}
@@ -799,6 +841,8 @@ forestplot( xlabel(0(10)100, force) null(50) title(Sensitivity, position(6)) ){p
 {pstd}
 User has analysed data with a non-standard technique and supplied effect estimates, weights and description of statistics.
 The scheme "Economist" has been used.
+Note that this scheme applies a different default line width to area outlines from that applied to simple lines;
+therefore we must override the scheme's default when plotting the pooled-effect diamond.
 
 {cmd}{...}
 {* example_start - metan_ex7}{...}
@@ -807,7 +851,7 @@ The scheme "Economist" has been used.
 {p 16 20 2}
 first(0.924 0.753 1.095 Bayesian) firststats(param V=3.86, p=0.012){* ///}{p_end}
 {p 16 20 2}
-forestplot(xlabel(0.25 0.5 1 2 4, force) null(1) scheme(economist)){p_end}
+forestplot( xlabel(0.25 0.5 1 2 4, force) null(1) scheme(economist) diamopts(lwidth(thick)) ){p_end}
 {* example_end}{...}
 {txt}{...}
 {pmore}
@@ -822,8 +866,9 @@ Finally, the forest plot is generated, and appears identical to that in the prev
 This demonstrates some of the flexibility of being able to edit (and otherwise manipulate) forest plot results sets.
 
 {pstd}
-Note: the option {opt useopts} ensures that no information is lost between the initial call to {cmd:metan}
-and the final call to {cmd:forestplot}. For further details, see {bf:{help forestplot}}.
+Note: the option {opt useopts} ensures that no {help options}, defaults, etc. are lost
+between the initial call to {cmd:metan} and the final call to {cmd:forestplot}.
+For further details, see {bf:{help forestplot}}.
 
 {cmd}{...}
 {* example_start - metan_ex8}{...}
@@ -842,7 +887,7 @@ and the final call to {cmd:forestplot}. For further details, see {bf:{help fores
 {phang2}
 . format %-1s _LABELS{p_end}
 {phang2}
-. forestplot, useopts xlabel(0.25 0.5 1 2 4, force) null(1) scheme(economist){p_end}
+. forestplot, useopts xlabel(0.25 0.5 1 2 4, force) null(1) scheme(economist) diamopts(lwidth(thick)){p_end}
 {phang2}
 . restore{p_end}
 {* example_end}{...}

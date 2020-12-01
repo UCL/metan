@@ -75,7 +75,7 @@
 // some text in help file is updated
 // improved counting of rows in titles containing compound quotes
 
-*! version 3.7 (beta)  David Fisher  10jul2020
+*! version 3.8  David Fisher  19oct2020
 // changes to `xlabopts'
 // changes to `influence' plot (including "hide" option)
 // changes to fp() option
@@ -373,7 +373,7 @@ program define forestplot, sortpreserve rclass
 	// qui drop `obs'	// don't drop yet; use again later
 	
 	// Parse eform option and finalise "effect" text
-	cap nois CheckOpts, soptions opts(`graphopts' `eform')
+	cap nois CheckOpts, soptions opts(`eform' `graphopts')
 	if _rc {
 		if _rc==1 nois disp as err "User break"
 		else nois disp as err `"Error in {bf:forestplot.CheckOpts}"'
@@ -762,7 +762,7 @@ program define forestplot, sortpreserve rclass
 	qui replace `_USE' = 99 if `touse' & `_USE'==9	
 	
 	local oldN = _N
-	cap nois ProcessColumns `_USE' if `touse', id(`id') ///
+	cap nois ProcessColumns `_USE' `_EFFECT' if `touse', id(`id') `wt' ///
 		lrcolsn(`lcolsN' `rcolsN') lcimin(`lcimin') dx(`DXmin' `DXmax') ///
 		lvallist(`lvallist') llablist(`llablist') lfmtlist(`lfmtlist') ///
 		rvallist(`rvallist') rlablist(`rlablist') rfmtlist(`rfmtlist') `rfopts' ///
@@ -1573,14 +1573,25 @@ program define ProcessXLabs, rclass
 					nois disp as err `"error in option {bf:`xl'()}: invalid numlist"'
 					exit _rc
 				}
-				if `comma' {
-					nois disp as err _n `"Note: with {bf:metan} version 4 and above, the preferred syntax is for {bf:`xl'()}"'
-					nois disp as err `" to contain a standard Stata numlist, so {bf:`xl'(`r(numlist)')}; see {help numlist:help numlist}"'
-					local done = 1
+				local `xl' = r(numlist)
+
+				if `comma' {										
+					// [Oct 2020:] If `h0' is absent, add it back in.
+					// Previous versions of -metan- added h0 by default (unless "nonull"), so that e.g. "xlabel(.1, 10) eform" would result in .1, 1 and 10 being marked.
+					// With the "new" syntax based on standard -twoway- options, `h0' needs to be included in xlabel() in order for it to appear.					
+					if "`null'"=="" {
+						local newh0 = cond("`eform'"!="", exp(`h0'), `h0')
+						if !`: list newh0 in `xl'' local `xl' ``xl'' `newh0'
+					}
+					numlist `"``xl''"', sort
+					local `xl' = r(numlist)
 					
+					nois disp as err _n `"Note: with {bf:metan} version 4 and above, the preferred syntax is for {bf:`xl'()}"'
+					nois disp as err `" to contain a standard Stata numlist, so e.g. {bf:`xl'(``xl'')}; see {help numlist:help numlist}"'					
+					
+					local done = 1
 					c_local twowaynote notwowaynote		// so that -metan- does not print an additional message regarding "force"
 				}
-				local `xl' = r(numlist)
 			}
 		}
 	}
@@ -2201,21 +2212,22 @@ end
 * Process left and right columns -- obtain co-ordinates etc.
 program define ProcessColumns, rclass
 
-	syntax varname [if] [in], ID(varname numeric) LRCOLSN(numlist integer >=0) LCIMIN(real) DX(numlist) ///
+	syntax varlist(min=1 max=2) [if] [in], ID(varname numeric) LRCOLSN(numlist integer >=0) LCIMIN(real) DX(numlist) ///
 		[LVALlist(namelist) LLABlist(varlist) LFMTLIST(numlist integer) ///
 		 RVALlist(namelist) RLABlist(varlist) RFMTLIST(numlist integer) RFINDENT(varname) RFCOL(integer 1) ///
 		 DXWIDTHChars(real -9) ASText(integer -9) LBUFfer(real 0) RBUFfer(real 1) ///
-		 noADJust noLCOLSCHeck TArget(integer 0) MAXWidth(integer 0) MAXLines(integer 0) noTRUNCate DOUBLE * ]
+		 noADJust noLCOLSCHeck TArget(integer 0) MAXWidth(integer 0) MAXLines(integer 0) noTRUNCate noWT DOUBLE * ]
 	
 	local graphopts `"`options' `double'"'
 	
-	marksample touse
+	marksample touse, novarlist
 	
-	// rename locals for clarity
-	local _USE         : copy local varlist
+	// rename and unpack
 	local DXwidthChars : copy local dxwidthchars
 
-	// unpack `lrcolsn' and `dx'
+	tokenize `varlist'
+	args _USE _EFFECT		// Oct 2020: _EFFECT is only used if `double', to prevent doubling of _EFFECT variable
+
 	tokenize `lrcolsn'
 	args lcolsN rcolsN
 	local rcolsN = cond(`"`rcolsN'"'==`""', 0, `rcolsN')
@@ -2236,7 +2248,7 @@ program define ProcessColumns, rclass
 	quietly {
 		// Apr 2020
 		// DOUBLE LINE OPTION
-		if `"`double'"'!=`""' & (`lcolsN' + `rcolsN') {			
+		if `"`double'"'!=`""' & (`lcolsN' + `rcolsN' - ("`_EFFECT'"!="") - ("`wt'"=="")) {
 			tempvar expand
 			expand 2 if `touse' & inlist(`_USE', 1, 2), gen(`expand')
 			replace `_USE' = 6 if `touse' & `expand'
@@ -2253,33 +2265,40 @@ program define ProcessColumns, rclass
 		local nlines = 0
 		forvalues i = 1 / `lcolsN' {
 			local leftLB`i' : word `i' of `llablist'
+			local fmtlen    : word `i' of `lfmtlist'
 			
 			gen long `strlen' = length(`leftLB`i'')
 			summ `strlen' if `touse', meanonly
 			local maxlen = r(max)		// max length of existing text
 
-			getWidth `leftLB`i'' `strwid'
-			summ `strwid' if `touse', meanonly
-			local maxwid = r(max)		// max width of existing text
-				
-			local fmtlen : word `i' of `lfmtlist'
-			local leftWD`i' = cond(abs(`fmtlen') <= `maxlen', `maxwid', ///		// exact width of `maxlen' string
-				abs(`fmtlen')*`digitwid')										// approx. max width (based on `digitwid')
-
-
 			// Apr 2020
 			** DOUBLE LINE OPTION
 			if `"`double'"'!=`""' {
 			    forvalues j = 1 / `maxid' {
-					summ `id' in `j', meanonly
-					local idj = r(min)
-				    local leftLBj = `leftLB`i''[`j']
-					SpreadTitle `"`leftLBj'"', target(`=round(`maxlen'/2)') maxlines(2) notruncate
-					replace `leftLB`i'' = `"`r(title1)'"' if `touse' & `id'==`idj' & !`expand'
-					replace `leftLB`i'' = `"`r(title2)'"' if `touse' & `id'==`idj' & `expand'
-				}
+					summ `_USE' in `j', meanonly
+					if inlist(`r(min)', 1, 2) {
+						summ `id' in `j', meanonly
+						local idj = r(min)
+						local leftLBj = `leftLB`i''[`j']
+						SpreadTitle `"`leftLBj'"', target(`=round(`maxlen'/2)') maxlines(2) notruncate
+						replace `leftLB`i'' = `"`r(title1)'"' if `touse' & `id'==`idj' & !`expand'
+						replace `leftLB`i'' = `"`r(title2)'"' if `touse' & `id'==`idj' & `expand'
+					}
+				}				
+				getWidth `leftLB`i'' `strwid'
+				summ `strwid' if `touse', meanonly
+				local leftWD`i' = r(max)	// exact width of `maxlen' string
 			}
-
+			
+			else {
+				getWidth `leftLB`i'' `strwid'
+				summ `strwid' if `touse', meanonly
+				local maxwid = r(max)		// max width of existing text
+				
+				local leftWD`i' = cond(abs(`fmtlen') <= `maxlen', `maxwid', ///		// exact width of `maxlen' string
+					abs(`fmtlen')*`digitwid')										// approx. max width (based on `digitwid')
+			}
+			
 			
 			** Check whether title string is longer than the data itself
 			// If so, potentially allow spread over a suitable number of lines
@@ -2297,7 +2316,10 @@ program define ProcessColumns, rclass
 
 				if `target' <= 0 | missing(`target') {
 					if `maxwidth' local target_opt = `maxwidth'
-					else local target_opt = max(abs(`fmtlen'), `maxlen')
+					else if "`double'"=="" {
+						local target_opt = max(abs(`fmtlen'), `maxlen')
+					}
+					else local target_opt = `maxlen'
 				}
 				local maxwidth_opt = cond(`maxwidth', `maxwidth', `=2*`target_opt'')
 				SpreadTitle `"`colName'"', target(`target_opt') maxwidth(`maxwidth_opt') maxlines(`maxlines') `truncate'
@@ -2340,33 +2362,46 @@ program define ProcessColumns, rclass
 		local rightWDtot = 0
 		forvalues i=1/`rcolsN' {		// if `rcolsN'==0, loop will be skipped
 			local rightLB`i' : word `i' of `rlablist'
+			local fmtlen     : word `i' of `rfmtlist'
 
 			gen long `strlen' = length(`rightLB`i'')
 			summ `strlen' if `touse', meanonly
 			local maxlen = r(max)		// max length of existing text
 
-			getWidth `rightLB`i'' `strwid'
-			summ `strwid' if `touse', meanonly		
-			local maxwid = r(max)		// max width of existing text
-
-			local fmtlen : word `i' of `rfmtlist'
-			local rightWD`i' = cond(abs(`fmtlen') <= `maxlen', `maxwid', ///	// exact width of `maxlen' string
-				abs(`fmtlen')*`digitwid')										// approx. max width (based on `digitwid')
-
-
 			// Apr 2020
 			** DOUBLE LINE OPTION
 			if `"`double'"'!=`""' {
 			    forvalues j = 1 / `maxid' {
-					summ `id' in `j', meanonly
-					local idj = r(min)
-				    local rightLBj = `rightLB`i''[`j']
-					SpreadTitle `"`rightLBj'"', target(`=round(`maxlen'/2)') maxlines(2) notruncate
-					replace `rightLB`i'' = `"`r(title1)'"' if `id'==`idj' & !`expand'
-					replace `rightLB`i'' = `"`r(title2)'"' if `id'==`idj' & `expand'
+					summ `_USE' in `j', meanonly
+					if inlist(`r(min)', 1, 2) {
+						summ `id' in `j', meanonly
+						local idj = r(min)
+						local rightLBj = `rightLB`i''[`j']
+						
+						if `"`rightLB`i''"'!=`"`_EFFECT'"' {
+							SpreadTitle `"`rightLBj'"', target(`=round(`maxlen'/2)') maxlines(2) notruncate
+							replace `rightLB`i'' = `"`r(title1)'"' if `id'==`idj' & !`expand'
+							replace `rightLB`i'' = `"`r(title2)'"' if `id'==`idj' & `expand'
+						}
+						else {		// Oct 2020: if _EFFECT, simply blank out the duplicated second line
+							replace `rightLB`i'' = `""' if `id'==`idj' & `expand'							
+						}
+					}
 				}
+				getWidth `rightLB`i'' `strwid'
+				summ `strwid' if `touse', meanonly		
+				local rightWD`i' = r(max)	// exact width of `maxlen' string
 			}
+			
+			else {
+				getWidth `rightLB`i'' `strwid'
+				summ `strwid' if `touse', meanonly		
+				local maxwid = r(max)		// max width of existing text
 
+				local rightWD`i' = cond(abs(`fmtlen') <= `maxlen', `maxwid', ///	// exact width of `maxlen' string
+					abs(`fmtlen')*`digitwid')										// approx. max width (based on `digitwid')
+			}
+			
 			
 			** Check whether title string is longer than the data itself
 			// If so, spread it over a suitable number of lines
@@ -2386,7 +2421,10 @@ program define ProcessColumns, rclass
 			
 				if `target' <= 0 | missing(`target') {
 					if `maxwidth' local target_opt = `maxwidth'
-					else local target_opt = max(abs(`fmtlen'), `maxlen')
+					else if "`double'"=="" {
+						local target_opt = max(abs(`fmtlen'), `maxlen')
+					}
+					else local target_opt = `maxlen'
 				}
 				local maxwidth_opt = cond(`maxwidth', `maxwidth', `=2*`target_opt'')
 				SpreadTitle `"`colName'"', target(`target_opt') maxwidth(`maxwidth_opt') maxlines(`maxlines') `truncate'
@@ -2486,6 +2524,7 @@ program define ProcessColumns, rclass
 			// Re-calculate widths of `lcols' for study estimates only (i.e. _USE==1, 2; this is `leftWD`i'NoTi')
 			local lastcol = 1
 			forvalues i=1/`lcolsN' {
+				local fmtlen : word `i' of `lfmtlist'	// desired max no. of characters based on format -- also shows whether left- or right-justified
 
 				tempvar lindent`i'NoTi					// for right-justifying text (study-name rows only)
 				gen `lindent`i'NoTi' = `lindent`i''			
@@ -2508,10 +2547,11 @@ program define ProcessColumns, rclass
 					summ `strwid' if `touse' & (inlist(`_USE', 1, 2) | (`i'<`lcolsN' & `_USE'==9)), meanonly
 					local maxwid = r(max)				// max width of text for study estimates only
 					
-					local fmtlen : word `i' of `lfmtlist'	// desired max no. of characters based on format -- also shows whether left- or right-justified
-					local leftWD`i'NoTi = cond(abs(`fmtlen') <= `maxlen', `maxwid', ///		// exact width of `maxlen' string
-						abs(`fmtlen')*`digitwid')											// approx. max width (based on `digitwid')
-					
+					if "`double'"!="" local leftWD`i'NoTi = `maxwid'
+					else {
+						local leftWD`i'NoTi = cond(abs(`fmtlen') <= `maxlen', `maxwid', ///		// exact width of `maxlen' string
+							abs(`fmtlen')*`digitwid')											// approx. max width (based on `digitwid')
+					}
 					replace `lindent`i'NoTi' = cond(`fmtlen'>0, `leftWD`i'NoTi' - `strwid', 0)	// indent if right-justified
 					drop `strwid'
 				}
@@ -3151,7 +3191,7 @@ program define GetAspectRatio, rclass
 		}
 	}
 	return local graphopts `"`graphopts' `noteopt'"'
-
+	
 	
 	* Return scalars
 	return scalar xsize = cond(`xsize'==-9, 5.5, `xsize')		// [added 2nd Nov for v2.2 beta]

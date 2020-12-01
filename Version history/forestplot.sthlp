@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.7 (beta)  David Fisher  10jul2020}{...}
+{* *! version 3.8  David Fisher  19oct2020}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "metani" "help metani"}{...}
@@ -396,8 +396,9 @@ These options specify sub-options for individual components making up the forest
 each of which is drawn using a separate {help twoway} command.
 Any sub-options associated with a particular {help twoway} command may be used,
 unless they would conflict with the appearance of the graph as a whole.
-For example, confidence intervals are plotted using the {help twoway_rspike} command, so {it:{help line_options}} may be used,
+For example, confidence intervals are plotted using the {help twoway_rspike:twoway rspike} command, so {it:{help line_options}} may be used,
 but not {opt horizontal} or {opt vertical}.
+As with any Stata {help twoway} command, default plot options will be taken from the current graph {help schemes:scheme}.
 
 {phang2}
 {cmd:boxopts(}{it:{help marker_options}}{cmd:)} and {cmd:box}{it:#}{cmd:opts(}{it:{help marker_options}}{cmd:)}
@@ -422,7 +423,7 @@ For {cmd:oline}{it:#}{cmd:opts()} to take effect, {it:#} must be the value taken
 at the observation corresponding to the relevant pooled effect.
 
 {pmore2}
-Note: If the pooled effect itself is {ul:not} plotted, e.g. for an "influence" meta-analysis (see {opt ocilineopts()}),
+Note: If the pooled effect itself is {ul:not} plotted, e.g. for an {opt influence} meta-analysis (see {opt ocilineopts()}),
 {it:#} must be the value taken by {opt plotid} at the observation where the overall effect line begins.
 
 {phang2}
@@ -515,11 +516,6 @@ Similarly, automated {it:x}-axis labelling is improved, so that {opt xlabel()} m
 Options {opt xlabel()} and {opt xtick()} now expect a standard Stata {help numlist}, with {opt force} as a sub-option.
 The older syntax using comma-separated lists, with {opt force} as a stand-alone option, continues to be supported;
 but a message will be printed to the Results Window as a reminder that the documented syntax has changed.
-
-{phang2}
-This version of {cmd:forestplot} does not automatically present a p-value for heterogeneity on the forest plot,
-so as to avoid confusion with significance tests of overall effect.
-This can be changed using the {bf:{help metan}} option {opt hetinfo()}.
 
 {phang2}
 If the {cmd:metan} option {opt counts} is used, the resulting columns will appear on the left-hand side of the plot,
@@ -645,21 +641,33 @@ and that {bf:_WT} also needs to be included to maintain the default ordering of 
 {cmd}{...}
 {* example_start - forestplot_ex5}{...}
 {phang2}
-. preserve{p_end}
+. use http://fmwww.bc.edu/repec/bocode/m/metan_example_data, clear{p_end}
 {phang2}
-. metan tdeath tnodeath cdeath cnodeath, rd random lcols(id) counts nograph clear{p_end}
+. metan tdeath tnodeath cdeath cnodeath, rd random rfdist lcols(id) counts nograph clear{p_end}
 {phang2}
 . replace _EFFECT = "p=0.261" if _USE==4{p_end}
 {phang2}
 . forestplot, useopts nostats nowt rcols(_EFFECT _WT) diamopt(fcolor("0 0 100")){* ///}{p_end}
 {p 16 20 2}
 xlabel(-.25 0 .25) cirange(-.35 .35) range(-.5 .5){p_end}
-{phang2}
-. restore{p_end}
 {* example_end}{...}
 {txt}{...}
 {pmore}
-{it:({stata metan_hlp_run forestplot_ex5 using forestplot.sthlp, restpresnot:click to run})}{p_end}
+{it:({stata metan_hlp_run forestplot_ex5 using forestplot.sthlp, restnot:click to run})}{p_end}
+
+{pstd}
+We may also use line or area options to demonstrate the width of confidence and/or predictive intervals
+compared to the individual study data.
+The option {opt hide} is used to suppress the pooled-effect diamond, as it is now redundant:
+
+{cmd}{...}
+{* example_start - forestplot_ex5a}{...}
+{phang2}
+. forestplot, useopts ocilineopts(color(gs8) hide) rfcilineopts(color(gs12)) classic{p_end}
+{* example_end}{...}
+{txt}{...}
+{pmore}
+{it:({stata metan_hlp_run forestplot_ex5a using forestplot.sthlp, restpresnot:click to run})}{p_end}
 
 
 {pstd}
