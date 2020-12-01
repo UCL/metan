@@ -1,5 +1,7 @@
 * Program to generate forestplots -- used by ipdmetan etc. but can also be run by itself
-*! version 1.0  David Fisher  31jan2014
+* version 1.0  David Fisher  31jan2014
+*! version 1.01  David Fisher  07feb2014
+* Reason: fixed bug - random-effects note being overlaid on x-axis labels
 
 * April 2013
 *   Forked from main ipdmetan code
@@ -1147,12 +1149,8 @@ if `"`pplvals'"'!=`""' {
 
 * Note for random-effects analyses
 if `"`renote'"'!=`""' {
-	summ `id', meanonly
-	local noteposy = r(min) - 1.5 		// ypos for note is 1.5 lines below last obs
-	summ `left1', meanonly
-	local noteposx = r(mean) 			// xpos is middle of left-hand-side (but text will be left-justified in scatter)
-	local notelab `"NOTE: Weights are from `renote' analysis"'
-	local notecmd `"text(`noteposy' `noteposx' "`notelab'", placement(3) size(`textSize'))"'
+	local notelab `"NOTE: Weights are from `renote'"'
+	local notecmd `"note("`notelab'", size(`=`textSize'*.75'))"'	// use 75% of text size used for rest of plot
 }
 
 // DF: modified to use added line approach instead of pcspike (less complex & poss. more efficient as fewer vars)

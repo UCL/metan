@@ -34,7 +34,9 @@
 * September 2013
 *   Following UK Stata Users Meeting, reworked the plotid() option as recommended by Vince Wiggins
 
-*! version 1.0  David Fisher  31jan2014
+* version 1.0  David Fisher  31jan2014
+*! version 1.01  David Fisher  07feb2014
+* Reason: fixed bug - Mata main routine contained mm_root, so failed at compile even if mm_root wasn't actually called/needed
 
 
 program ipdmetan, rclass sortpreserve
@@ -540,7 +542,7 @@ program ipdmetan, rclass sortpreserve
 		* Test to see if subgroup variable varies within studies/trials; if it does, exit with error
 		if `"`ipdover'"'==`""' & `"`cmdname'"'!=`""' {
 			qui tab `overh' if `stouse', m
-			if `r(r)' != `ns' {					// N.B. `ns' is already stratified by `by'
+			if r(r) != `ns' {					// N.B. `ns' is already stratified by `by'
 				disp as err "Data is not suitable for meta-analysis"
 				disp as err " as subgroup variable (in option 'by') is not constant within trials."
 				disp as err "Use alternative command 'ipdover' if appropriate."
@@ -559,7 +561,7 @@ program ipdmetan, rclass sortpreserve
 				drop `tempgp'
 				
 				qui tab `overh' if `stouse', m
-				if `r(r)' != `ntg' {
+				if r(r) != `ntg' {
 					disp as err "plotid: variable `plotvar' is not constant within trials"
 					exit 198
 				}
@@ -625,7 +627,7 @@ program ipdmetan, rclass sortpreserve
 	if `"`ad'"'!=`""' {
 		if `"`byIPD'"'!=`""' {
 			summ `byIPD' if `touse', meanonly
-			local bymax = `r(max)'
+			local bymax = r(max)
 			local bymaxopt `"bymax(`bymax')"'
 		}
 		summ `study' if `touse', meanonly
@@ -807,7 +809,7 @@ program ipdmetan, rclass sortpreserve
 					local coleqi : word `i' of `coleq'
 
 					_ms_parse_parts `colnai'
-					if `r(omit)'==0 {
+					if !r(omit) {
 					
 						* If estvar already exists, check for conflicts with subsequent coeffs
 						* (cannot currently check for difference between, e.g. "arm" and "1.arm"
@@ -851,7 +853,7 @@ program ipdmetan, rclass sortpreserve
 							local estvar `colnai'
 							local estvareq `coleqi'							
 						}		// end else
-					}		// end if `r(omit)'==0
+					}		// end if !r(omit)
 				}		// end foreach x of local colnames 
 
 				if `"`estvar'"'==`""' {
@@ -1375,7 +1377,7 @@ program ipdmetan, rclass sortpreserve
 				qui replace `touse' = `touse'*(_OVER==`j')
 			}
 		
-			cap mata: GetEstimates("`touse'", "sgwt", "`reModel'", `maxtausq', `itol', `maxiter', `quadpts', `level')
+			nois mata: GetEstimates("`touse'", "sgwt", "`reModel'", `maxtausq', `itol', `maxiter', `quadpts', `level')
 			if _rc>=3000 {
 				disp as err "Mata error"
 				exit _rc
@@ -1388,15 +1390,15 @@ program ipdmetan, rclass sortpreserve
 					* Store scalars
 					foreach x in mu_hat se_mu_hat Q K tausq sigmasq {
 						tempname `x'`i'
-						scalar ``x'`i'' = `r(`x')'
+						scalar ``x'`i'' = r(`x')
 					}
 					tempname tstat`i'
 					scalar `tstat`i'' = `mu_hat`i''/`se_mu_hat`i''
 					tempname Qr`i' Isq`i'
 					if `"`r(Qr)'"'!=`""' {
-						scalar `Qr`i'' = `r(Qr)'
+						scalar `Qr`i'' = r(Qr)
 					}
-					else scalar `Qr`i'' = `r(Q)' 
+					else scalar `Qr`i'' = r(Q)
 					scalar `Isq`i''=`tausq`i''/(`tausq`i''+`sigmasq`i'')	// General formula for Isq (including D+L)
 					scalar `Qsum' = `Qsum' + `Q`i''
 
@@ -1407,8 +1409,8 @@ program ipdmetan, rclass sortpreserve
 						if "`t'"!="" {
 							scalar `tstat`i'' = `tstat`i''*sqrt((`K`i''-1)/`Qr`i'')		// t correction
 						}
-						qui replace _LCI = `r(mu_hat_lci)' if _USE==3 & _BY==`byi'
-						qui replace _UCI = `r(mu_hat_uci)' if _USE==3 & _BY==`byi'
+						qui replace _LCI = r(mu_hat_lci) if _USE==3 & _BY==`byi'
+						qui replace _UCI = r(mu_hat_uci) if _USE==3 & _BY==`byi'
 					}
 					else if "`t'"!="" {
 						scalar `tstat`i'' = `tstat`i''*sqrt((`K`i''-1)/`Qr`i'')		// t correction
@@ -1427,8 +1429,8 @@ program ipdmetan, rclass sortpreserve
 						summ _NN if `touse', meanonly
 						cap assert `r(N)'==`=`K`i'''
 						if !_rc {
-							scalar `totnpts`i'' = `r(sum)'
-							qui replace _NN = `r(sum)' if _USE==3 & _BY==`byi'
+							scalar `totnpts`i'' = r(sum)
+							qui replace _NN = r(sum) if _USE==3 & _BY==`byi'
 						}
 						else scalar `totnpts`i'' = .
 					}
@@ -1458,12 +1460,12 @@ program ipdmetan, rclass sortpreserve
 	}
 	else {
 		qui gen `touse' = (_USE==1)
-		cap mata: GetEstimates("`touse'", "ovwt", "`reModel'", `maxtausq', `itol', `maxiter', `quadpts', `level')
+		nois mata: GetEstimates("`touse'", "ovwt", "`reModel'", `maxtausq', `itol', `maxiter', `quadpts', `level')
 		if _rc>=3000 {
 			disp as err "Mata error"
 			exit _rc
 		}
-		scalar `K' = `r(K)'
+		scalar `K' = r(K)
 		
 		* Overall results for ipdmetan (already done for ipdover)
 		if `"`ipdover'"'==`""' {
@@ -1471,8 +1473,9 @@ program ipdmetan, rclass sortpreserve
 			* Store scalars
 			foreach x in mu_hat se_mu_hat Q Qr /*K*/ sigmasq {
 				tempname `x'
-				scalar ``x'' = `r(`x')'
+				scalar ``x'' = r(`x')
 			}
+			
 			tempname tstat
 			scalar `tstat' = `mu_hat'/`se_mu_hat'
 			scalar `Qdiff' = `Q' - `Qsum'		// tempname already defined, set to zero as default (line 1333)
@@ -1485,8 +1488,8 @@ program ipdmetan, rclass sortpreserve
 					scalar `tstat' = `tstat'*sqrt((`K'-1)/`Qr')		// t correction	
 				}
 				tempname mu_hat_lci mu_hat_uci
-				scalar `mu_hat_lci' = `r(mu_hat_lci)'
-				scalar `mu_hat_uci' = `r(mu_hat_uci)'
+				scalar `mu_hat_lci' = r(mu_hat_lci)
+				scalar `mu_hat_uci' = r(mu_hat_uci)
 				qui replace _LCI = `mu_hat_lci' if _USE==5
 				qui replace _UCI = `mu_hat_uci' if _USE==5
 			}
@@ -1503,7 +1506,7 @@ program ipdmetan, rclass sortpreserve
 		
 			* Heterogeneity stats
 			tempname tausq HsqM Isq
-			scalar `tausq' = `r(tausq)'
+			scalar `tausq' = r(tausq)
 			scalar `Isq'=`tausq'/(`tausq'+`sigmasq')	// General formula for Isq (including D+L)
 			scalar `HsqM'=`tausq'/`sigmasq'				// General formula for HsqM (including D+L)	
 			
@@ -1517,8 +1520,8 @@ program ipdmetan, rclass sortpreserve
 			
 			if inlist(`"`reModel'"', "gq", "bs", "ml", "pl", "reml") {		// confidence limits for tausq, Isq and Hsq
 				tempname tausq_lci tausq_uci HsqM_lci HsqM_uci Isq_lci Isq_uci
-				scalar `tausq_lci' = `r(tausq_lci)'
-				scalar `tausq_uci' = `r(tausq_uci)'
+				scalar `tausq_lci' = r(tausq_lci)
+				scalar `tausq_uci' = r(tausq_uci)
 				
 				scalar `HsqM_lci'=`tausq_lci'/`sigmasq'
 				scalar `HsqM_uci'=`tausq_uci'/`sigmasq'
@@ -1527,29 +1530,29 @@ program ipdmetan, rclass sortpreserve
 				scalar `Isq_uci'=`tausq_uci'/(`tausq_uci'+`sigmasq')
 				
 				if `"`overall'"'==`""' {
-					local rc_tausq = `r(rc_tausq)'
-					local rc_tausq_lci = `r(rc_tausq_lci)'
-					local rc_tausq_uci = `r(rc_tausq_uci)'
-					return scalar rc_tausq=`rc_tausq'					// whether tausq point estimate converged
-					return scalar rc_tausq_lci=`rc_tausq_lci'			// whether tausq lower confidence limit converged
-					return scalar rc_tausq_uci=`rc_tausq_uci'			// whether tausq upper confidence limit converged
+					local rc_tausq = r(rc_tausq)
+					local rc_tausq_lci = r(rc_tausq_lci)
+					local rc_tausq_uci = r(rc_tausq_uci)
+					return scalar rc_tausq = `rc_tausq'				// whether tausq point estimate converged
+					return scalar rc_tausq_lci = `rc_tausq_lci'		// whether tausq lower confidence limit converged
+					return scalar rc_tausq_uci = `rc_tausq_uci'		// whether tausq upper confidence limit converged
 					
 					return scalar tausq_lci=`tausq_lci'
 					return scalar tausq_uci=`tausq_uci'
 
 					if "`reModel'"=="pl" {
-						local rc_mu_lci = `r(rc_mu_lci)'
-						local rc_mu_uci = `r(rc_mu_uci)'
-						return scalar rc_mu_lci=`rc_mu_lci'				// whether mu_hat lower confidence limit converged
-						return scalar rc_mu_uci=`rc_mu_uci'				// whether mu_hat upper confidence limit converged					
+						local rc_mu_lci = r(rc_mu_lci)
+						local rc_mu_uci = r(rc_mu_uci)
+						return scalar rc_mu_lci = `rc_mu_lci'		// whether mu_hat lower confidence limit converged
+						return scalar rc_mu_uci = `rc_mu_uci'		// whether mu_hat upper confidence limit converged					
 						
-						return scalar mu_hat_lci=`mu_hat_lci'
-						return scalar mu_hat_uci=`mu_hat_uci'					
+						return scalar mu_hat_lci = `mu_hat_lci'
+						return scalar mu_hat_uci = `mu_hat_uci'					
 					}
 					if "`reModel'"=="bs" {
 						tempname tausq_var
-						scalar `tausq_var' = `r(tausq_var)'
-						if `"`overall'"'==`""' return scalar tausq_var=`tausq_var'
+						scalar `tausq_var' = r(tausq_var)
+						if `"`overall'"'==`""' return scalar tausq_var = `tausq_var'
 					}
 				}
 			}
@@ -1563,8 +1566,8 @@ program ipdmetan, rclass sortpreserve
 		summ _NN if _USE==1, meanonly
 		cap assert `r(N)'==`=`K''
 		if !_rc {
-			scalar `totnpts' = `r(sum)'
-			qui replace _NN = `r(sum)' if _USE==5
+			scalar `totnpts' = r(sum)
+			qui replace _NN = r(sum) if _USE==5
 		}
 	}
 	
@@ -1576,7 +1579,7 @@ program ipdmetan, rclass sortpreserve
 			local byi : word `i' of `bylist'
 			qui replace sgwt = 1 if _USE==3 & _BY==`byi'			// "subgroup weight" total (100%)
 			summ ovwt if _BY==`byi', meanonly
-			qui replace ovwt = `r(sum)' if _USE==3 & _BY==`byi'		// subgroup-specific "overall weight" totals
+			qui replace ovwt = r(sum) if _USE==3 & _BY==`byi'		// subgroup-specific "overall weight" totals
 		}
 	}
 	drop `=cond(`"`_by'"'!=`""' & `"`overall'"'!=`""' & `"`subgroup'"'==`""', "ovwt", "sgwt")'
@@ -1652,19 +1655,19 @@ program ipdmetan, rclass sortpreserve
 		if `"`byad'"'==`""' {
 			tempname KIPD totnptsIPD
 			qui count if inlist(_USE, 1, 2) & _SOURCE==1
-			scalar `KIPD' = `r(N)'
-			if `r(N)' {
+			scalar `KIPD' = r(N)
+			if r(N) {
 				summ _NN if inlist(_USE, 1, 2) & _SOURCE==1, meanonly
-				scalar `totnptsIPD' = cond(`r(N)', `r(sum)', .)			// if KIPD>0 but no _NN, set to missing
+				scalar `totnptsIPD' = cond(r(N), r(sum), .)			// if KIPD>0 but no _NN, set to missing
 			}
 			else scalar `totnptsIPD' = 0
 
 			tempname KAD totnptsAD
 			qui count if inlist(_USE, 1, 2) & _SOURCE==2
-			scalar `KAD' = `r(N)'
-			if `r(N)' {
+			scalar `KAD' = r(N)
+			if r(N) {
 				summ _NN if inlist(_USE, 1, 2) & _SOURCE==2, meanonly
-				scalar `totnptsAD' = cond(`r(N)', `r(sum)', .)			// if KAD>0 but no _NN, set to missing
+				scalar `totnptsAD' = cond(r(N), r(sum), .)			// if KAD>0 but no _NN, set to missing
 			}
 			else scalar `totnptsAD' = 0
 		}
@@ -2545,7 +2548,7 @@ prog define ProcessAD, rclass
 	* `byad' ==> no subgroups in IPD ==> `pfile' has _BY=1.  Check that this doesn't conflict if `"`byad'"'==`"temp"'
 	if `"`byad'"' == `"temp"' {
 		qui count if _BY == 1
-		if `r(N)' {
+		if r(N) {
 			qui summ _BY, meanonly
 			qui replace _BY = _BY + 2 - `r(min)' if !missing(_BY)		// temporarily shift non-missing values
 		}
@@ -2584,12 +2587,12 @@ program DrawTable
 	* If a single line must be more than 32 chars, truncate and stop
 	local line = 1
 	TitleSpread `"`stitle'"', width(`uselen')
-	local sline = `r(k)'
+	local sline = r(k)
 	forvalues i=1/`sline' {
 		local stitle`i' `"`r(title`i')'"'
 	}
 	TitleSpread `"`etitle'"', width(10)
-	local eline = `r(k)'
+	local eline = r(k)
 	local diff = `eline' - `sline'
 	if `diff'<=0 {
 		forvalues i=1/`sline' {
@@ -2640,7 +2643,7 @@ program DrawTable
 			di as text substr(`"`bytext'"', 1, `=`uselen'-1') + "{col `=`uselen'+1'}{c |}"
 
 			summ _ES if _BY==`byi' & _USE==1, meanonly
-			local K`i' = `r(N)'
+			local K`i' = r(N)
 		}
 		if "`eform'"!=`""' local xexp `"exp"'
 
@@ -2660,7 +2663,7 @@ program DrawTable
 				di as text substr(`"`varlab`h''"', 1, `=`uselen'-1') "{col `=`uselen'+1'}{c |}`nodata'"
 				local nodata	// clear macro
 			}
-			if `r(N)' {
+			if r(N) {
 				local min=r(min)
 				local max=r(max)
 				forvalues k=`min'/`max' {
@@ -2728,7 +2731,7 @@ program DrawTable
 		di as text "{hline `uselen'}{c +}{hline 45}"
 
 		summ `sortby' if _USE==1, meanonly
-		local K = `r(N)'
+		local K = r(N)
 		local df = `K' - 1
 	
 		summ `sortby' if _USE==5, meanonly
@@ -2937,16 +2940,17 @@ end
 * Mata subroutines *
 ********************
 
+mata:
 
 /* Meta-analysis pooling and heterogeneity statistics */
-* References:
-* Mittlboeck & Heinzl, Stat. Med. 2006; 25: 4321–33 "A simulation study comparing properties of heterogeneity measures in meta-analyses"
-* Higgins & Thompson, Stat. Med. 2002; 21: 1539–58 "Quantifying heterogeneity in a meta-analysis"
-mata:
-void GetEstimates(string scalar touse, string scalar wtvec, string scalar model, real scalar maxtausq, real scalar itol, real scalar maxiter, real scalar quadpts, real scalar level)
+/* References: */
+/* Mittlboeck & Heinzl, Stat. Med. 2006; 25: 4321–33 "A simulation study comparing properties of heterogeneity measures in meta-analyses" */
+/* Higgins & Thompson, Stat. Med. 2002; 21: 1539–58 "Quantifying heterogeneity in a meta-analysis" */
+void GetEstimates(string scalar touse, string scalar wtvec, string scalar model,
+	real scalar maxtausq, real scalar itol, real scalar maxiter, real scalar quadpts, real scalar level)
 {
 	real colvector yi, se, vi, wi
-	real scalar k, alpha, mu_hat, se_mu_hat, Q, Qr, c, sigmasq, tausq_m, tausq_dl, tausq
+	real scalar k, mu_hat, se_mu_hat, Q, Qr, c, sigmasq, tausq_m, tausq_dl, tausq
 
 	st_view(yi=., ., "_ES", touse)
 	if(length(yi)==0) {
@@ -2956,24 +2960,24 @@ void GetEstimates(string scalar touse, string scalar wtvec, string scalar model,
 	vi=se:^2
 	wi=1:/vi
 	k=length(yi)
-	alpha=(100-level)/100
-	
+
 	mu_hat = mean(yi, wi)					// fixed-effects estimate
 	se_mu_hat = 1/sqrt(sum(wi))				// SE of fixed-effects estimate
 	Q = crossdev(yi, mu_hat, wi, yi, mu_hat)	// standard Q statistic
 	Qr = Q									// "random-effects" Q statistic
 	c = sum(wi) - mean(wi,wi)				// c = S1 - (S2/S1)
 	sigmasq = (k-1)/c						// "typical" within-study variance (cf Mittlboeck, Bowden)
-	
+	st_numscalar("r(Q)", Q)
+	st_numscalar("r(K)", k)
+	st_numscalar("r(sigmasq)", sigmasq)
+
 	/* Initialise tau-squared */
-	tausq_m = (Q-(k-1))/c							// untruncated DerSimonian & Laird estimator
+	tausq_m = (Q-(k-1))/c					// untruncated DerSimonian & Laird estimator
 	tausq_dl = max((0, tausq_m))
 	
 	/* Run models */
-	real scalar rc_tausq, rc_tausq_lb, rc_tausq_ub, tausq_lci, tausq_uci, tausq_var, Q_crit_hi, Q_crit_lo, Q_var, d, crit
-
 	if (model=="fe" | model=="dl") {
-		tausq = tausq_dl
+		st_numscalar("r(tausq)", tausq_dl)
 	}
 	
 	else if (model=="vc" | model=="sj") {		// "variance component" aka Cochran ANOVA-type estimator
@@ -2982,119 +2986,26 @@ void GetEstimates(string scalar touse, string scalar wtvec, string scalar model,
 		mu_hat = mean(yi, wi)
 		se_mu_hat = 1/sqrt(sum(wi))
 		Qr = crossdev(yi, mu_hat, wi, yi, mu_hat)
-		
-		if (model=="sj") {					// Sidik & Jonkman, with Cochran tausq as initial estimate
+		if (model=="sj") {						// Sidik & Jonkman, with Cochran tausq as initial estimate
 			tausq = tausq * Qr / (k-1)
 		}
+		st_numscalar("r(tausq)", tausq)
 	}
 	
 	else if (model=="gq") {
-		// Mandel/Paule method (J Res Natl Bur Stand 1982; 87: 377–85)
-		// Generalised Q point estimate (e.g. DerSimonian & Kacker, Contemporary Clinical Trials 2007; 28: 105-114)
-		// extension to CI by Viechtbauer (Stat Med 2007; 26: 37–52)
-		// ... can be shown to be equivalent to the "empirical Bayes" estimator
-		// (e.g. Sidik & Jonkman Stat Med 2007; 26: 1964-81)
-		// and converges more quickly
-		rc_tausq = mm_root(tausq=., &Q_crit(), 0, maxtausq, itol, maxiter, yi, vi, k, k-1)
-	
-		Q_crit_hi = invchi2(k-1, 1-(alpha/2))	// higher critical value to compare Q against (for *lower* bound of tausq)
-		Q_crit_lo = invchi2(k-1, alpha/2)		// lower critical value to compare Q against (for *upper* bound of tausq)
-		if (Q<Q_crit_lo) {			// Q falls below the lower critical value
-			rc_tausq_lb = 2
-			rc_tausq_ub = 2
-			tausq_lci = 0
-			tausq_uci = 0
-		}		
-		else {
-			if (Q>Q_crit_hi) {		// Q is larger than the higher critical value, so can find lower bound using mm_root
-				rc_tausq_lb = mm_root(tausq_lci=., &Q_crit(), 0, maxtausq, itol, maxiter, yi, vi, k, Q_crit_hi)
-			}
-			else {
-				rc_tausq_lb = 2
-				tausq_lci = 0			// otherwise, the lower bound for tausq is 0
-			}
-			/* Now find upper bound for tausq using mm_root */
-			rc_tausq_ub = mm_root(tausq_uci=., &Q_crit(), tausq_lci, maxtausq, itol, maxiter, yi, vi, k, Q_crit_lo)
-		}
+		Q_subr(yi, vi, wi, Q, level, maxtausq, itol, maxiter)
 	}
 
 	else if (model=="bs") {
-		// Confidence interval around D&L tau-squared using approximate Gamma distribution for Q
-		// based on paper by Biggerstaff and Tweedie (Stat Med 1997; 16: 753–68)
-		tausq = tausq_dl
-
-		/* Estimate variance of tausq */
-		d = cross(wi,wi) - 2*mean(wi:^2,wi) + (mean(wi,wi)^2)
-		Q_var = 2*(k-1) + 4*c*tausq_m + 2*d*(tausq_m^2)
-		tausq_var = Q_var/(c^2)
-		st_numscalar("r(tausq_var)", tausq_var)
-
-		/* Find confidence limits for tausq */
-		rc_tausq_lb = mm_root(tausq_lci=., &gamma_crit(), 0, maxtausq, itol, maxiter, tausq_m, k, c, d, 1-(alpha/2))
-		rc_tausq_ub = mm_root(tausq_uci=., &gamma_crit(), tausq_lci, maxtausq, itol, maxiter, tausq_m, k, c, d, alpha/2)
-		
-		/* Find weights and standard error for mu_hat */
-		real scalar lambda, r
-		lambda = ((k-1) + c*tausq_m)/(2*(k-1) + 4*c*tausq_m + 2*d*(tausq_m^2))
-		r = ((k-1) + c*tausq_m)*lambda
-		for(i=1; i<=k; i++) {
-			params = (vi[i], lambda, r, c, k)
-			if (i==1) wsi = integrate(&Intgrnd(), 0, ., quadpts, params)
-			else wsi = wsi \ integrate(&Intgrnd(), 0, ., quadpts, params)
-		}
-		
-		wi = wi*gammap(r, lambda*(k-1)) :+ wsi
-		mu_hat = mean(yi, wi)
-		se_mu_hat = sqrt(sum(wi:*wi:*(vi :+ tausq_m)) / (sum(wi)^2))
-		Qr = crossdev(yi, mu_hat, wi, yi, mu_hat)		// "random-effects Q"
+		bs_subr(yi, vi, wi, Q, c, level, maxtausq, itol, maxiter, quadpts, se_mu_hat)
 	}
 
 	else if (model=="ml" | model=="pl") {
-		real scalar ll_ml, wi_ml, mu_hat_ml
-		
-		// Iterative point estimates for tausq and mu_hat using ML
-		rc_tausq = mm_root(tausq=., &ML_est(), 0, maxtausq, itol, maxiter, yi, vi)
-		wi = 1:/(vi:+tausq)
-		mu_hat = mean(yi, wi)
-		se_mu_hat = 1/sqrt(sum(wi))
-		Qr = crossdev(yi, mu_hat, wi, yi, mu_hat)		// "random-effects Q"
-			
-		// Calculate ML log-likelihood value
-		ll_ml = 0.5*sum(ln(wi)) - 0.5*crossdev(yi, mu_hat, wi, yi, mu_hat)
-		crit = ll_ml - (invchi2(1, level/100)/2)
-		
-		// Confidence interval for tausq using likelihood profiling
-		rc_tausq_lb = mm_root(tausq_lci=., &ML_profile_tausq(), 0, tausq, itol, maxiter, yi, vi, crit)
-		rc_tausq_ub = mm_root(tausq_uci=., &ML_profile_tausq(), tausq, maxtausq, itol, maxiter, yi, vi, crit)
-	
-		if (model=="pl") {
-			// Confidence interval for mu_hat using likelihood profiling
-			// (use four times the D+L RE lci and uci for search limits)
-			real scalar wi_dl, mu_hat_dl, llim, ulim, mu_hat_lci, mu_hat_uci, rc_mu_lb, rc_mu_ub
-			wi_dl = 1:/(vi:+tausq_dl)
-			mu_hat_dl = mean(yi, wi)
-			llim = mu_hat_dl - 4*1.96/sqrt(sum(wi_dl))
-			ulim = mu_hat_dl + 4*1.96/sqrt(sum(wi_dl))
-			rc_mu_lb = mm_root(mu_hat_lci=., &ML_profile_mu(), llim, mu_hat_ml, itol, maxiter, yi, vi, crit, maxtausq, itol, maxiter)
-			rc_mu_ub = mm_root(mu_hat_uci=., &ML_profile_mu(), mu_hat_ml, ulim, itol, maxiter, yi, vi, crit, maxtausq, itol, maxiter)
-		}
+		MLPL_subr(yi, vi, wi, tausq_dl, level, maxtausq, itol, maxiter, model)
 	}
 	
 	else if (model=="reml") {
-		real scalar ll_reml, wi_reml, mu_hat_reml
-
-		// Iterative tau-squared using REML
-		rc_tausq = mm_root(tausq=., &REML_est(), 0, maxtausq, itol, maxiter, yi, vi)
-		wi = 1:/(vi:+tausq)
-		mu_hat = mean(yi, wi)
-		se_mu_hat = 1/sqrt(sum(wi))
-		Qr = crossdev(yi, mu_hat_ml, wi_ml, yi, mu_hat_ml)		// "random-effects Q"
-		
-		// Confidence interval using likelihood profiling
-		ll_reml = 0.5*sum(ln(wi)) - 0.5*ln(sum(wi)) - 0.5*crossdev(yi, mu_hat, wi, yi, mu_hat)
-		crit = ll_reml - (invchi2(1, level/100)/2)
-		rc_tausq_lb = mm_root(tausq_lci=., &REML_profile(), 0, tausq, itol, maxiter, yi, vi, crit)
-		rc_tausq_ub = mm_root(tausq_uci=., &REML_profile(), tausq, maxtausq, itol, maxiter, yi, vi, crit)
+		REML_subr(yi, vi, wi, level, maxtausq, itol, maxiter)
 	}
 	
 	else {
@@ -3102,48 +3013,179 @@ void GetEstimates(string scalar touse, string scalar wtvec, string scalar model,
 	}
 
 	/* Calculate final results if not done yet */
-	if (model=="dl" | model=="sj" | model=="gq") {
-		wi=1:/(vi:+tausq)
+	if (model!="vc" & model!="sj") {
 		mu_hat=mean(yi, wi)							// random-effects estimate
-		se_mu_hat=1/sqrt(sum(wi))					// SE of random-effects estimate
+		if (model!="bs") {							// SE of random-effects estimate
+			se_mu_hat=1/sqrt(sum(wi))				// (defined differently for BS model)
+		}
 		Qr = crossdev(yi, mu_hat, wi, yi, mu_hat)	// "random-effects Q"
 	}
-	
-	/* Output matrix plus weights, and summary stats */
-	/* wi=editmissing(wi,0)*/				// replace missing weights with zeroes (for matrix manipulation in Stata)
-	wi=wi/sum(wi)						// normalise weights
-
-	st_store(st_viewobs(yi), wtvec, wi)	// store weights
 	st_numscalar("r(mu_hat)", mu_hat)
 	st_numscalar("r(se_mu_hat)", se_mu_hat)
-	st_numscalar("r(Q)", Q)
 	st_numscalar("r(Qr)", Qr)	
-	st_numscalar("r(K)", k)
+
+	/* Output matrix plus weights, and summary stats */
+	wi=wi/sum(wi)							// normalise weights
+	st_store(st_viewobs(yi), wtvec, wi)		// store weights
+
+}
+
+
+/* *** Subroutines for iterative models *** */
+
+void Q_subr(real colvector yi, real colvector vi, real colvector wi, real scalar Q,
+	real scalar level, real scalar maxtausq, real scalar itol, real scalar maxiter)
+{
+	// Mandel/Paule method (J Res Natl Bur Stand 1982; 87: 377–85)
+	// Generalised Q point estimate (e.g. DerSimonian & Kacker, Contemporary Clinical Trials 2007; 28: 105-114)
+	// extension to CI by Viechtbauer (Stat Med 2007; 26: 37–52)
+	// ... can be shown to be equivalent to the "empirical Bayes" estimator
+	// (e.g. Sidik & Jonkman Stat Med 2007; 26: 1964-81)
+	// and converges more quickly
+	real scalar k, rc_tausq, tausq
+	k=length(yi)
+	rc_tausq = mm_root(tausq=., &Q_crit(), 0, maxtausq, itol, maxiter, yi, vi, k, k-1)
+	wi = 1:/(vi:+tausq)
 	st_numscalar("r(tausq)", tausq)
-	st_numscalar("r(sigmasq)", sigmasq)
+	st_numscalar("r(rc_tausq)", rc_tausq)
 
-	if (model=="gq" | model=="bs" | model=="ml" | model=="pl" | model=="reml") {
-		st_numscalar("r(rc_tausq)", rc_tausq)
-		st_numscalar("r(tausq_lci)", tausq_lci)
-		st_numscalar("r(tausq_uci)", tausq_uci)
-		st_numscalar("r(rc_tausq_lci)", rc_tausq_lb)
-		st_numscalar("r(rc_tausq_uci)", rc_tausq_ub)
-
-		if (model=="pl") {
-			st_numscalar("r(mu_hat_lci)", mu_hat_lci)
-			st_numscalar("r(mu_hat_uci)", mu_hat_uci)
-			st_numscalar("r(rc_mu_lci)", rc_mu_lb)
-			st_numscalar("r(rc_mu_uci)", rc_mu_ub)
+	real scalar Q_crit_hi, Q_crit_lo, tausq_lci, rc_tausq_lci, tausq_uci, rc_tausq_uci
+	Q_crit_hi = invchi2(k-1, .5 + (level/200))	// higher critical value to compare Q against (for *lower* bound of tausq)
+	Q_crit_lo = invchi2(k-1, .5 - (level/200))	// lower critical value to compare Q against (for *upper* bound of tausq)
+	if (Q<Q_crit_lo) {			// Q falls below the lower critical value
+		rc_tausq_lci = 2
+		rc_tausq_lci = 2
+		tausq_lci = 0
+		tausq_uci = 0
+	}		
+	else {
+		if (Q>Q_crit_hi) {		// Q is larger than the higher critical value, so can find lower bound using mm_root
+			rc_tausq_lci = mm_root(tausq_lci, &Q_crit(), 0, maxtausq, itol, maxiter, yi, vi, k, Q_crit_hi)
 		}
+		else {
+			rc_tausq_lci = 2
+			tausq_lci = 0			// otherwise, the lower bound for tausq is 0
+		}
+		/* Now find upper bound for tausq using mm_root */
+		rc_tausq_uci = mm_root(tausq_uci, &Q_crit(), tausq_lci, maxtausq, itol, maxiter, yi, vi, k, Q_crit_lo)
+	}
+	st_numscalar("r(tausq_lci)", tausq_lci)
+	st_numscalar("r(tausq_uci)", tausq_uci)
+	st_numscalar("r(rc_tausq_lci)", rc_tausq_lci)
+	st_numscalar("r(rc_tausq_uci)", rc_tausq_uci)
+}
+
+
+void bs_subr(real colvector yi, real colvector vi, real colvector wi, real scalar Q, real scalar c,
+	real scalar level, real scalar maxtausq, real scalar itol, real scalar maxiter, real scalar quadpts, real scalar se_mu_hat)
+{
+	// Confidence interval around D&L tau-squared using approximate Gamma distribution for Q
+	// based on paper by Biggerstaff and Tweedie (Stat Med 1997; 16: 753–68)
+
+	/* Estimate variance of tausq */
+	real scalar k, tausq_m, tausq, d, Q_var, tausq_var
+	k = length(yi)
+	tausq_m = (Q-(k-1))/c
+	tausq = max((0, tausq_m))
+	d = cross(wi,wi) - 2*mean(wi:^2,wi) + (mean(wi,wi)^2)
+	Q_var = 2*(k-1) + 4*c*tausq_m + 2*d*(tausq_m^2)
+	tausq_var = Q_var/(c^2)
+	st_numscalar("r(tausq)", tausq)
+	st_numscalar("r(tausq_var)", tausq_var)
+
+	/* Find confidence limits for tausq */
+	real scalar tausq_lci, rc_tausq_lci, tausq_uci, rc_tausq_uci
+	rc_tausq_lci = mm_root(tausq_lci=., &gamma_crit(), 0, maxtausq, itol, maxiter, tausq_m, k, c, d, .5+(level/200))
+	rc_tausq_uci = mm_root(tausq_uci=., &gamma_crit(), tausq_lci, maxtausq, itol, maxiter, tausq_m, k, c, d, .5-(level/200))
+	st_numscalar("r(tausq_lci)", tausq_lci)
+	st_numscalar("r(tausq_uci)", tausq_uci)
+	st_numscalar("r(rc_tausq_lci)", rc_tausq_lci)
+	st_numscalar("r(rc_tausq_uci)", rc_tausq_uci)
+	
+	/* Find weights and standard error for mu_hat */
+	real scalar lambda, r
+	lambda = ((k-1) + c*tausq_m)/(2*(k-1) + 4*c*tausq_m + 2*d*(tausq_m^2))
+	r = ((k-1) + c*tausq_m)*lambda
+	for(i=1; i<=k; i++) {
+		params = (vi[i], lambda, r, c, k)
+		if (i==1) wsi = integrate(&Intgrnd(), 0, ., quadpts, params)
+		else wsi = wsi \ integrate(&Intgrnd(), 0, ., quadpts, params)
+	}
+	wi = wi*gammap(r, lambda*(k-1)) :+ wsi
+	se_mu_hat = sqrt(sum(wi:*wi:*(vi :+ tausq_m)) / (sum(wi)^2))
+}
+
+
+// ML, without or without use of likelihood profiling
+void MLPL_subr(real colvector yi, real colvector vi, real colvector wi, real scalar tausq_dl, 
+	real scalar level, real scalar maxtausq, real scalar itol, real scalar maxiter, string scalar model)
+{
+	// Iterative point estimates for tausq and mu_hat using ML
+	rc_tausq = mm_root(tausq=., &ML_est(), 0, maxtausq, itol, maxiter, yi, vi)
+	st_numscalar("r(tausq)", tausq)
+	st_numscalar("r(rc_tausq)", rc_tausq)
+
+	// Calculate ML log-likelihood value
+	real scalar mu_hat_ml, ll_ml, crit
+	wi = 1:/(vi:+tausq)
+	mu_hat_ml = mean(yi, wi)
+	ll_ml = 0.5*sum(ln(wi)) - 0.5*crossdev(yi, mu_hat_ml, wi, yi, mu_hat_ml)
+	crit = ll_ml - (invchi2(1, level/100)/2)
+
+	// Confidence interval for tausq using likelihood profiling
+	real scalar tausq_lci, rc_tausq_lci, tausq_uci, rc_tausq_uci
+	rc_tausq_lci = mm_root(tausq_lci=., &ML_profile_tausq(), 0, tausq, itol, maxiter, yi, vi, crit)
+	rc_tausq_uci = mm_root(tausq_uci=., &ML_profile_tausq(), tausq, maxtausq, itol, maxiter, yi, vi, crit)
+	st_numscalar("r(tausq_lci)", tausq_lci)
+	st_numscalar("r(tausq_uci)", tausq_uci)
+	st_numscalar("r(rc_tausq_lci)", rc_tausq_lci)
+	st_numscalar("r(rc_tausq_uci)", rc_tausq_uci)
+	
+	if (model=="pl") {
+		// Confidence interval for mu_hat using likelihood profiling
+		// (use four times the D+L RE lci and uci for search limits)
+		real scalar wi_dl, llim
+		wi_dl = 1:/(vi:+tausq_dl)
+		llim = mean(yi, wi_dl) - 4*1.96/sqrt(sum(wi_dl))
+		ulim = mean(yi, wi_dl) + 4*1.96/sqrt(sum(wi_dl))
+		
+		real scalar mu_hat_lci, mu_hat_uci, rc_mu_lci, rc_mu_uci
+		rc_mu_lci = mm_root(mu_hat_lci=., &ML_profile_mu(), llim, mu_hat_ml, itol, maxiter, yi, vi, crit, maxtausq, itol, maxiter)
+		rc_mu_uci = mm_root(mu_hat_uci=., &ML_profile_mu(), mu_hat_ml, ulim, itol, maxiter, yi, vi, crit, maxtausq, itol, maxiter)
+		st_numscalar("r(mu_hat_lci)", mu_hat_lci)
+		st_numscalar("r(mu_hat_uci)", mu_hat_uci)
+		st_numscalar("r(rc_mu_lci)", rc_mu_lci)
+		st_numscalar("r(rc_mu_uci)", rc_mu_uci)
 	}
 }
 
-end
+
+// REML
+void REML_subr(real colvector yi, real colvector vi, real colvector wi, real scalar level, real scalar maxtausq, real scalar itol, real scalar maxiter)
+{
+	// Iterative tau-squared using REML
+	rc_tausq = mm_root(tausq=., &REML_est(), 0, maxtausq, itol, maxiter, yi, vi)
+	st_numscalar("r(tausq)", tausq)
+	st_numscalar("r(rc_tausq)", rc_tausq)
+	
+	// Confidence interval using likelihood profiling
+	real scalar mu_hat_reml, ll_reml
+	wi = 1:/(vi:+tausq)
+	mu_hat_reml = mean(yi, wi)
+	ll_reml = 0.5*sum(ln(wi)) - 0.5*ln(sum(wi)) - 0.5*crossdev(yi, mu_hat_reml, wi, yi, mu_hat_reml)
+	crit = ll_reml - (invchi2(1, level/100)/2)
+	rc_tausq_lci = mm_root(tausq_lci=., &REML_profile(), 0, tausq, itol, maxiter, yi, vi, crit)
+	rc_tausq_uci = mm_root(tausq_uci=., &REML_profile(), tausq, maxtausq, itol, maxiter, yi, vi, crit)
+	st_numscalar("r(tausq_lci)", tausq_lci)
+	st_numscalar("r(tausq_uci)", tausq_uci)
+	st_numscalar("r(rc_tausq_lci)", rc_tausq_lci)
+	st_numscalar("r(rc_tausq_uci)", rc_tausq_uci)
+}
 
 
-*** Iteration functions
 
-mata:
+
+/* *** Iteration functions *** */
 
 /* Generalised Q */
 real scalar Q_crit(real scalar tausq, real colvector yi, real colvector vi, real scalar k, real scalar crit) {
