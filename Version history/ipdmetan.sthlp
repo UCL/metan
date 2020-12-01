@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 2.1  David Fisher  14sep2017}{...}
+{* *! version 3.0  David Fisher  08nov2018}{...}
 {vieweralsosee "admetan" "help admetan"}{...}
 {vieweralsosee "admetani" "help admetani"}{...}
 {vieweralsosee "ipdover" "help ipdover"}{...}
@@ -9,6 +9,8 @@
 {viewerjumpto "Description" "ipdmetan##description"}{...}
 {viewerjumpto "Options" "ipdmetan##options"}{...}
 {viewerjumpto "Saved results" "ipdmetan##saved_results"}{...}
+{viewerjumpto "Examples" "ipdmetan##examples"}{...}
+{viewerjumpto "References" "ipdmetan##references"}{...}
 {title:Title}
 
 {phang}
@@ -78,6 +80,7 @@ combine IPD with aggregate data stored in {it:filename}{p_end}
 {syntab :Forest plots}
 {synopt :{cmdab:lcol:s(}{help ipdmetan##cols_info:{it:cols_info}}{cmd:)} {cmdab:rcol:s(}{help ipdmetan##cols_info:{it:cols_info}}{cmd:)}}
 display (and/or save) columns of additional data{p_end}
+{synopt :{cmd:npts}}display participant numbers in the forest plot{p_end}
 {synopt :{cmd:plotid(}{it:varname}{cmd:|_BYAD} [{cmd:, {ul:l}ist {ul:nogr}aph}]{cmd:)}}
 define groups of observations in which to apply specific plot rendition options{p_end}
 {synopt :{it:{help admetan##fplotopts:admetan_fplotopts}}}other options pertaining to the forest plot as described in {bf:{help admetan}}{p_end}
@@ -168,7 +171,7 @@ which must be either integer-valued or string.
 {opt interaction} (Syntax 1 only) indicates that {it:command} contains one or more interaction effects
 supplied using factor-variable syntax (see {help fvvarlist}),
 and that the first valid interaction effect should be pooled across studies.
-This is intended as a helpful shortcut for performing two-stage "deft" interaction analyses as described in {help ipdmetan#refs:Fisher 2017}.
+This is intended as a helpful shortcut for performing two-stage "deft" interaction analyses as described in {help ipdmetan##references:Fisher 2017}.
 However, it is not foolproof, and the identified coefficient should be checked carefully.
 Alternatively, the desired coefficient to be pooled may be supplied directly using {opt poolvar()}.
 
@@ -197,13 +200,12 @@ but not be presented in the output.
 {opt wgt()} specifies user-defined weights. With Syntax 1, {opt wgt()} expects an expression involving returned statistics.
 For example, to weight on the number of observations, you might specify {bf:wgt(e(N))}.
 With Syntax 2, {opt wgt()} expects a {bf:{help collapse}}-based syntax.
-Hence, again, to weight on the number of observations, you might specify {bf:wgt((sum) cons)} where {bf:cons} is a variable containing 1
-for all observations.
+Hence, again, to weight on the number of observations, you might specify {bf:wgt((sum) cons)} where {bf:cons} is a variable containing 1 for all observations. You should only use this option if you are satisfied that the weights are meaningful.
 
 {pmore}
-Note that the scale of user-defined weights is immaterial, since individual weights are normalised,
-and the variance of the pooled effect is calculated as sum( var({it:y_i}) * {it:wgt_i}^2 ) / sum({it:wgt_i})^2
-where var({it:y_i}) is the variance of the {it:i}th study.
+Note that the scale of user-defined weights is immaterial, since individual weights are normalised.
+Hence, if {opt saving()} option is used, an analysis may be recreated from within the saved dataset
+using the option {cmd:wgt(_WT)}.
 
 
 {dlgtab:Combined IPD/aggregate data analysis}
@@ -275,6 +277,10 @@ To left-justify {ul:all} strings in the forest plot, the {help forestplot##optio
 (Note that the syntax of {opt lcols()} and {opt rcols()} with {bf:{help admetan}} and {bf:{help forestplot}} is as a list of existing variable names only.)
 
 {phang}
+{cmd:npts} requests that participant numbers be displayed in a column to the left of the forest plot.
+This is effectively shorthand for {cmd:lcols(}{it:cols_info_defining_participant_numbers}{cmd:)}.
+
+{phang}
 {cmd:plotid(}{it:varname}{cmd:|_BYAD} [{cmd:, list nograph}]{cmd:)} is really a {bf:{help forestplot}} option, but has a slightly
 extended syntax when supplied to {cmd:ipdmetan}.  {it:varname} may be replaced with {cmd:_BYAD} if the {opt byad} suboption
 is supplied to {opt ad}, since in this case the subgrouping is not defined by an existing variable.
@@ -292,7 +298,7 @@ For further details of this option and the {opt list} and {opt nograph} suboptio
 {p2col 5 25 29 2: Macros}{p_end}
 {synopt:{cmd:r(command)}}Full estimation command-line{p_end}
 {synopt:{cmd:r(cmdname)}}Estimation command name{p_end}
-{synopt:{cmd:r(estvar)}}Name of pooled coefficient{p_end}
+{synopt:{cmd:r(estexp)}}Name of pooled coefficient{p_end}
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Matrices}{p_end}
@@ -308,72 +314,132 @@ N.B. For obvious reasons, {help admetan##saved_results:new variables} {bf:_ES}, 
 They are instead returned within the matrix {cmd:r(coeffs)}.
 
 
+{marker examples}{...}
 {title:Examples}
 
 {pstd}
 Setup
 
+{cmd}{...}
+{* example_start - ipdmetan_setup1}{...}
+{phang2}
+. use "http://fmwww.bc.edu/repec/bocode/i/ipdmetan_example.dta", clear{p_end}
+{phang2}
+. stset tcens, fail(fail){p_end}
+{* example_end}{...}
+{txt}{...}
 {pmore}
-{stata "use http://fmwww.bc.edu/repec/bocode/i/ipdmetan_example.dta":. use http://fmwww.bc.edu/repec/bocode/i/ipdmetan_example.dta}{p_end}
-{pmore}
-{cmd:. stset tcens, fail(fail)}{p_end}
+{it:({stata admetan_hlp_run ipdmetan_setup1 using ipdmetan_beta.sthlp:click to run})}{p_end}
+
 
 {pstd}
 Basic use
 
-{pmore}
-{cmd:. ipdmetan, study(trialid) hr by(region) nograph : stcox trt, strata(sex)}{p_end}
+{phang2}
+{cmd:. {stata "ipdmetan, study(trialid) hr by(region) nograph : stcox trt, strata(sex)"}}{p_end}
+
 
 {pstd}
 Use of {cmd:plotid()}
 
+{cmd}{...}
+{* example_start - ipdmetan_ex2}{...}
+{phang2}
+. ipdmetan, study(trialid) hr by(region) plotid(region){* ///}{p_end}
+{p 16 20 2}
+forest(favours(Favours treatment # Favours control) box1opts(mcolor(red)) ci1opts(lcolor(red) rcap){* ///}{...}
+box2opts(mcolor(blue)) ci2opts(lcolor(blue))){* ///}{p_end}
+{p 16 20 2}
+: stcox trt, strata(sex){p_end}
+{* example_end}{...}
+{txt}{...}
 {pmore}
-{cmd:. ipdmetan, study(trialid) hr by(region) plotid(region) forest(favours(Favours treatment # Favours control) box1opts(mcolor(red)) ci1opts(lcolor(red) rcap)box2opts(mcolor(blue)) ci2opts(lcolor(blue)))}
-{cmd:: stcox trt, strata(sex)}{p_end}
+{it:({stata admetan_hlp_run ipdmetan_ex2 using ipdmetan_beta.sthlp:click to run})}{p_end}
+
 
 {pstd}
 Treatment-covariate interactions
 
+{cmd}{...}
+{* example_start - ipdmetan_ex3}{...}
+{phang2}
+. ipdmetan, study(trialid) interaction hr keepall{* ///}{p_end}
+{p 16 20 2}
+forest(boxsca(200) fp(3){* ///}{p_end}
+{p 16 20 2}
+favours("Favours greater treatment effect" "with higher disease stage"{* ///}{...}
+# "Favours greater treatment effect" "with lower disease stage")){* ///}{p_end}
+{p 16 20 2}
+: stcox trt##c.stage{p_end}
+{* example_end}{...}
+{txt}{...}
 {pmore}
-{cmd:. ipdmetan, study(trialid) interaction hr keepall forest(favours("Favours greater treatment effect" "with higher disease stage" # "Favours greater treatment effect" "with lower disease stage") boxsca(200) fp(3)) : stcox trt##c.stage}
+{it:({stata admetan_hlp_run ipdmetan_ex3 using ipdmetan_beta.sthlp:click to run})}{p_end}
 
-{pstd}
-Random effects: DerSimonian-Laird (default), and with optional Hartung-Knapp-Sidik-Jonkman variance correction
-
-{pmore}
-{cmd:. ipdmetan, study(trialid) hr nograph re : stcox trt, strata(sex)}{p_end}
-{pmore}
-{cmd:. ipdmetan, study(trialid) hr nograph re(hksj) : stcox trt, strata(sex)}
 
 {pstd}
 Aggregate data setup: create aggregate dataset from IPD dataset (for example purposes only)
 
+{cmd}{...}
+{* example_start - ipdmetan_setup2}{...}
+{phang2}
+. qui ipdmetan, study(trialid) hr nograph saving(region2.dta) : stcox trt if region==2, strata(sex){p_end}
+{phang2}
+. clonevar _STUDY = trialid{p_end}
+{* example_end}{...}
+{txt}{...}
 {pmore}
-{cmd:. qui ipdmetan, study(trialid) hr nograph saving(region2.dta) : stcox trt if region==2, strata(sex)}{p_end}
-{pmore}
-{cmd:. clonevar _STUDY = trialid}{p_end}
+{it:({stata admetan_hlp_run ipdmetan_setup2 using ipdmetan_beta.sthlp:click to run})}{p_end}
+
 
 {pstd}
 Including aggregate data in the analysis
 
+{cmd}{...}
+{* example_start - ipdmetan_ex4}{...}
+{phang2}
+. ipdmetan, study(_STUDY) hr ad(region2.dta if _USE==1, vars(_ES _seES) npts(_NN) byad) nooverall{* ///}{p_end}
+{p 16 20 2}
+: stcox trt if region==1, strata(sex){p_end}
+{* example_end}{...}
+{txt}{...}
 {pmore}
-{cmd:. ipdmetan, study(_STUDY) hr ad(region2.dta if _USE==1, vars(_ES _seES) npts(_NN) byad) nooverall}
-{cmd:: stcox trt if region==1, strata(sex)}
+{it:({stata admetan_hlp_run ipdmetan_ex4 using ipdmetan_beta.sthlp:click to run})}{p_end}
+
 
 {pstd}
 Use of non e-class commands and {opt lcols()}: Peto log-rank analysis
 
+{cmd}{...}
+{* example_start - ipdmetan_ex5}{...}
+{phang2}
+. ipdmetan (u[1,1]/V[1,1]) (1/sqrt(V[1,1])), study(trialid) by(region) eform effect(Haz. Ratio){* ///}{p_end}
+{p 16 20 2}
+lcols((u[1,1]) %5.2f "o-E(o)" (V[1,1]) %5.2f "V(o)"){* ///}{p_end}
+{p 16 20 2}
+forest(nostats nowt favours(Favours treatment # Favours control)){* ///}{p_end}
+{p 16 20 2}
+: sts test trt, mat(u V){p_end}
+{* example_end}{...}
+{txt}{...}
 {pmore}
-{cmd:. ipdmetan (u[1,1]/V[1,1]) (1/sqrt(V[1,1])), study(trialid) by(region) eform effect(Haz. Ratio)}
-{cmd:  lcols((u[1,1]) %5.2f "o-E(o)" (V[1,1]) %5.2f "V(o)") forest(nostats nowt favours(Favours treatment # Favours control))}
-{cmd:: sts test trt, mat(u V)}
+{it:({stata admetan_hlp_run ipdmetan_ex5 using ipdmetan_beta.sthlp:click to run})}{p_end}
+
 
 {pstd}
 However, that was just to demonstrate Syntax 1 with a non e-class command.
 The example is a Peto logrank survival analysis, which is much more straightforward using Syntax 2 and the {opt oev} option:
 
+{cmd}{...}
+{* example_start - ipdmetan_ex6}{...}
+{phang2}
+. ipdmetan trt, study(trialid) hr iv oev by(region){* ///}{p_end}
+{p 16 20 2}
+forest(nostats nowt favours(Favours treatment # Favours control)){p_end}
+{* example_end}{...}
+{txt}{...}
 {pmore}
-{cmd:. ipdmetan trt, study(trialid) hr iv oev by(region) forest(nostats nowt favours(Favours treatment # Favours control))}
+{it:({stata admetan_hlp_run ipdmetan_ex6 using ipdmetan_beta.sthlp:click to run})}{p_end}
 
 
 
@@ -386,7 +452,18 @@ David Fisher, MRC Clinical Trials Unit at UCL, London, UK.{p_end}
 Email {browse "mailto:d.fisher@ucl.ac.uk":d.fisher@ucl.ac.uk}{p_end}
 
 
-{marker syntax}{...}
+
+{title:Acknowledgments}
+
+{pstd}
+Thanks to Phil Jones at UWO, Canada for suggesting improvements in functionality.
+
+{pstd}
+The "click to run" element of the examples in this document is handled using an idea originally developed by Robert Picard.
+
+
+
+{marker references}{...}
 {title:References}
 
 {phang}Fisher DJ. 2015. Two-stage individual participant data meta-analysis and generalised forest plots.

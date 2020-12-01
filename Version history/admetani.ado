@@ -5,8 +5,11 @@
 * version 1.0  David Fisher  11may2017
 * (part of version 2.0 of -ipdmetan- package)
 
-*! version 1.01  David Fisher  14sep2017
-*! (part of version 2.1 of -ipdmetan- package)
+* version 1.01  David Fisher  14sep2017
+* (part of version 2.1 of -ipdmetan- package)
+
+*! version 3.0  David Fisher  08nov2018
+* (N.B. only changed very slightly from v1.01 ... this is actually more v1.02!)
 
 
 program admetani, rclass
@@ -82,7 +85,7 @@ program admetani, rclass
 	capture {
 		local j = 1
 		while `j' <= `nc' {
-			gen `tv`j'' = matrix(`A'[_n, `j']) in 1/`nr'
+			qui gen `tv`j'' = matrix(`A'[_n, `j']) in 1/`nr'
 			local ++j
 		}
 	}
@@ -180,7 +183,7 @@ program admetani, rclass
 		if `nc'!=2 {
 			disp as err "option {bf:variances} is only relevant to two-element syntax, and will be ignored"
 		}
-		else replace `tv2' = sqrt(`tv2')
+		else qui replace `tv2' = sqrt(`tv2')
 	}
 	
 	// pass to admetan

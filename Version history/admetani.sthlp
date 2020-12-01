@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 1.01 David Fisher  14sep2017}{...}
+{* *! version 3.0  David Fisher  08nov2018}{...}
 {vieweralsosee "admetan" "help admetan"}{...}
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
 {vieweralsosee "ipdover" "help ipdover"}{...}
