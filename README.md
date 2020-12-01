@@ -17,6 +17,8 @@ A description of available Stata meta-analysis commands may be found at  http://
 
 # installation
 
+to install , within Stata type .ssc install metan
+
 # usage
 
 # examples
