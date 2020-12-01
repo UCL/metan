@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.8 (beta)  David Fisher  19oct2020}{...}
+{* *! version 4.0  David Fisher  25nov2020}{...}
 {vieweralsosee "metan_model" "help metan_model"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
 {vieweralsosee "metan_continuous" "help metan_continuous"}{...}
@@ -46,7 +46,7 @@ More specifically, {cmd:metan} may have any of the following syntaxes:
 
 {pmore}
 Meta-analysis of generic (pre-calculated) effect sizes and their standard errors, with option to supply participant numbers via {opt npts(varname)}.
-Effect sizes must be based on a normal distribution; for example, log odds-ratios rather than odds ratios.
+Effect sizes must be based on a Normal distribution; for example, log odds-ratios rather than odds ratios.
 
 {pmore2}
 {cmd:metan} {it:ES seES} {ifin} [{cmd:,} {opt npts(varname)} {it:{help metan_model:model_spec}} {it:{help metan##options_main:options_main}}]
@@ -55,7 +55,7 @@ Effect sizes must be based on a normal distribution; for example, log odds-ratio
 {pmore}
 Meta-analysis of generic (pre-calculated) effect sizes and their 95% confidence limits, with option to supply participant numbers via {opt npts(varname)}.
 Confidence intervals are assumed to be symmetric, and the standard error is derived as {bf:(}{it:UCI} {bf:-} {it:LCI}{bf:) / 2*1.96}.
-Hence, confidence limits must be based on a normal distribution, and have 95% level, or the pooled result will not be accurate.
+Hence, confidence limits must be based on a Normal distribution, and have 95% level, or the pooled result will not be accurate.
 
 {pmore2}
 {cmd:metan} {it:ES lci uci} {ifin} [{cmd:,} {opt npts(varname)} {it:{help metan_model:model_spec}} {it:{help metan##options_main:options_main}}]
@@ -99,7 +99,7 @@ otherwise the default is {opt common}.  The simplest alternative is {opt random}
 {it:{help metan_model:model_spec}} has various other options and syntaxes, which are explained {help metan_model:on a separate page}.
 This incorporates all the functionalities of the previous version of {cmd:metan}, including the ability to present multiple results
 (e.g. common-effect and random-effects) in the same table and/or forest plot.
- 
+
 
 
 {marker options}{...}
@@ -244,7 +244,7 @@ manner to that in which it was supplied) and of how confidence limits for {ul:po
 (which will depend upon {it:{help metan##model_spec:model_spec}}). See also {bf:{help metan##options_main:level(#)}}
 
 {phang2}
-{it:ci_type} is {opt normal} by default, specifying use of the normal distribution (i.e. a {it:z}-statistic).
+{it:ci_type} is {opt normal} by default, specifying use of the Normal distribution (i.e. a {it:z}-statistic).
 
 {phang2}
 {it:ci_type} may also be {opt t}, specifying use of the ("Student's") {it:t} distribution.
@@ -679,7 +679,7 @@ Make use of marker label options to display text at the co-ordinates of study ef
 Finally, note that there is an important difference in the way that {cmd:metan} and Stata 16's {cmd:meta} suite
 report heterogenity statistics with random-effects models.
 {cmd:metan} views I-squared (and its transformations H and H-squared) as being descriptive of the observed data,
-and therefore derives them from Q regardless of the specified model, unless option {opt isqparam} is specified (see {it:{help metan_model:model_spec}}).
+and I-squared is therefore derived from Q regardless of the specified model unless option {opt isqparam} is specified (see {it:{help metan_model:model_spec}}).
 By constrast, Stata 16's {cmd:meta} suite reports I-squared based on Q if a common-effect model is specified,
 or based on tau-squared if a random-effects model is specified.
 
@@ -859,8 +859,26 @@ forestplot( xlabel(0.25 0.5 1 2 4, force) null(1) scheme(economist) diamopts(lwi
 
 
 {pstd}
-Same example again, but this time instead of using {opt first()} or {opt firststats()},
-we use the option {opt clear} to replace the data in memory with a "forest plot results set",
+The above example used the options {opt first()} and {opt firststats()}.
+As of {cmd:metan} version 4, these options are no longer the preferred syntax, although they continue to be supported.
+The preferred syntax would instead be (see {help metan_model}):
+
+{cmd}{...}
+{* example_start - metan_ex7a}{...}
+{phang2}
+. metan OR ORlci ORuci, label(namevar=id) wgt(bweight){* ///}{p_end}
+{p 16 20 2}
+model( 0.924 0.753 1.095, label(Bayesian) extralabel(param V=3.86, p=0.012) ){* ///}{p_end}
+{p 16 20 2}
+forestplot( xlabel(0.25 0.5 1 2 4, force) null(1) scheme(economist) diamopts(lwidth(thick)) ){p_end}
+{* example_end}{...}
+{txt}{...}
+{pmore}
+{it:({stata metan_hlp_run metan_ex7a using metan.sthlp, restpres:click to run})}{p_end}
+
+
+{pstd}
+Same example again, but this time we use the option {opt clear} to replace the data in memory with a "forest plot results set",
 which is then edited to contain our user-defined estimates.
 Finally, the forest plot is generated, and appears identical to that in the previous example.
 This demonstrates some of the flexibility of being able to edit (and otherwise manipulate) forest plot results sets.

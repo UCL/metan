@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.8 (beta)  David Fisher  19oct2020}{...}
+{* *! version 4.0  David Fisher  25nov2020}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
 {vieweralsosee "metan_continuous" "help metan_continuous"}{...}
@@ -12,6 +12,10 @@
 {vieweralsosee "metaan" "help metaan"}{...}
 {vieweralsosee "metandi" "help metandi"}{...}
 {vieweralsosee "metaprop_one" "help metaprop_one"}{...}
+{viewerjumpto "Syntax" "metan_model##syntax"}{...}
+{viewerjumpto "Description" "metan_model##description"}{...}
+{viewerjumpto "Options" "metan_model##options"}{...}
+{viewerjumpto "References" "metan_model##refs"}{...}
 {hi:help metan_model}
 {hline}
 
@@ -26,71 +30,27 @@ including estimation of heterogeneity statistics
 {title:Syntax}
 
 {pstd}
-{it:model_spec} can either be:
-
-{pmore2}
-[ {it:model_name} ] [ {cmd:second(}{it:model_name}{cmd:)} ] [ {it:{help metan_model##options_user:options_user}}
-{it:{help metan_model##options_test:options_test}} {it:{help metan_model##options_het:options_het}} ]
-
-{pmore}
-where {it:model_name} is {opt mh:aenszel} | {opt peto} | {opt fixed} | {opt iv:common} | {opt random}
-
-{pstd}
-or {it:model_spec} can be:
+{it:model_spec} is:
 
 {pmore2}
 {cmd:model(} {it:model} [ {cmd:\} {it:model} [ {cmd:\} {it:model} [...]]] {cmd:)} [ {it:{help metan_model##options_het:options_het}} ]
 
 {pmore}
-where {it:model} is
+where {it:model} is either:
 
 {pmore2}
 {it:{help metan_model##model_name:model_name}} [ {cmd:,} {it:{help metan_model##options_model:options_model}}
-{it:{help metan_model##options_test:options_test}} ]
-
-
-{marker description}{...}
-{title:Description}
-
-{pstd}
-{it:model_spec} specifies method(s) for meta-analytic pooling with {bf:{help metan}}.
-If no {it:model_spec} is supplied, the default for two-group comparison of binary outcomes is {opt mh:aenszel};
-otherwise the default is {opt iv:common}.
-
-{pstd}
-The first syntax for {it:model_spec} directly maintains the previous syntax of {cmd:metan} {help metan##diffs_metan:v3.04 for Stata v9}.
-In particular, note that the synonyms {opt fixed}, {opt fixedi} and {opt randomi} (for {opt mhaenszel}, {opt ivcommon} and {opt random}, respectively) still work.
-Previous options for user-supplied estimates, such as {opt first()} and {opt second()}, also continue to be supported; see {it:{help metan_model##options_user:options_user}}.
+{it:{help metan_model##options_test:options_test}} {it:{help metan_model##options_label:options_label}} ]
 
 {pmore}
-Another, more general, way of incorporating user-supplied estimates is to use {cmd:forestplot} "results sets"; see {bf:{help forestplot}}.
+or {it:model} is:
 
-{pstd}
-The second syntax for {it:model_spec} is more general, and allows the results of multiple different pooling methods (or variations of methods) to be displayed simultaneously.
-Such methods include alternative estimators of the between-study heterogeneity (tau-squared),
-methods which correct {it:post hoc} the variance of the pooled estimate, or those which use alternative weighting systems
-in order to improve statistical performance in the suspected presence of publication bias; see {it:{help metan_model##model_name:model_name}}.
-
-{pstd}
-Underneath the table of study effects, {cmd:metan} reports a homogeneity test, typically based on Cochran's {it:Q} statistic;
-plus the following heterogeneity statistics defined in terms of {it:Q} and its degrees of freedom {it:Q_df} as follows:
+{pmore2}
+{it:user_spec} [ {cmd:,} {it:{help metan_model##options_label:options_label}} ]
 
 {pmore}
-{it:H} = {bf:sqrt(}{it:Q} / {it:Q_df}{bf:)}, and {it:I}^2 = 100% * {bf:(}{it:Q} - {it:Q_df}{bf:)} / {it:Q}
-
-{pstd}
-Following {help metan##refs:Hedges and Pigott (2001)}, when the null hypothesis of homogeneity is {ul:not} true,
-the homogeneity statistic (e.g. Cochran's {it:Q}) may be considered approximately to follow a non-central chi-square distribution
-if under a common-effect model, or a Gamma distribution (incorporating the DerSimonian-Laird estimator of tau-squared)
-if under a random-effects model.
-{cmd:metan} uses these distributions to construct confidence intervals, based on observed data, for the heterogeneity statistics {it:H} and {it:I}-squared.
-
-{pmore}
-Note that some minor variation in the way {cmd:metan} presents heterogeneity statistics may result depending on the model(s) specified.
-If more than one model is specified, heterogeneity statistics are presented in line with the {ul:first} model only.
-
-{pstd}
-{help metan:Click here} to return to the main {bf:{help metan}} help page.
+where {it:user_spec} is {it:ES lci uci}, representing a pooled effect size estimate and 95% confidence limits
+which are supplied manually rather than estimated from the data.
 
 
 
@@ -183,18 +143,80 @@ or Skovgaard's ({help metan_model##refs:Guolo 2012}) corrections to the likeliho
 {synoptline}
 
 
-{marker options_user}{...}
-{synopthdr :options_user}
+{marker options_label}{...}
+{synopthdr :options_label}
 {synoptline}
-{synopt :{opt first(user_list)}}specify externally-derived pooled estimate{p_end}
-{synopt :{opt firststats(string)}}optional further description{p_end}
-{synopt :{opt second(user_list)}}specify externally-derived pooled estimate as a second analysis{p_end}
-{synopt :{opt secondstats(string)}}optional further description{p_end}
+{synopt :{opt label(sting)}}specify alternative display label for a model{p_end}
+{synopt :{opt extralabel(string)}}optional further description, for display within the forest plot only{p_end}
 {synoptline}
 
 
 
-{marker options_desc}{...}
+{marker description}{...}
+{title:Description}
+
+{pstd}
+{it:model_spec} specifies method(s) for meta-analytic pooling with {bf:{help metan}}.
+If no {it:model_spec} is supplied, the default for two-group comparison of binary outcomes is {opt mh:aenszel};
+otherwise the default is {opt iv:common}.
+
+{pstd}
+{it:model_spec} allows the results of multiple different pooling methods (or variations of methods) to be displayed simultaneously.
+Such methods include alternative estimators of the between-study heterogeneity (tau-squared),
+methods which correct {it:post hoc} the variance of the pooled estimate, or those which use alternative weighting systems
+in order to improve statistical performance in the suspected presence of publication bias; see {it:{help metan_model##model_name:model_name}}.
+
+{pstd}
+Furthermore, the {it:user_spec} syntax allows pooled effect estimates from sources external to {cmd:metan}
+- such as WinBUGS ({help metan_model##refs:Lunn et al 2000}), or one-stage modelling - to be displayed alongside the usual {cmd:metan} output on-screen and in the forest plot.
+Note that:
+
+{pmore}
+If displayed study estimates and non-user-defined pooled effect estimates are exponentiated
+(either via explicit use of {opt eform}, or by default e.g. with binary data),
+then the elements of {it:user_spec} will also be exponentiated prior to display.
+
+{pmore}
+If {it:user_spec} is specified as the first {it:{help metan_model##syntax:model}} element, then {opt wgt(varname)} must also be supplied.
+
+{pmore}
+{it:user_spec} cannot be used to specify subgroup effect estimates.
+Therefore, {opt by()} may not be used if {it:user_spec} is specified as the first {it:{help metan_model##syntax:model}} element.
+Similarly, if {it:user_spec} is specified {ul:other} than as the first {it:{help metan_model##syntax:model}} element,
+it will be ignored when printing subgroup estimates and tests.
+
+{pmore}
+All previous syntax of {cmd:metan} {help metan##diffs_metan:v3.04 for Stata v9} relating to model specification continues to be supported,
+including options {opt first()}, {opt firststats()}, {opt second()} and {opt secondstats()}.
+(These are implemented as special cases of {it:{help metan_model##syntax:model_spec}} with {it:{help metan_model##options_label:options_label}}.)
+
+{pmore}
+Another, more flexible, way of incorporating user-supplied estimates and/or text is to use {cmd:forestplot} "results sets"; see {bf:{help forestplot}}.
+
+{pstd}
+Underneath the table of study effects, {bf:{help metan}} reports a homogeneity test, typically based on Cochran's {it:Q} statistic;
+plus the following heterogeneity statistics defined in terms of {it:Q} and its degrees of freedom {it:Q_df} as follows:
+
+{pmore}
+{it:H} = {bf:sqrt(}{it:Q} / {it:Q_df}{bf:)}, and {it:I}^2 = 100% * {bf:(}{it:Q} - {it:Q_df}{bf:)} / {it:Q}
+
+{pstd}
+Following {help metan_model##refs:Hedges and Pigott (2001)}, when the null hypothesis of homogeneity is {ul:not} true,
+the homogeneity statistic (e.g. Cochran's {it:Q}) may be considered approximately to follow a non-central chi-square distribution
+if under a common-effect model, or a Gamma distribution (incorporating the DerSimonian-Laird estimator of tau-squared)
+if under a random-effects model.
+{bf:{help metan}} uses these distributions to construct confidence intervals, based on observed data, for the heterogeneity statistics {it:H} and {it:I}-squared.
+
+{pmore}
+Note that some minor variation in the way {cmd:metan} presents heterogeneity statistics may result depending on the model(s) specified.
+If more than one model is specified, heterogeneity statistics are presented consistent with the {ul:first} model only.
+
+{pstd}
+{help metan:Click here} to return to the main {bf:{help metan}} help page.
+
+
+
+{marker options}{...}
 {title:Options}
 
 {it:{dlgtab:options_model}}
@@ -268,7 +290,8 @@ The default is usually {opt z}, but is {opt t} with {opt hksj} or {opt robust}, 
 Any of {opt z}, {opt t} or {opt chi2} may be specified to override these defaults.
 
 {pstd}
-Additionally, with Mantel-Haenszel odds ratios only, the Cochran-Mantel-Haenszel test statistic may be requested with option {opt cmh}.
+Additionally, with Mantel-Haenszel odds ratios only, the Cochran-Mantel-Haenszel test statistic ({help metan_model##refs:McDonald 2014})
+may be requested with option {opt cmh}.
 
 
 {it:{dlgtab:options_het}}
@@ -276,14 +299,14 @@ Additionally, with Mantel-Haenszel odds ratios only, the Cochran-Mantel-Haenszel
 {phang}
 {opt cochranq}, {opt breslow} and {opt tarone} are used to over-ride the default choice of homogeneity statistic.
 The default is usually {opt cochranq}; that is, the standard Cochran's {it:Q} statistic
-using common-effect inverse-variance weighting and pooled effect size ({help metan##refs:Deeks et al 2001}).
+using common-effect inverse-variance weighting and pooled effect size ({help metan_model##refs:Deeks et al 2001}).
 When using alternative common-effect models {opt mhaenszel} or {opt peto}, the default homogeneity statistic changes
 to incorporate the study weighting and pooled effect size derived from the specified model;
 in the Display Window and forest plot the description becomes "Mantel-Haenszel Q" or "Peto Q" as appropriate.
 
 {phang2}
 {opt breslow} and {opt tarone} are applicable only with Mantel-Haenszel odds ratios.
-{opt breslow} specifies the Breslow-Day homogeneity statistic ({help metan##refs:Breslow and Day 1980}).
+{opt breslow} specifies the Breslow-Day homogeneity statistic ({help metan_model##refs:Breslow and Day 1980}).
 Although widely used, this statistic is unnecessarily approximate;
 {opt tarone} instead specifies the superior Breslow-Day-Tarone statistic ({help metan_model##refs:Breslow 1996}).
 
@@ -309,29 +332,20 @@ This information is displayed in an additional table in the Results Window; and 
 then a set of heterogeneity information is displayed in brackets alongside the name of each individual model.
 
 
-{it:{dlgtab:options_user}}
-
-{pstd}
-{opt first(user_list)} and {opt second(user_list)} allow pooled effect sizes based on calculations performed externally to {cmd:metan}
-to be displayed alongside the usual {cmd:metan} output on-screen and in the forest plot.
-{it:user_list} is {it:ES lci uci desc}, where {it:ES} is an effect estimate on the interval scale,
-{it:lci uci} are its 95% confidence limits,
-and {it:desc} is a brief description of the calculation, similar to {it:model_name} (e.g. "Bayesian").
-
-{pmore}
-If {opt first()} is specified, then {opt wgt(varname)} must also be supplied.
-However, {opt second()} may not be used in this case, and neither may {opt by()} for obvious reasons.
-If {opt second(user_list)} is specified then {opt nosecsub} is invoked for obvious reasons.
-
-{pmore}
-Note that {opt second()} also has the alternative syntax {opt second(model_name)},
-where {it:model_name} is {opt mhaenszel}, {opt peto}, {opt fixed}, {opt ivcommon} or {opt random}; see {help metan_model##syntax:Syntax}.
+{it:{dlgtab:options_label}}
 
 {phang}
-{opt firststats(string)} and {opt secondstats(string)} optionally specify further descriptive text
-to appear on the forest plot in place of the standard heterogeneity text; {it:string} is not displayed in the Results Window.
-Each of {opt firststats()} and {opt secondstats()} may only be used in combination with respective options {opt first()} and {opt second()}.
+{opt label(label_string)} specifies an alternative display label for a particular model.
+For example, the default label for the DerSimonian-Laird random-effects model is "DL",
+but the simpler label "Random" might be preferred if no other random-effects models are used.
 
+{pmore}
+If {it:user_spec} is used without {opt label()}, the default {it:label_string} is "User".
+
+{phang}
+{opt extralabel(extra_string)} optionally specifies further descriptive text
+to appear on the forest plot in place of the standard heterogeneity text; {it:extra_string} is not displayed in the Results Window.
+This option is designed for use alongside {it:user_spec}, for example to display externally-derived parameters related to study heterogeneity.
 
 
 
@@ -378,6 +392,11 @@ The "click to run" element of the examples in this document is handled using an 
 {phang}
 Breslow NE, Day NE. 1980. Statistical Methods in Cancer Research: Vol. I - The Analysis of Case-Control Studies.
 Lyon: International Agency for Research on Cancer.
+
+{phang}
+Breslow NE. 1996.
+Statistics in epidemiology: The case-control study.
+Journal of the American Statistical Association 91: 14-28
 
 {phang}
 Deeks JJ, Altman DG, Bradburn MJ. 2001.
@@ -438,6 +457,16 @@ British Journal of Mathematical and Statistical Psychology 64: 1-19
 Jackson D, Law M, R{c u:}cker G, Schwarzer G. 2017.
 The Hartung-Knapp modification for random-effects meta-analysis: A useful refinement but are there any residual concerns?
 Statistics in Medicine 2017; 36: 3923–3934. doi: 10.1002/sim.7411
+
+{phang}
+Lunn DJ, Thomas A, Best N, Spiegelhalter D. 2000.
+WinBUGS -- a Bayesian modelling framework: concepts, structure, and extensibility.
+Statistics and Computing 10: 325-337
+
+{phang}
+McDonald JH. 2014.
+Handbook of Biological Statistics, 3rd ed.
+Sparky House Publishing, Baltimore, Maryland
 
 {phang}
 Morris TP, Fisher DJ, Kenward MG, Carpenter JR. 2018.

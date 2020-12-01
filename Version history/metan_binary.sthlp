@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.8 (beta)  David Fisher  19oct2020}{...}
+{* *! version 4.0  David Fisher  25nov2020}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "metan_model" "help metan_model"}{...}
 {vieweralsosee "metan_continuous" "help metan_continuous"}{...}
@@ -49,9 +49,9 @@ implement alternative methods of {help metan_binary##refs:Sweeting (2004)}{p_end
 {syntab :Additional options specific to Mantel-Haenszel odds ratios}
 {syntab :(strictly speaking part of {it:{help metan_model##options_het:model_spec}}, but repeated here for convenience)}
 {synopt :{opt cmh}}Cochran-Mantel-Haenszel test statistic{p_end}
-{synopt :{opt bre:slow}}Breslow-Day test for homogeneity of odds ratios{p_end}
+{synopt :{opt bre:slow}}Breslow-Day test for homogeneity of odds ratios ({help metan_model##refs:Breslow and Day 1980}){p_end}
 {synopt :{opt ta:rone}}Breslow-Day-Tarone test for homogeneity of odds ratios
-(preferred to {opt breslow}; see e.g. {help metan_model##refs:Breslow 1996}){p_end}
+(preferred to {opt breslow}; see e.g. {help metan_binary##refs:Breslow 1996}){p_end}
 
 {syntab :Forest plot and/or saved data}
 {synopt :{opt effi:cacy}}additionally display odds ratios or risk ratios expressed in terms of vaccine efficacy{p_end}
@@ -215,6 +215,15 @@ The "click to run" element of the examples in this document is handled using an 
 Bradburn MJ, Deeks JJ, Berlin JA, Localio AR. 2007.
 Much ado about nothing: a comparison of the performance of meta-analytical methods with rare events.
 Statistics in Medicine 26: 53-77. doi: 10.1002/sim.2528
+
+{phang}
+Breslow NE, Day NE. 1980. Statistical Methods in Cancer Research: Vol. I - The Analysis of Case-Control Studies.
+Lyon: International Agency for Research on Cancer.
+
+{phang}
+Breslow NE. 1996.
+Statistics in epidemiology: The case-control study.
+Journal of the American Statistical Association 91: 14-28
 
 {phang}
 Higgins JPT, Thomas J, Chandler J, Cumpston M, Li T, Page MJ, Welch VA (editors). 2019.

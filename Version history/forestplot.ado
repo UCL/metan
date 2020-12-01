@@ -75,7 +75,7 @@
 // some text in help file is updated
 // improved counting of rows in titles containing compound quotes
 
-*! version 3.8  David Fisher  19oct2020
+*! version 4.0  David Fisher  25nov2020
 // changes to `xlabopts'
 // changes to `influence' plot (including "hide" option)
 // changes to fp() option
