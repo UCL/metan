@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.6 (beta)  David Fisher  22may2020}{...}
+{* *! version 3.7 (beta)  David Fisher  10jul2020}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "metani" "help metani"}{...}
@@ -31,21 +31,21 @@
 {syntab: Main}
 {synopt :{it:{help eform_option}}}exponentiate effect sizes and confidence limits{p_end}
 {synopt :{opt eff:ect(string)}}title for "effect size" column in the output{p_end}
-{synopt :{cmdab:fav:ours(}{it:favours_option}{cmd:)}}x-axis labelling specific to forest plots{p_end}
+{synopt :{cmdab:fav:ours(}{it:favours_option}{cmd:)}}{it:x}-axis labelling specific to forest plots{p_end}
 {synopt :{opt lab:els(varname)}}variable containing labels e.g. subgroup headings, heterogeneity info, study names{p_end}
 {synopt :{opt lcol:s(varlist)} {opt rcol:s(varlist)}}display columns of additional data{p_end}
 {synopt :{opt nona:mes}}suppress display of study names in left-hand column{p_end}
-{synopt :{opt nonu:ll} {opt nu:ll(#)}}suppress, or override default x-intercept of, null hypothesis line{p_end}
+{synopt :{opt nonu:ll} {opt nu:ll(#)}}suppress, or override default {it:x}-intercept of, null hypothesis line{p_end}
 {synopt :{opt noov:erall} {opt nosu:bgroup} {opt nohet}}suppress display of observations containing overall, subgroup,
 or heterogeneity data (see {opt use(varname)}){p_end}
 {synopt :{opt nostat:s} {opt nowt}}suppress display of effect estimates and/or weights in right-hand columns{p_end}
+{synopt :{opt xla:bel(...)} {opt xt:ick(...)}}{it:x}-axis ticks and labels as described under {it:{help axis_label_options}}, but see {help forestplot##options:below}{p_end}
 {synopt :{it:{help twoway_options}}}other Stata twoway graph options, as appropriate{p_end}
 
 {syntab: Advanced}
 {synopt :{cmd:dataid(}{it:varname} [{cmd:, newwt}]{cmd:)}}define groups of observations making up a complete forestplot{p_end}
 {synopt :{opt double}}allow column text to run over two lines in the plot{p_end}
 {synopt :{opt dp(#)}}number of decimal places with which to format effect sizes, confidence intervals and predictive distributions{p_end}
-{synopt :{opt colsonly}}plot left/right data columns in isolation; but retaining the aspect, text size etc. of the complete forestplot{p_end}
 {synopt :{opt leftj:ustify}}left-justify all data columns{p_end}
 {synopt :{opt maxlines(#)} {opt maxwidth(#)}}override the defaults used by {cmd:forestplot} when spreading column title strings over multiple lines{p_end}
 {synopt :{opt nokeepv:ars}}suppress saving of formatted effect-size data in new variable {bf:_EFFECT}; see {help forestplot##saved_results:saved results}{p_end}
@@ -63,6 +63,7 @@ to apply specific plot rendition options{p_end}
 {synopt :{cmdab:cira:nge(}[{it:numlist}] [{opt min}] [{opt max}]{cmd:)}}x-axis limits of plotted confidence intervals{p_end}
 {synopt :{opt savedims(matname)}, {opt usedims(matname)}}save and load sets of dimensional parameters for forest plot{p_end}
 {synopt :{opt sp:acing(#)}}vertical gap between lines of text in the plot{p_end}
+{synopt :{opt texts:ize(#)}}fine-tune the text size{p_end}
 
 {syntab: Plot rendition}
 {synopt :{it:plot}{cmd:{ul:op}ts(}{it:plot_options}{cmd:)}}affect rendition of all observations{p_end}
@@ -81,7 +82,7 @@ where {it:plot} may be {cmd:{ul:box}}, {cmd:{ul:ci}}, {cmd:{ul:diam}}, {cmd:{ul:
 
 {pstd}
 and {it:plot_options} are {it:{help marker_options}}, {it:{help line_options}} or {it:{help area_options}} as appropriate,
-with some additional options as described below.
+with some additional options as described {help forestplot##plot_rendition:below}.
 
 
 {p2colreset}{...}
@@ -202,6 +203,20 @@ By default, this line appears at x=0, or x=1 if {it:{help eform_option}} is spec
 Note that both may be specified simultaneously; the placement of the line
 affects other characteristics of the plot even if the line itself does not appear.
 
+{phang}
+{opt xlabel(...)} and {opt xtick(...)} have the same syntax as described under {it:{help axis_label_options}},
+except for the following points:
+
+{phang2}
+If {it:{help eform_option}} is specified, the {it:x}-axis is automatically shown on an expontiated scale, with a value of 1 indicating a null effect.
+Hence, values supplied to {opt xlabel()} and {opt xtick()} are interpreted on this scale; e.g. values of 0.5 and 2 would appear symmetrically
+either side of the null line. A similar interpretation also applies to {opt fp(#)} and {opt null(#)}.
+
+{phang2}
+An alternative to {opt range()} (see {help forestplot##fine_tuning:below}) is to allow {opt force} as an additional sub-option to {opt xlabel()}.
+The smallest and largest values supplied to {opt xlabel()} then become the plotted limits of study confidence intervals and effect sizes.
+(Note: the {opt force} option is carried over from {bf:{help metan9}}).
+
 
 {dlgtab:Advanced}
 
@@ -222,13 +237,6 @@ This may be of use if long strings are to be used.
 
 {phang}
 {opt dp(#)} specifies the number of decimal places to format the effect sizes.
-
-{phang}
-{opt colsonly} is an advanced option which may be useful for creating compound plots using {bf:{help graph combine}}.
-Only the left or right (not both) columns, as defined using {opt lcols()} or {opt rcols()}, are plotted;
-but they are plotted as if the remainder of the graph were still present, in terms of aspect ratio, text size etc.
-This allows, for instance, multiple similar forestplots to be combined side-by-side
-together with a single column of additional data applicable to all.
 
 {phang2}
 See also options {opt savedims()} and {opt usedims()}.
@@ -313,6 +321,7 @@ values of {it:use} are between 0 and 6 inclusive.
 
 
 
+{marker fine_tuning}{...}
 {dlgtab:Fine-tuning}
 
 {pstd}
@@ -341,8 +350,6 @@ or decreased as such (e.g., 80 or 120 for 20% smaller or larger respectively).
 {phang}
 {opt range()}, {opt cirange()} give finer control over the
 range of the x-axis within which the graph is constructed, and within which the data is plotted.
-These may be thought of as roughly analogous to the concepts of "graph region" and "plot region"
-used by {help twoway} (see {help region_options}).
 These options may be used, for instance, to create or reduce blank space between the data and either the
 left or right columns of text or data.
 (Note that blank space may also be created or reduced by appropriate {help format}ting of column variables.)
@@ -351,34 +358,37 @@ left or right columns of text or data.
 {cmd:range(}[{it:numlist}] [{opt min}] [{opt max}]{cmd:)} specifies the boundary between the part of the x-axis
 within which the graph will appear, and the parts containing columns of text or data (see {opt lcols()}, {opt rcols()}).
 {opt min} and {opt max} are shorthand for the smallest and largest values among the data to be plotted.
+If {opt min} is specified, then {opt range()} also implies {opt noadjust}.
 
 {phang2}
 {cmd:cirange(}[{it:numlist}] [{opt min}] [{opt max}]{cmd:)} specifies the plotted limits of study confidence intervals and effect sizes.
 Data outside this range will be represented by off-scale arrows.
 {opt min} and {opt max} are shorthand for the smallest and largest values among the data to be plotted.
 
-{pmore}
-Note that {opt range()} implies {opt cirange()}, but not {it:vice versa}.
-{opt range()} also implies {opt noadjust}, unless {opt min} is one of the supplied elements.
-
 {phang2}
-An alternative to {opt cirange()}, carried over from {bf:{help metan9}}, is to allow {opt force} as an additional
-suboption to {opt xlabel()}. The smallest and largest values supplied to {opt xlabel()} then become the range.
+Note: the documented option {opt range()} as a sub-option to {bf:{help axis_scale_options:xscale()}} should {ul:not} be used with {cmd:forestplot},
+as it will almost certainly not give the desired effect.
+However, other {bf:{help axis_scale_options:xscale()}} sub-options such as {opt lcolor()} may be used.
 
 {phang}
 {opt savedims(matname)} saves certain values ("dimensions") associated with the current forest plot in a matrix,
 so that they may be applied via {opt usedims(matname)} to a subsequent forest plot.
-These values, which are also saved in {cmd:r()}, include text size, aspect ratio, vertical spacing, and
+These values, which are also saved in {cmd:r()}, include the calculated optimum text size, aspect ratio, vertical spacing, and
 the display width of the different parts of the plot.
 
 {phang}
 {opt spacing(#)} alters the vertical gap between lines of text.
+Increasing it has the side-effect of making the text size smaller, and vice versa.
 Default values are 1.5 if the plot is "tall" (many studies) or 2 if the plot is "wide" (few studies).
 
-{pmore}
-N.B. This option replaces {opt textsize(#)} in {bf:{help metan9}} and in earlier versions of {cmd:forestplot}.
+{phang}
+{opt textsize(#)} applies a correction factor to the default text size.
+{it:#} is a percentage of the default size, such that {cmd:textsize(100)} represents no change.
+Note that {cmd:forestplot} takes {opt spacing(#)} into account when determining optimum values for text size and plot layout;
+whereas {opt textsize(#)} is applied {it:post hoc}.
 
 
+{marker plot_rendition}{...}
 {dlgtab:Plot rendition}
 
 {pstd}
@@ -409,9 +419,11 @@ affect the rendition of diamonds representing pooled estimates.
 {cmd:olineopts(}{it:{help line_options}}{cmd:)} and {cmd:oline}{it:#}{cmd:opts(}{it:{help line_options}}{cmd:)}
 affect the rendition of overall effect lines.
 For {cmd:oline}{it:#}{cmd:opts()} to take effect, {it:#} must be the value taken by {opt plotid}
-at the observation corresponding to the relevant pooled effect
-(or, e.g. for an "influence" meta-analysis where the pooled effect itself is not plotted,
-the observation where the overall effect line begins).
+at the observation corresponding to the relevant pooled effect.
+
+{pmore2}
+Note: If the pooled effect itself is {ul:not} plotted, e.g. for an "influence" meta-analysis (see {opt ocilineopts()}),
+{it:#} must be the value taken by {opt plotid} at the observation where the overall effect line begins.
 
 {phang2}
 {cmd:ocilineopts(}[{it:{help line_options}} {it:{help area_options}}] [{cmd:hide}]{cmd:)}
@@ -477,14 +489,14 @@ affect the rendition of (unweighted) pooled estimate markers.
 {synopt:{cmd:r(spacing)}}spacing of lines of text (see {cmd:spacing()} option){p_end}
 {synopt:{cmd:r(ysize)}}relative height of graph region (see {it:{help region_options}}){p_end}
 {synopt:{cmd:r(xsize)}}relative width of graph region (see {it:{help region_options}}){p_end}
-{synopt:{cmd:r(textsize)}}text size{p_end}
+{synopt:{cmd:r(textsize)}}calculated optimum text size ({ul:before} applying user-specified scaling with {opt textsize(#)}){p_end}
 {synopt:{cmd:r(range)}}{it:numlist} containing the {it:x}-axis limits of the plotted data{p_end}
 {synopt:{cmd:r(obs)}}number of observations in the final plot (i.e. after generating column titles etc.){p_end}
 
 {pstd}
 In addition, by default {cmd:forestplot} leaves behind a variable named {bf:_EFFECT} containing the string-valued
 concatenation of the (formatted) effect size and confidence limits appearing on the forest plot to the right of the plotted data.
-Access to this variable allows, for example, pooled-effect p-values to be manually added to the forest plot; see the penultimate example.
+Access to this variable allows, for example, pooled-effect {it:p}-values to be manually added to the forest plot; see the penultimate example.
 
 
 {marker diffs_metan}{...}
@@ -492,24 +504,27 @@ Access to this variable allows, for example, pooled-effect p-values to be manual
 
 {pstd}
 This version of {cmd:forestplot} has been designed to be backwards-compatible with {bf:{help metan9}} as far as possible.
-However, there are some minor differences in syntax.  In particular:
+However, there are some minor differences in syntax and behaviour.  In particular:
 
 {phang2}
-The procedure for creating the plot has been improved, so that the use of options such as {opt boxscale(#)},
-{opt xsize(#)} and {opt ysize(#)} should be needed less often.
-Furthermore, {opt textsize(#)} is no longer valid, due to changes in the way the plot is constructed.
-It has been partly replaced by {opt spacing(#)}, but this operates in a different way
-(and, again, should be needed less often).
+The procedure for creating the plot has been improved, so that the use of options such as
+{opt xsize(#)}, {opt ysize(#)} and {opt textsize(#)} should be needed less often.
+Similarly, automated {it:x}-axis labelling is improved, so that {opt xlabel()} may not be needed.
 
 {phang2}
-Options {opt xlabel()} and {opt xtick()} now expect a standard Stata {help numlist} rather than a comma-separated list,
-and {opt force} is now a sub-option of {opt xlabel()} rather than a stand-alone option.
+Options {opt xlabel()} and {opt xtick()} now expect a standard Stata {help numlist}, with {opt force} as a sub-option.
+The older syntax using comma-separated lists, with {opt force} as a stand-alone option, continues to be supported;
+but a message will be printed to the Results Window as a reminder that the documented syntax has changed.
 
 {phang2}
 This version of {cmd:forestplot} does not automatically present a p-value for heterogeneity on the forest plot,
 so as to avoid confusion with significance tests of overall effect.
-Also, in some contexts {cmd:forestplot} now presents Q by default, rather than I-squared.
-These behaviours can be controlled using the option {opt hetstat()}.
+This can be changed using the {bf:{help metan}} option {opt hetinfo()}.
+
+{phang2}
+If the {cmd:metan} option {opt counts} is used, the resulting columns will appear on the left-hand side of the plot,
+between the study label and the plotted data, instead of on the right-hand side as in {cmd:metan9}.
+This matches with the layout used by other popular meta-analysis packages such as {help forestplot##refs:Cochrane's Review Manager}. 
 
 {phang2}
 Variable {help format}s are honoured by {cmd:forestplot} wherever possible.
@@ -579,7 +594,7 @@ With a little more work, we can recreate the result of running {cmd:metan} with 
 {phang2}
 . format id %-14s{p_end}
 {phang2}
-. forestplot logOR logORlci logORuci, or labels(id) wgt(wgt){p_end}
+. forestplot logOR logORlci logORuci, eform effect(Odds ratio) labels(id) wgt(wgt){p_end}
 {* example_end}{...}
 {txt}{...}
 {pmore}
@@ -593,7 +608,7 @@ The extra work needed demonstrates how few assumptions {cmd:forestplot} makes ab
 {cmd}{...}
 {* example_start - forestplot_ex3b}{...}
 {phang2}
-. metan logOR logORlci logORuci, or study(id) nooverall{p_end}
+. metan logOR logORlci logORuci, eform effect(Odds ratio) lcols(id) rcols(wgt) nooverall{p_end}
 {* example_end}{...}
 {txt}{...}
 {pmore}
@@ -606,7 +621,7 @@ Use of {opt plotid()} and {it:plot#}{cmd:opts()}, and also {opt favours()}:
 {cmd}{...}
 {* example_start - forestplot_ex4}{...}
 {phang2}
-. forestplot, or labels(id) plotid(type_study){* ///}{p_end}
+. forestplot, eform effect(Odds ratio) labels(id) plotid(type_study){* ///}{p_end}
 {p 16 20 2}
 favours(Favours treatment # Favours control){* ///}{p_end}
 {p 16 20 2}
@@ -618,9 +633,9 @@ box1opts(mcolor(red)) ci1opts(lcolor(red) rcap) box2opts(mcolor(blue)) ci2opts(l
 
 
 {pstd}
-Next, we will run a slightly different {bf:{help metan}} command and create a "forestplot results set".
-With this in memory, we insert the p-value for the test of overall effect.
-We then run {cmd:forestplot} with the {opt useopts} option, to recover the {opt counts} option previously specified to {cmd:metan}.
+Next, we will run a slightly different {bf:{help metan}} command, and use the option {opt clear} to replace
+the data in memory with a "forestplot results set".  We then insert the p-value for the test of overall effect.
+Finally, we run {cmd:forestplot} with the {opt useopts} option, to recover the {opt counts} option previously specified to {cmd:metan}.
 We also request a "filled" diamond, and demonstrate the use of the {opt cirange()} and {opt range()} options.
 
 {pstd}
@@ -630,15 +645,9 @@ and that {bf:_WT} also needs to be included to maintain the default ordering of 
 {cmd}{...}
 {* example_start - forestplot_ex5}{...}
 {phang2}
-. tempfile forestplot_example{p_end}
-{phang2}
-. metan tdeath tnodeath cdeath cnodeath, rd random study(id) counts{* ///}{p_end}
-{p 16 20 2}
-saving(`forestplot_example') nograph{p_end}
-{phang2}
 . preserve{p_end}
 {phang2}
-. use `forestplot_example', clear{p_end}
+. metan tdeath tnodeath cdeath cnodeath, rd random lcols(id) counts nograph clear{p_end}
 {phang2}
 . replace _EFFECT = "p=0.261" if _USE==4{p_end}
 {phang2}
@@ -668,7 +677,7 @@ The original data were presented in Analysis 8.2 of a Cochran review by {help me
 {phang2}
 // Create the "results set" for the left-hand sub-plot{p_end}
 {phang2}
-. metan n1 mean1 sd1 n0 mean0 sd0, wmd by(trial) study(carer){* ///}{p_end}
+. metan n1 mean1 sd1 n0 mean0 sd0, wmd by(trial) lcols(carer){* ///}{p_end}
 {p 16 20 2}
 nooverall nosubgroup nograph saving(fig2a){p_end}
 {phang2}
@@ -736,7 +745,7 @@ Right-hand sub-plot:
 {phang2}
 . use fig2b, clear{p_end}
 {phang2}
-. metan _stat_1 _stat_2, study(trial) effect(Diff. in mean diffs.){* ///}{p_end}
+. metan _stat_1 _stat_2, lcols(trial) effect(Diff. in mean diffs.){* ///}{p_end}
 {p 16 20 2}
 keepall keeporder nograph clear{p_end}
 {phang2}
@@ -764,7 +773,7 @@ favours("Favours greater effect" "of ESD with" "carer present"{* ///}{p_end}
 {p 16 20 2}
 # "Favours greater effect" "of ESD with" "no carer present", fp(40)){* ///}{p_end}
 {p 16 20 2}
-xlabel(-50 0 50, force)	name(fig2b){* ///}{p_end}
+xlabel(-50 0 50, force)	name(fig2b){p_end}
 {* example_end}{...}
 {txt}{...}
 {pmore}
@@ -821,3 +830,5 @@ Fearon P, Langhorne P. Early Supported Discharge Trialists. 2012.
 Services for reducing duration of hospital care for acute stroke patients.
 Cochrane Database Syst Rev 9: CD000443
 
+{phang}
+Review Manager (RevMan) [Computer program]. Version 5.4, The Cochrane Collaboration, 2020.

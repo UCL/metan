@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.6 (beta)  David Fisher  22may2020}{...}
+{* *! version 3.7 (beta)  David Fisher  10jul2020}{...}
 {vieweralsosee "metan_model" "help metan_model"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
 {vieweralsosee "metan_continuous" "help metan_continuous"}{...}
@@ -18,7 +18,8 @@
 {viewerjumpto "Options" "metan##options"}{...}
 {viewerjumpto "Saved results" "metan##saved_results"}{...}
 {viewerjumpto "Saved datasets" "metan##saved_datasets"}{...}
-{viewerjumpto "Note: differences from previous version of metan" "metan##diffs_metan"}{...}
+{viewerjumpto "Note: differences from previous version of metan" "metan##diffs_metan9"}{...}
+{viewerjumpto "Note: differences from Stata 16's meta suite" "metan##diffs_meta16"}{...}
 {viewerjumpto "Examples" "metan##examples"}{...}
 {viewerjumpto "References" "metan##refs"}{...}
 {title:Title}
@@ -119,7 +120,7 @@ This incorporates all the functionalities of the previous version of {cmd:metan}
 {synoptline}
 {syntab :Main}
 {synopt :{opt lcol:s}{cmd:(}{it:study_id} [{it:varlist}]{cmd:)}}variable to be used to label studies (see also {opt lcols()} under "Forest plot and/or saved data"){p_end}
-{synopt :{cmd:study(}{it:study_id} [{cmd:, {ul:m}issing}]{cmd:)}}alternative way to specify the variable used to label studies{p_end}
+{synopt :{cmd:label(}[{cmd:namevar=}{it:namevar}] [{cmd:, yearvar=}{it:yearvar}]{cmd:)}}alternative way to label studies{p_end}
 {synopt :{cmd:by(}{it:subgroup_id} [{cmd:, {ul:m}issing}]{cmd:)}}subgroup meta-analysis{p_end}
 {synopt :{opt cumul:ative}}cumulative meta-analysis{p_end}
 {synopt :{opt inf:luence}}investigate influence of each study in turn on the overall estimate{p_end}
@@ -127,9 +128,8 @@ This incorporates all the functionalities of the previous version of {cmd:metan}
 
 {syntab :Options}
 {synopt :{opt ci:type(ci_type)}}method of constructing confidence intervals for reporting of individual studies ({ul:not} pooled results){p_end}
-{synopt :{opt level(#)}}set confidence level for reporting confidence intervals ({ul:including} pooled results); default is {cmd:level(95)}{p_end}
-{synopt :{opt coef}, {opt log}}display log effect sizes and confidence limits{p_end}
-{synopt :{it:{help eform_option}}}display exponentiated (antilog) effect sizes and confidence limits{p_end}
+{synopt :{opt level(#)} {opt il:evel(#)} {opt ol:evel(#)}}set confidence level for reporting confidence intervals; default is {cmd:level(95)}{p_end}
+{synopt :{opt eform}}display exponentiated (antilog) effect sizes and confidence limits{p_end}
 {synopt :{opt eff:ect(string)}}title for "effect size" column in the output{p_end}
 {synopt :{opt keepa:ll}}display all studies in the output, even those for which no effect could be estimated{p_end}
 {synopt :{opt keepo:rder}}display "no effect" studies in the order in which they would otherwise appear (by default these are moved to the end){p_end}
@@ -144,8 +144,7 @@ This incorporates all the functionalities of the previous version of {cmd:metan}
 {synopt :{opt wgt(varname)}}specify a variable containing user-defined weights{p_end}
 
 {syntab :Forest plot and/or saved data}
-{synopt :{opt effi:cacy}}additionally display odds ratios or risk ratios expressed in terms of vaccine efficacy{p_end}
-{synopt :{opt hets:tat(het_spec)}}specify heterogeneity information to display on the forest plot{p_end}
+{synopt :{opt hetinfo(het_spec)}}specify heterogeneity information to display on the forest plot{p_end}
 {synopt :{cmd:extraline(yes|no)}}override the default placement of heterogeneity information in the forest plot{p_end}
 {synopt :{opt rfdist}, {opt rflevel(#)}}display approximate predictive interval, with optional coverage level (default is 95%){p_end}
 {synopt :{opt lcol:s(varlist)}, {opt rcol:s(varlist)}}display (and/or save) columns of additional data{p_end}
@@ -180,22 +179,17 @@ Much of the basic theory of aggregate-data meta-analysis, as implemented in {cmd
 {dlgtab:Main}
 
 {phang}
-{cmd:study(}{it:study_id} [{cmd:, missing}]{cmd:)} specifies the variable used for labelling the studies in all output,
-which must be either integer-valued or string.
+{cmd:label(}[{cmd:namevar=}{it:namevar}] [{cmd:, yearvar=}{it:yearvar}]{cmd:)}
+labels the studies in all output, using names or years or both.
+{it:namevar} and {it:yearvar} must be integer-valued or string.
 
 {pmore}
-{opt missing} requests that missing values be treated as potential study identifiers; the default is to exclude them.
+{it:namevar} and/or {it:yearvar} may alternatively be specified as the first {it:varname}(s) in {opt lcols(varlist)}
+(see {help metan##fplotopts:Forest plot and/or saved data options}).
+In this case, {opt label()} is not necessary; note that {opt lcols()} and {opt label()} will both be honoured (if specified) by {bf:{help forestplot}}.
 
 {pmore}
-The variable used for labelling the studies may alternatively be specified as the first {it:varname} in {opt lcols(varlist)}
-(see {help metan##fplotopts:Forest plot and/or saved data options}), in which case
-{opt study()} is not necessary and {opt missing} may not be specified.
-
-{pmore}
-Alternatively, the older {cmd:metan} syntax {cmd:label(}[{cmd:namevar=}{it:namevar}]{cmd:,} [{cmd:yearvar=}{it:yearvar}]{cmd:)} may be used.
-
-{pmore}
-If none of these are supplied, studies will simply be labelled sequentially as "1", "2", etc.
+If neither {opt label()} or {opt lcols()} are supplied, studies will simply be labelled sequentially as "1", "2", etc.
 In the absence of {ifin}, the entire dataset in memory will be included
 except observations for which {it:varlist} is entirely {help missing:system missing}.
 
@@ -255,16 +249,10 @@ otherwise degrees of freedom of {it:n-2} are assumed, where {it:n} is the study 
 Additional {it:ci_type}s may also be specified with {help metan_binary:two-group binary comparisons} or {help metan_proportion:proportion data}.
 
 {phang}
-{it:{help eform_option}} specifies that effect sizes and confidence limits should be exponentiated in the table and forest plot.
-The option also generates a heading for the effect size column, e.g. "Odds Ratio" if {it:eform_option} is {cmd:or}
-
-{phang}
-{opt coef} or {opt log} are synonyms, and report results on the log scale (valid for ratio statistics only, that is OR, RR, HR etc).
-If both {it:eform_option} and {opt log} are supplied, {opt log} takes priority.
+{opt eform} specifies that effect sizes and confidence limits should be exponentiated in the table and forest plot.
 
 {phang}
 {opt effect(string)} specifies a heading for the effect size column in the output.
-This overrides any heading generated by {it:{help eform_option}}.
 
 {phang}
 {opt keepall}, {opt keeporder} request that all values of {it:study_id} should be visible in the table and forest plot,
@@ -355,24 +343,24 @@ The raw (non-normalised) numbers stored in {it:varname} may also be saved and/or
 {dlgtab:Forest plot and/or saved data}
 
 {phang}
-{opt efficacy} expresses results as the vaccine efficacy (the proportion of cases that would have been prevented
-in the placebo group that would have been prevented had they received the vaccination).
-Only available with odds ratios (OR) or risk ratios (RR).
+{opt hetinfo(het_spec)} specifies the heterogeneity information to be displayed on the forest plot, which by default is I-squared alone.
+{it:het_spec} has the following syntax:
+
+{pmore2}
+{it:het_stat} [{it:%fmt}] [ {it:het_stat} [{it:%fmt}] ... ]
+
+{phang2}
+where {it:%fmt} is an optional {help format}; and {it:het_stat} may be any of the following, in any order:{p_end}
+{p2colset 12 24 24 2}
+{p2col:{opt isq}}I-squared statistic{p_end}
+{p2col:{opt h}}H statistic{p_end}
+{p2col:{opt h2m}}H-squared statistic ({help metan##refs:Mittlb{c o:}ck} modification){p_end}
+{p2col:{opt tausq}}tau-squared statistic{p_end}
+{p2col:{opt q}}Q statistic and degrees of freedom{p_end}
+{p2col:{opt p:value}}p-value corresponding to Q statistic{p_end}
 
 {phang}
-{opt hetstat(het_spec)} alters the default heterogeneity information displayed on the forest plot. {it:het_spec} can be either, or both, of:
-
-{pmore}
-{opt p:value} requests that the p-value associated with the relevant heterogeneity test be displayed.
-
-{pmore}
-{opt q} or {opt isq} changes the heterogeneity statistic that appears on the forest plot.
-For inverse-variance models, the default is I-squared which can optionally be changed to Cochran's Q statistic.
-Otherwise, the default is the Cochran, Mantel-Haenszel or Peto Q statistic (as appropriate), from which I-squared can optionally be derived
-as ({it:Q} - {it:Qdf})/{it:Q}.
-
-{phang}
-{cmd:extraline(yes|no)} affects the placement of the heterogeneity information (see {opt hetstat()}) within the plot.
+{cmd:extraline(yes|no)} affects the placement of the heterogeneity information (see {opt hetinfo()}) within the plot.
 By default, heterogeneity information is displayed in brackets following the description of the pooled effect
 (e.g. "Overall").  However, if columns of data are to be displayed on the left-hand side (see e.g. {opt lcols()})
 which would cause text to be overwritten, then the heterogeneity information is moved to a new line immediately below.
@@ -459,6 +447,9 @@ The following new variables may be added:
 {synopt:{cmd:r(eff)}}Overall pooled effect size{p_end}
 {synopt:{cmd:r(se_eff)}}Standard error of overall pooled effect size{p_end}
 {synopt:{cmd:r(Q)}}Q statistic of heterogeneity (with degrees of freedom {it:k-1}){p_end}
+{synopt:{cmd:r(Isq)}}Heterogeneity measure I-squared{p_end}
+{synopt:{cmd:r(H)}}Heterogeneity measure H{p_end}
+{synopt:{cmd:r(HsqM)}}Heterogeneity measure H-squared ({help metan##refs:Mittlb{c o:}ck} modification){p_end}
 {synopt:{cmd:r(m)}}Number of different pooling method(s) used{p_end}
 
 {synoptset 25 tabbed}{...}
@@ -484,20 +475,19 @@ The following results may also be saved, depending on the combination of effect 
 {synopt:{cmd:r(OE)}, {cmd:r(V)}}Overall pooled {it:OE} and {it:V} statistics (if appropriate){p_end}
 {synopt:{cmd:r(cger)}, {cmd:r(tger)}}Average event rate in control and treatment groups{p_end}
 
-{p2col 5 20 24 2: Scalars (inverse-variance model with subgroups only)}{p_end}
+{p2col 5 20 24 2: Scalars (with subgroups only)}{p_end}
 {synopt:{cmd:r(nby)}}Number of subgroups{p_end}
 {synopt:{cmd:r(Qbet)}}Measure of between-study heterogeneity{p_end}
 {synopt:{cmd:r(Qsum)}}(common-effect models only) Sum of within-subgroup heterogeneity statistics{p_end}
 {synopt:{cmd:r(F)}}(common-effect models only) F-statistic comparing within- and between-subgroup heterogeneity;
-equal to {bf:(r(Qdiff)/(r(nby) - 1)) / (r(Qsum)/((r(k) - 1) - (r(nby) - 1)))}
+equal to {bf:(r(Qbet)/(r(nby) - 1)) / (r(Qsum)/((r(k) - 1) - (r(nby) - 1)))}
 as suggested by {help metan##refs:Sandercock et al (2002)}{p_end}
 
 {p2col 5 20 24 2: Scalars (inverse-variance models only)}{p_end}
 {synopt:{cmd:r(tausq)}}Between-study variance tau-squared{p_end}
 {synopt:{cmd:r(sigmasq)}}Average within-study variance{p_end}
-{synopt:{cmd:r(Isq)}}Heterogeneity measure I-squared{p_end}
-{synopt:{cmd:r(HsqM)}}Heterogeneity measure H-squared ({help metan##refs:Mittlb{c o:}ck} modification){p_end}
-{synopt:{cmd:r(Qr)}}"Generalised" Q, i.e. Cochran's Q calculated using random-effects weights and pooled estimate{p_end}
+{synopt:{cmd:r(Hstar)}}H statistic calculated using random-effects weights and pooled estimate,
+as suggested by {help metan_model##refs:van Aert & Jackson (2019)}{p_end}
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Scalars (iterative random-effects models only; see {help mf_mm_root} for interpretations of convergence success values)}{p_end}
@@ -560,13 +550,13 @@ Otherwise, variables are given standardised names, as follows:
 Some of these variables have associated characteristics; type {bf:{help char:char list}} to see these.
 
 
-{marker diffs_metan}{...}
+{marker diffs_metan9}{...}
 {title:Note: Differences from previous versions of {cmd:metan}}
 
 {pstd}
 This latest version of {cmd:metan} is designed to run under Stata version 11 and upwards,
-with the exception of the {help metan_model##model_name:Biggerstaff-Tweedie} and {help metan_model##model_name:Henmi-Copas} models
-which require an additional user-contributed Mata function written for Stata version 12.
+(with the exception of two random-effects models requiring numerical integration,
+handled via an additional user-contributed Mata function written for Stata version 12).
 The previous version of {bf:metan}, v3.04 written for Stata v9 ({help metan##refs:Harris et al 2008}),
 remains available within this package under the name {bf:{help metan9}}.
 A still older version, v1.86 written for Stata v7 ({help metan##refs:Bradburn et al 1998}),
@@ -574,53 +564,109 @@ also remains available under the name {bf:{help metan7}}.
 
 {pstd}
 This version of {cmd:metan} has been designed with consistency and backwards-compatibility in mind.
-However, there are some differences in syntax and operation from previous versions.  In particular:
+However, there are some differences in syntax and behaviour from previous versions.  In particular:
 
 {phang2}
-Most options specific to the forest plot (i.e. those that do not affect the results appearing in the Results Window)
-now need to be placed within the {opt forestplot()} option rather than directly to {cmd:metan}. This includes {opt nostats} and {opt nowt}.
-There are a few other differences in forest plot syntax, for which see {bf:{help forestplot##diffs_metan:forestplot}}.
+The preferred, documented syntax is for most options specific to the forest plot (i.e. those that do not affect the results appearing in the Results Window)
+to be placed within the {opt forestplot()} option rather than directly to {cmd:metan}. This includes {opt nostats} and {opt nowt}.
+Any previously-valid syntax continues to be supported, but with a message printed to the Results Window as a reminder
+that the documented syntax has changed.
 
-{phang2}
-{opt nooverall} no longer automatically enforces {opt nowt}.
+{pmore2}
+Certain options, such as {opt nowt}, {opt nohet} and {opt summaryonly}, now affect the output in the Results Window as well as the forest plot.
+
+{pmore2}
+For details of other, more specific, changes to forest plot-related syntax and behaviour, see {bf:{help forestplot##diffs_metan9:forestplot}}.
 
 {phang2}
 Prediction intervals ({opt rfdist}) are no longer displayed with dotted lines if the number of studies is less than three;
 instead, the interval is simply not displayed at all. A message is printed to the Results Window explaining this.
 
-{phang2}
-If {it:{help metan_model##model_name:model_name}} is {cmd:mhaenzsel}, continuity correction is not necessary for pooling and will not be applied.
-However, for display purposes only, continuity correction {ul:will} be applied to the individual study estimates.
+{pmore2}
+If {opt rflevel()} is different from {opt olevel()}, then results from {cmd:metan} may differ slightly from {bf:{help metan9}}
+due to a subtle error in the older code, which has been corrected.
 
 {phang2}
-If {it:{help metan_model##model_name:model_name}} is {cmd:mhaenzsel} or {cmd:peto},
- overall and subgroup-specific Q statistics are based on the pooled effect and weights from the specified model,
-since these models are also considered common-effect models.
-Between-subgroup heterogeneity is handled as described below for random-effects models.
+{help metan##saved_results:Saved results} are now always on the interval scale.
+For example: if using {help metan_binary:binary outcome data},
+{cmd:_ES} and {cmd:_seES} might contain the individual study {ul:log} Risk Ratios and standard errors,
+and {cmd:r(eff)} and {cmd:r(se_eff)} the pooled {ul:log} Risk Ratio and its standard error.
+(The variable name {cmd:_selogES} is therefore no longer used.)
+This has the advantage of consistency across outcome types, and means that saved results may be passed directly to {cmd:metan}, {cmd:forestplot}
+or similar, without needing to take logarithms.
+
+{pmore2}
+The names of all {help metan##saved_results:returned values} saved in {cmd:r()} by {bf:{help metan9}} continue to be honoured.
+(For those interested: this is done using {bf:{help return:return historical}}.)
 
 {phang2}
-If a random-effects model or {opt wgt()} is specified, overall and subgroup-specific Q statistics
-are  based on the inverse-variance common-effect model.
-However, {ul:between}-subgroup heterogeneity is tested by considering the dispersal of subgroup-specific poooled effects
-from the weighted average of subgroup effects, under the specified model ({help metan##refs:Borenstein et al 2009}, chapter 19).
-Note that under the inverse-variance common-effect model, this approach is equvalent to variance partitioning
+If {it:{help metan_model##model_name:model_name}} is {cmd:mhaenzsel} or {cmd:peto}, continuity correction is generally not necessary for pooling,
+and may in fact lead to increased bias (see, for example, {help metan##refs:Bradburn et al 2007}).
+Hence, in this version of {cmd:metan}, no continuity correction is applied by default with {cmd:mhaenzsel} or {cmd:peto};
+although a correction {ul:will} be applied (if necessary) to the {ul:individual} study estimates and weights, for display purposes.
+However, in the extreme case that all studies have a zero cell in the same treatment group,
+continuity correction becomes necessary for Mantel-Haenszel Risk Ratios and Odds Ratios; in that case the default correction of 0.5 {ul:is} applied.
+
+{pmore2}
+The above can be summarized as: by default, {cmd:metan} will analyse the available data in the best way possible.
+Note that any of the behaviour described above may be over-ridden by explicit use of the {opt cc()} option; see {it:{help metan_binary}}.
+
+{pmore2}
+If the option {cmd:cc(0.5)} is added to the command line, all results will match with those from {bf:{help metan9}}.
+
+{phang2}
+If a random-effects model is specified, overall and subgroup-specific Q statistics
+are based on the inverse-variance common-effect model.
+However, {ul:between}-subgroup heterogeneity is tested by considering the dispersal of subgroup-specific pooled effects
+from the weighted average of subgroup effects under the specified model ({help metan##refs:Borenstein et al 2009}, chapter 19).
+Note that under the inverse-variance common-effect model, this approach is equivalent to variance partitioning
 as used in previous versions of {cmd:metan} (see {bf:{help metan9}}).
 
+{pmore2}
+Similar behaviour is seen when specifying user-defined weights with {opt wgt()}, except that overall and subgroup-specific Q statistics
+measure the dispersal of individual effects from the {ul:weighted} pooled estimate, using {ul:standard} inverse-variance weights.
+This matches the pre-existing behaviour of {cmd:metan} with the Mantel-Haenszel and Peto methods.
+(If a random-effects model is specified with {opt wgt()}, Q statistics are calculated under the equivalent common-effect model.)
+
+{pmore2}
+If {it:{help metan_model##model_name:model_name}} is {cmd:mhaenzsel} or {cmd:peto}, 
+between-subgroup heterogeneity is handled as described above for random-effects models.
+
+
+{marker diffs_meta16}{...}
+{title:Note: Differences from Stata 16's {cmd:meta} suite}
+
+{pstd}
+In June 2019, Stata version 16 introduced a suite of built-in meta-analysis commands, with the prefix {bf:{help meta}}.
+Forest plots are generated using a new specific Stata graph type (rather than being generated using a combination of {cmd:twoway} commands),
+and there is better interface with other built-in Stata estimation commands.
+However, at the time of writing it has somewhat limited functionality, and it is unclear which directions its future development might take.
+Currently, {cmd:metan} implements many more random-effects models and additional features,
+and {cmd:forestplot} provides far more flexibility to create non-standard plots.
+Plus, of course, {cmd:metan} is available to users of earlier versions of Stata.
+
+{pstd}
+More specifically: as of July 2020 (Stata version 16.1), Stata 16's {cmd:meta} suite is currently unable to:
+
 {phang2}
-Note that the first listed syntax for {it:{help metan_model##model_spec:model_spec}} reflects the previous syntax of {cmd:metan} (see {bf:{help metan9}}),
-under which {it:{help metan_model##options_test:options_test}} and {it:{help metan_model##options_het:options_het}} were supplied as main options.
-However, in fact {it:{help metan_model##options_test:options_test}} and {it:{help metan_model##options_het:options_het}} may also be supplied
-as main options with the {ul:second} listed syntax for {it:{help metan_model##model_spec:model_spec}}.
-In that case, such options will act "globally", but may be over-ridden by model-specific options.
-In particular, if a "global" option is invalid for a particular model,
-a notification will be printed to screen, and the option will revert to the model-specific default value.
+Display the results of analysis under multiple models in the same output,
+as can be done using {cmd:metan}'s {opt second()} or {opt model()} options;
+
+{phang2}
+Make use of user-specified weights in analysis or in a forest plot;
+
+{phang2}
+Show predictive intervals for study subgroups;
+
+{phang2}
+Make use of marker label options to display text at the co-ordinates of study effect estimates (see Example 9 below).
 
 
 {marker examples}{...}
 {title:Examples}
 
 {pstd}
-All examples use a simulated example dataset (Ross Harris 2006, originally prepared for {bf:{help metan9}}
+All examples use a simulated example dataset (Ross Harris 2006) originally prepared for {bf:{help metan9}}.
 
 {pmore}
 {stata "use http://fmwww.bc.edu/repec/bocode/m/metan_example_data, clear":. use http://fmwww.bc.edu/repec/bocode/m/metan_example_data, clear}
@@ -644,7 +690,7 @@ rd random label(namevar=id, yearvar=year) counts{p_end}
 {pstd}
 Same again, but now with {help metan_model:three different pooling methods}: Mantel-Haenszel common-effect,
 DerSimonian-Laird random-effects, and REML random-effects with Hartung-Knapp-Sidik-Jonkman variance correction.
-We also request the test-based confidence interval for {it:H} proposed by {help metan_model##refs:Higgins and Thompson (2002)}
+Note that each method gives rise to a different estimate of I-squared and its confidence interval, each of which is displayed.
 
 {cmd}{...}
 {* example_start - metan_ex1a}{...}
@@ -653,7 +699,7 @@ We also request the test-based confidence interval for {it:H} proposed by {help 
 {p 16 20 2}
 rd label(namevar=id, yearvar=year) counts{* ///}{p_end}
 {p 16 20 2}
-model(mh \ dl \ reml, hksj) higgins{p_end}
+model(mh \ dl \ reml, hksj){p_end}
 {* example_end}{...}
 {txt}{...}
 {pmore}
@@ -687,7 +733,7 @@ display random-effects predictive distribution, show raw data counts, display "f
 {phang2}
 . metan tsample tmean tsd csample cmean csd,{* ///}{p_end}
 {p 16 20 2}
-study(id) by(type_study) sgwt random rfdist counts{* ///}{p_end}
+label(namevar=id) by(type_study) sgweight random rfdist counts{* ///}{p_end}
 {p 16 20 2}
 forestplot(favours(Treatment reduces blood pressure # Treatment increases blood pressure)){p_end}
 {* example_end}{...}
@@ -710,7 +756,7 @@ scale is forced within set limits and ticks added, effect label specified.
 {phang2}
 . rename _seES selogor{p_end}
 {phang2}
-. metan logor selogor, or {* ///}{p_end}
+. metan logor selogor, eform effect(Odds ratio){* ///}{p_end}
 {p 16 20 2}
 forestplot(xlabel(0.5 1 1.5 2 2.5, force) xtick(0.75 1.25 1.75 2.25)){p_end}
 {* example_end}{...}
@@ -727,7 +773,7 @@ By default, the null line is removed and the x-axis range is forced to be from z
 {cmd}{...}
 {* example_start - metan_ex5}{...}
 {phang2}
-. metan cdeath csample, proportion transform(ftukey) lcols(id){p_end}
+. metan cdeath csample, proportion transform(ftukey) label(namevar=id){p_end}
 {* example_end}{...}
 {txt}{...}
 {pmore}
@@ -741,7 +787,7 @@ and null specified at 50%. Overall effect estimate is not displayed, graph for v
 {cmd}{...}
 {* example_start - metan_ex6}{...}
 {phang2}
-. metan percent lowerci upperci, wgt(n_positives) study(id) nooverall notable {* ///}{p_end}
+. metan percent lowerci upperci, wgt(n_positives) label(namevar=id) nooverall notable {* ///}{p_end}
 {p 16 20 2}
 forestplot( xlabel(0(10)100, force) null(50) title(Sensitivity, position(6)) ){p_end}
 {* example_end}{...}
@@ -770,7 +816,8 @@ forestplot(xlabel(0.25 0.5 1 2 4, force) null(1) scheme(economist)){p_end}
 
 {pstd}
 Same example again, but this time instead of using {opt first()} or {opt firststats()},
-we save and load a "forest plot results set", which is then edited to contain our user-defined estimates.
+we use the option {opt clear} to replace the data in memory with a "forest plot results set",
+which is then edited to contain our user-defined estimates.
 Finally, the forest plot is generated, and appears identical to that in the previous example.
 This demonstrates some of the flexibility of being able to edit (and otherwise manipulate) forest plot results sets.
 
@@ -781,13 +828,9 @@ and the final call to {cmd:forestplot}. For further details, see {bf:{help fores
 {cmd}{...}
 {* example_start - metan_ex8}{...}
 {phang2}
-. tempfile myfile{p_end}
-{phang2}
-. quietly metan OR ORlci ORuci, wgt(bweight) study(id) nograph saving(`myfile'){p_end}
-{phang2}
 . preserve{p_end}
 {phang2}
-. use `myfile', clear{p_end}
+. quietly metan OR ORlci ORuci, wgt(bweight) label(namevar=id) nograph clear{p_end}
 {phang2}
 . replace _ES  = 0.924 if _USE == 5{p_end}
 {phang2}
@@ -796,6 +839,8 @@ and the final call to {cmd:forestplot}. For further details, see {bf:{help fores
 . replace _UCI = 1.095 if _USE == 5{p_end}
 {phang2}
 . replace _LABELS = "Overall, Bayesian (param V=3.86, p=0.012)" if _USE == 5{p_end}
+{phang2}
+. format %-1s _LABELS{p_end}
 {phang2}
 . forestplot, useopts xlabel(0.25 0.5 1 2 4, force) null(1) scheme(economist){p_end}
 {phang2}
@@ -879,7 +924,7 @@ Thanks to Patrick Royston (MRC Clinical Trials Unit at UCL, London, UK) for sugg
 Thanks to Vince Wiggins, Kit Baum and Jeff Pitblado of Statacorp who offered advice and helped facilitate the version 9 update.
 
 {pstd}
-Thanks to Julian Higgins and Jonathan A C Sterne (University of Bristol, Bristol, UK) who offered advice and helped facilitate this latest update.
+Thanks to Julian Higgins and Jonathan Sterne (University of Bristol, Bristol, UK) who offered advice and helped facilitate this latest update.
 
 {pstd}
 The "click to run" element of the examples in this document is handled using an idea originally developed by Robert Picard.
@@ -894,29 +939,19 @@ Borenstein M, Hedges LV, Higgins JPT, Rothstein HR. 2009.
 Introduction to Meta-analysis. Chichester: Wiley.
 
 {phang}
+Bradburn MJ, Deeks JJ, Altman DG. 1998.
+metan — an alternative meta-analysis command.
+Stata Technical Bulletin 44: sbe24 (pp 4-15)
+
+{phang}
+Bradburn MJ, Deeks JJ, Berlin JA, Localio AR. 2007.
+Much ado about nothing: a comparison of the performance of meta-analytical methods with rare events.
+Statistics in Medicine 26: 53-77. doi: 10.1002/sim.2528
+
+{phang}
 Deeks JJ, Altman DG, Bradburn MJ. 2001.
 Statistical methods for examining heterogeneity and combining results from several studies in meta-analysis.
 In Systematic Reviews in Health Care: Meta-analysis in Context, ed. Egger M, Davey Smith G, Altman DG, 2nd ed., 285-312. London: BMJ Books.
-
-{phang}
-Lau J, Antman EM, Jimenez-Silva J, Mosteller F, Chalmers TC. 1992.
-Cumulative meta-analysis of therapeutic trials for myocardial infarction.
-New England Journal of Medicine 327: 248-254
-
-{phang}
-Higgins JPT, Thompson SG, Spiegelhalter DJ. 2009.
-A re-evaluation of random-effects meta-analysis.
-JRSS Series A 172: 137-159
-
-{phang}
-Sandercock J, Parmar MKB, Torri V, Qian W. 2002.
-First-line treatment for advanced ovarian cancer : paclitaxel, platinum and the evidence.
-British Journal of Cancer 87: 815-824
-
-{phang}
-Mittlb{c o:}ck M, Heinzl H. 2006.
-A simulation study comparing properties of heterogeneity measures in meta-analyses.
-Statistics in Medicine 25: 4321-4333
 
 {phang}
 Harris RJ, Bradburn MJ, Deeks JJ, Harbord RM, Altman DG, Sterne JAC. 2008.
@@ -924,7 +959,22 @@ metan: fixed- and random-effects meta-analysis.
 Stata Journal 8: 3-28
 
 {phang}
-Bradburn MJ, Deeks JJ, Altman DG. 1998.
-metan — an alternative meta-analysis command.
-Stata Technical Bulletin 44: sbe24 (pp 4-15)
+Higgins JPT, Thompson SG, Spiegelhalter DJ. 2009.
+A re-evaluation of random-effects meta-analysis.
+JRSS Series A 172: 137-159
+
+{phang}
+Lau J, Antman EM, Jimenez-Silva J, Mosteller F, Chalmers TC. 1992.
+Cumulative meta-analysis of therapeutic trials for myocardial infarction.
+New England Journal of Medicine 327: 248-254
+
+{phang}
+Mittlb{c o:}ck M, Heinzl H. 2006.
+A simulation study comparing properties of heterogeneity measures in meta-analyses.
+Statistics in Medicine 25: 4321-4333
+
+{phang}
+Sandercock J, Parmar MKB, Torri V, Qian W. 2002.
+First-line treatment for advanced ovarian cancer : paclitaxel, platinum and the evidence.
+British Journal of Cancer 87: 815-824
 

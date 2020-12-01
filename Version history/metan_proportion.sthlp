@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.6 (beta)  David Fisher  22may2020}{...}
+{* *! version 3.7 (beta)  David Fisher  10jul2020}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "metan_model" "help metan_model"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
@@ -90,7 +90,11 @@ This option acts independently of how confidence limits for {ul:pooled} results 
 (which will depend upon {it:{help metan_model:model_spec}}). See also {bf:{help metan##options_main:level(#)}}
 
 {phang2}
-For proportion data, the default {it:ci_type} is {opt wilson} but can also be {opt exact}; see help for {bf:{help ci}}.
+For proportion data, the default {it:ci_type} is {opt wilson}, but can also be {opt exact} (a.k.a. Clopper-Pearson),
+or any of the alternatives listed under {bf:{help ci}} for proportions.
+
+{phang2}
+If {opt nointeger} is specified, a Wald-type interval will be constructed and {opt citype()} may not be specified.
 
 {phang}
 {opt denominator(#)} specifies a denominator for presenting proportion data, with a default value of 1.

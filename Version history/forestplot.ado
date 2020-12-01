@@ -75,24 +75,14 @@
 // some text in help file is updated
 // improved counting of rows in titles containing compound quotes
 
-* version 3.3 (beta)  David Fisher  14nov2019
+*! version 3.7 (beta)  David Fisher  10jul2020
 // changes to `xlabopts'
-// upversioned to match with -metan-
-
-* version 3.4 (beta)  David Fisher  12dec2019
-// no changes; upversioned to match with -metan-
-
-* version 3.5 (beta)  David Fisher  21jan2020
-// changes to `xlabopts'
-// major changes to `influence' plot:
-//   default behaviour is now to "hide" pooled effects, and instead display vertical lines for the confidence limits
-//   can also be represented by a shaded area rather than a pair of vertical lines
-// upversioned to match with -metan-
-
-*! version 3.6 (beta)  David Fisher  22may2020
+// changes to `influence' plot (including "hide" option)
 // changes to fp() option
 // -double- option added back in; "height" etc. now calculated using values of `id' rather than by counting observations
+// minor change to ProcessColumns to ensure "95% CI" (in _EFFECT varlabel) is not broken across lines
 // upversioned to match with -metan-
+
 
 
 program define forestplot, sortpreserve rclass
@@ -135,29 +125,30 @@ program define forestplot, sortpreserve rclass
 	syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varname numeric) ///
 		///
 		/// /* General user-specified -forestplot- options */
-		BY(varname) EFORM EFFect(string) LABels(varname string) DP(integer 2) KEEPAll USESTRICT /*(undocumented)*/ ///
-		INTERaction LCols(namelist) RCols(namelist) LEFTJustify COLSONLY RFDIST(varlist numeric min=2 max=2) ///
-		NULLOFF noNAmes noNULL NULL2(string) noKEEPVars noOVerall noSUbgroup noSTATs noWT noHET LEVEL(real 95) ///
+		BY(varname) EFORM EFFect(string asis) LABels(varname string) DP(integer 2) KEEPAll USESTRICT /*(undocumented)*/ ///
+		INTERaction LCols(namelist) RCols(namelist) LEFTJustify COLSONLY RFDIST(varlist numeric min=2 max=2) RFLevel(passthru) ///
+		NULLOFF noNAmes noNULL NULL2(string) noKEEPVars noOVerall noSUbgroup noSTATs noWT noHET LEVEL(passthru) ILevel(passthru) OLevel(passthru) ///
 		XTItle(passthru) FAVours(passthru) /// /* N.B. -xtitle- is parsed here so that a blank title can be inserted if necessary */
 		CUmulative INFluence PRoportion /// /* undocumented; passed through from -metan-; needed in order to implement "hide" option... */
 		/// /* ...and to control default null line/x-axis (e.g. for proportion/influence)
 		/// /* Sub-plot identifier for applying different appearance options, and dataset identifier to separate plots */
 		PLOTID(string) DATAID(string) ///
 		///
+		TEXTSize(passthru) /// /* legacy -metan9- option, implemented here as a post-hoc option; use at own risk */
 		/// /* "fine-tuning" options */
 		SAVEDIms(name) USEDIms(name) ASText(real -9) noADJust ///
 		FP(string) /// 		/*(deprecated; now a favours() suboption)*/
-		KEEPXLabs * ] /// 	/*(undocumented; colsonly option)*/
-	
+		KEEPXLabs * ]		/*(undocumented; colsonly option)*/
+		
 	marksample touse, novarlist				// do this immediately, so that -syntax- can be used again
 	local graphopts `"`options'"'			// "graph region" options (also includes plotopts for now)		
 	local _USE `use'
-			
+	
 	tokenize `varlist'
 	local _ES  `1'
 	local _LCI `2'
 	local _UCI `3'	
-
+	
 	
 	** N.B. Parts of this early setup may repeat work already done by -admetan- or -ipdover-
 	//  but hopefully the extra overhead is negligible
@@ -199,9 +190,9 @@ program define forestplot, sortpreserve rclass
 	}
 	markout `touse' `_USE'		// observations for which _USE is missing
 
-	qui replace `touse' = 0 if `_USE' == 3 & `"`subgroup'"'!=`""'
-	qui replace `touse' = 0 if inlist(`_USE', 4, 5) & `"`overall'"'!=`""'	
+	qui replace `touse' = 0 if inlist(`_USE', 3, 4) & `"`subgroup'"'!=`""'
 	qui replace `touse' = 0 if `_USE' == 4 & `"`het'"'!=`""'
+	qui replace `touse' = 0 if `_USE' == 5 & `"`overall'"'!=`""'	
 	qui replace `touse' = 0 if inlist(`_USE', 3, 5) & missing(`_ES') & `"`stats'"'!=`""' & `"`rfdist'"'!=`""'
 	
 	if `"`keepall'"'==`""' qui replace `touse' = 0 if `_USE'==2		// "keepall" option (see -metan-)
@@ -214,10 +205,10 @@ program define forestplot, sortpreserve rclass
 	// Jan 2020: do this later, after BuildPlotCmds, in case of "hidden" pooled observations
 
 	// Check that UCI is greater than LCI
-	cap assert `_UCI' > `_LCI' if `touse' & !missing(`_UCI')
+	cap assert `_UCI' > `_LCI' if `touse' & !missing(`_UCI') & !(float(`_LCI')==float(`_ES') & float(`_ES')==float(`_UCI'))
 	if _rc {
 		nois disp as err "Error in confidence interval data; please check the following observations:"
-		nois list `_USE' `_LCI' `_UCI' if `touse' & !missing(`_UCI') & !(`_UCI' > `_LCI')
+		nois list `_USE' `_LCI' `_UCI' if `touse' & !missing(`_UCI') & !(`_UCI' > `_LCI') & !(float(`_LCI')==float(`_ES') & float(`_ES')==float(`_UCI'))
 		exit 198
 	}		
 
@@ -305,7 +296,7 @@ program define forestplot, sortpreserve rclass
 			qui bysort `touse' `varlist' (`obs') : gen long `dtobs' = `obs'[1] if `touse'
 			qui bysort `touse' `dtobs' : gen long `dataid' = (_n==1) if `touse'
 			qui replace `dataid' = sum(`dataid')
-			label var `dataid' "dataid"
+			label variable `dataid' "dataid"
 		}
 	}
 
@@ -365,7 +356,7 @@ program define forestplot, sortpreserve rclass
 		qui bysort `touse2' `smiss' `plobs' : gen long `plotid' = (_n==1) if `touse2'
 		qui replace `plotid' = sum(`plotid')
 		local np = `plotid'[_N]					// number of `plotid' levels
-		label var `plotid' "plotid"
+		label variable `plotid' "plotid"
 		
 		* Optionally list observations contained within each plotid group
 		if "`list'" != "" {
@@ -399,7 +390,26 @@ program define forestplot, sortpreserve rclass
 		if `"`effect'"'==`""'      local effect "Effect"
 		if `"`interaction'"'!=`""' local effect `"Interact. `effect'"'
 	}
-	
+
+	// May 2020: significance levels
+	// If a -metan- results set is used, specifying level() is unnecessary
+	//  as the relevant values will be taken from variable characteristics
+	// But levels can be specified manually if necessary.
+	if `"`level'"'!=`""' {
+		if `"`ilevel'"'!=`""' {
+			nois disp as err "Cannot specify both {bf:level()} and {bf:ilevel()}"
+			exit 184
+		}
+		if `"`olevel'"'!=`""' {
+			nois disp as err "Cannot specify both {bf:level()} and {bf:olevel()}"
+			exit 184			
+		}
+		local ilevel : copy local level
+		local olevel : copy local level
+		local level
+	}	
+	local 0 `", `olevel'"'
+	syntax [, OLevel(cilevel) ]
 	
 	* Default placing of labels, effect sizes and weights:
 	// unless noSTATS and/or noWT, effect sizes and weights are first two elements of `rcols'
@@ -420,33 +430,38 @@ program define forestplot, sortpreserve rclass
 		qui replace `_EFFECT' = `_EFFECT' + "(" + string(`xexp'(`_LCI'), `"%`fmtx'.`dp'f"') + ", " + string(`xexp'(`_UCI'), `"%`fmtx'.`dp'f"') + ")"
 		qui replace `_EFFECT' = `""' if !(`touse' & inlist(`_USE', 1, 3, 5))
 		qui replace `_EFFECT' = "(Insufficient data)" if `touse' & `_USE'==2
-		qui replace `_EFFECT' = "(Insufficient data)" if `touse' & inlist(`_USE', 3, 5) & missing(`_LCI')	// added March 2020, in case of "empty" subgroups
-		qui replace `_EFFECT' = "(Insufficient data)" if `touse' & `_USE'==1 & `"`influence'"'!=`""'		// added March 2020, in case of single-study subgroups with `influence'
+		
+		// March 2020:  extra lines to handle "empty" subgroups, and single-study subgroups with `influence'
+		qui replace `_EFFECT' = "(Insufficient data)" if `touse' & inlist(`_USE', 3, 5) & missing(`_LCI')
+		qui replace `_EFFECT' = "(Insufficient data)" if `touse' & `_USE'==1 & missing(`_LCI') & `"`influence'"'!=`""'
 
-		local f = abs(fmtwidth("`: format _EFFECT'"))
-		format _EFFECT %-`f's		// left-justify
-		label variable _EFFECT `"`effect' (`level'% CI)"'
-		local _EFFECT _EFFECT			
+		local f = abs(fmtwidth("`: format `_EFFECT''"))
+		format `_EFFECT' %-`f's		// left-justify
 		
 		// variable label
 		if `"`effect'"' == `""' {
 			local effect = cond("`interaction'"!="", "Interaction effect", "Effect")
 		}
-		local llevel : char `_LCI'[Level]
-		local ulevel : char `_UCI'[Level]
-		if `"`llevel'"'!=`""' & `"`ulevel'"'!=`""' & `"`llevel'"'!=`"`ulevel'"' {
-			nois disp as err "Conflicting confidence limit coverages"
-			exit 198
+		if `"`ilevel'"'==`""' {
+			local lciLevel : char `_LCI'[Level]
+			local uciLevel : char `_UCI'[Level]
+			if `"`lciLevel'"'!=`""' & `"`uciLevel'"'!=`""' & `"`lciLevel'"'!=`"`uciLevel'"' {
+				nois disp as err "Conflicting confidence limit coverages"
+				exit 198
+			}
+			local ilevel `lciLevel'
+			if `"`ilevel'"'==`""' local ilevel `uciLevel'
 		}
-		local cilevel `llevel'
-		if `"`cilevel'"'==`""' local cilevel `ulevel'
-		if `"`cilevel'"'==`""' local cilevel `level'
-		label var `_EFFECT' `"`effect' (`cilevel'% CI)"'
+		if `"`ilevel'"'==`""' {		// if `ilevel' manually specified, use it in preference to the value stored in the variable characteristics
+			local 0 `", `ilevel'"'
+			syntax [, ILevel(cilevel) ]
+		}
+		label variable `_EFFECT' `"`effect' (`ilevel'% CI)"'
 	}
 	if `"`names'"'==`""' local lcols `labels' `lcols'		// unless noNAMES specified, add `labels' to `lcols'
 	if "`wt'" == "" local rcols `wgt' `rcols'				// unless noWT specified, add `wgt' to `rcols'
 	local rcols `_EFFECT' `rcols'							// unless noSTATS specified, add `_EFFECT' to `rcols'			
-	
+
 	// finalise lcols and rcols
 	foreach x of local lcols {
 		cap confirm var `x' 
@@ -501,7 +516,10 @@ program define forestplot, sortpreserve rclass
 				disp as err "error in {bf:null()} option"
 				exit _rc
 			}
-			local h0 = `null2'
+			// local h0 = `null2'
+			// May 2020: null2() should be given on same scale as xlabels, to match with fp()
+			local h0 = cond(`"`eform'"'!=`""', ln(`null2'), `null2')
+			
 			if "`null'"!="nonull" local null
 		}
 	}
@@ -516,15 +534,32 @@ program define forestplot, sortpreserve rclass
 	summ `_UCI' if `touse', meanonly
 	local DXmax = r(max)				// maximum confidence limit
 
+	// May 2020: if `rflevel' < `olevel' and low heterogeneity, then (rfLCI, rfUCI) might be tighter than (LCI, UCI)
 	if `"`rfdist'"'!=`""' {
 		tokenize `rfdist'
 		args _rfLCI _rfUCI
-		cap {
-			assert `_rfLCI' <= `_LCI' if `touse' & !missing(`_rfLCI', `_LCI')
-			assert `_rfUCI' >= `_UCI' if `touse' & !missing(`_rfUCI', `_UCI')
+
+		if `"`rflevel'"'==`""' {
+			local lciRFLevel : char `_rfLCI'[RFLevel]
+			local uciRFLevel : char `_rfUCI'[RFLevel]
+			if `"`lciRFLevel'"'!=`""' & `"`uciRFLevel'"'!=`""' & `"`lciRFLevel'"'!=`"`uciRFLevel'"' {
+				nois disp as err "Conflicting confidence limit coverages for predictive interval"
+				exit 198
+			}
+			local rflevel `lciRFLevel'
+			if `"`rflevel'"'==`""' local rflevel `uciRFLevel'
+		}
+		if `"`rflevel'"'==`""' {		// if `rflevel' manually specified, use it in preference to the value stored in the variable characteristics
+			local 0 `", `rflevel'"'
+			syntax [, RFLevel(cilevel) ]
+		}
+		
+		cap {			
+			assert `_rfLCI' <= `_LCI' if `touse' & !missing(`_rfLCI', `_LCI') & `rflevel'>=`olevel'
+			assert `_rfUCI' >= `_UCI' if `touse' & !missing(`_rfUCI', `_UCI') & `rflevel'>=`olevel'
 		}
 		if _rc {
-			nois disp as err "Error in prediction interval data"
+			nois disp as err "Error in predictive interval data"
 			exit 198
 		}
 	
@@ -561,6 +596,8 @@ program define forestplot, sortpreserve rclass
 		c_local err noerr		// tell calling program (admetan or ipdover) not to also report an error
 		exit _rc
 	}
+	if "`twowaynote'"!="" c_local twowaynote notwowaynote	// so that -metan- does not print an additional message regarding "xlabel" or "force" 
+	
 	local CXmin = r(CXmin)		// limits of data plotting (i.e. off-scale arrows)... = DX by default
 	local CXmax = r(CXmax)
 	local DXmin = r(DXmin)		// limits of data plot region
@@ -597,7 +634,6 @@ program define forestplot, sortpreserve rclass
 	local adjust = cond(`"`colsonly'"'==`""', `"`adjust'"', `"noadjust"')
 
 	// END OF TICKS AND LABELS
-
 	
 	
 	** Need to make changes to pre-existing data now
@@ -617,7 +653,7 @@ program define forestplot, sortpreserve rclass
 	qui replace `wgt' = . if `touse' & inlist(`_USE', 2, 6) & `"`wt'"'==`""'
 	
 		
-	// find `lcimin' = left-most confidence limit among the "diamonds" (including prediction intervals)
+	// find `lcimin' = left-most confidence limit among the "diamonds" (including predictive intervals)
 	tempvar lci2
 	qui gen `lci2' = cond(`"`null'"'==`""', cond(`_LCI'>`h0', `h0', ///
 		cond(`_LCI'>`CXmin', `_LCI', `CXmin')), cond(`_LCI'>`CXmin', `_LCI', `CXmin'))
@@ -654,7 +690,11 @@ program define forestplot, sortpreserve rclass
 	}
 	else {
 		local astext = cond(`astext'==-9, 50, `astext')
-		assert `astext' >= 0
+		cap assert `astext' > 0
+		if _rc {
+		    nois disp as err "error in option {bf:astext(}{it:#}{bf:)}: {it:#} must be in the range (0, 100]"
+			exit 125
+		}		
 		local astextopt `"astext(`astext')"'
 	}
 	
@@ -701,7 +741,7 @@ program define forestplot, sortpreserve rclass
 				// Removed v3.0.1 for consistency with string variables
 				// Now -forestplot- consistently honours *blank* varlabels
 				// if `"`colName'"' == "" & `"``x'coli'"' !=`"`labels'"' local colName = `"``x'coli'"'
-				label var ``xx'LB`i'' `"`colName'"'
+				label variable ``xx'LB`i'' `"`colName'"'
 			}
 			
 			if `"`leftjustify'"'!=`""' local flen = -abs(`flen')
@@ -757,7 +797,7 @@ program define forestplot, sortpreserve rclass
 		qui replace `id' = _n + 1 if _n > `oldN'		// "+1" leaves a one-line gap between titles & main data
 	}
 	*/
-	
+
 	
 	*** FIND OPTIMAL TEXT SIZE AND ASPECT RATIOS (given user input)
 	// We already have an estimate of the height taken up by x-axis labelling (this is `rowsxlab' from ProcessXLabs)
@@ -841,9 +881,9 @@ program define forestplot, sortpreserve rclass
 
 	// height of "xmlabel" text is assumed to be ~60% of "xlabel" text ... unless favours which uses xmlabel differently!
 	local rowsxlabval = cond(`"`favours'"'!=`""', `rowsxlab', max(`rowsxlab', .6*`rowsxmlab'))
-	
+		
 	GetAspectRatio, astext(`astext') colwdtot(`colWDtot') height(`height') rowsxlab(`rowsxlabval') ///
-		`xtitle' `favours' `graphopts' `usedimsopt' `dxwidcopt' `colsonly'
+		`xtitle' `favours' `graphopts' `usedimsopt' `dxwidcopt' `textsize' `colsonly'
 
 	local graphopts `"`r(graphopts)'"'
 
@@ -858,7 +898,8 @@ program define forestplot, sortpreserve rclass
 	local fysize = r(fysize)
 	local yheight = r(yheight)
 	local spacing = r(spacing)
-	local textSize = r(textsize)
+	local textSize = r(textsize)			// textsize as calculated by GetAspectRatio
+	local textSize2 = r(textsize2)			// textsize as modified post-hoc by textscale() option [May 2020]
 	local approxChars = r(approxchars)
 	local graphAspect = r(graphaspect)
 	local plotAspect = r(plotaspect)
@@ -890,11 +931,11 @@ program define forestplot, sortpreserve rclass
 			xtickopt(`xticklist', `xtickopt') xmtickopt(`xmticklist', `xmtickopt') ///
 			ax(`AXmin' `AXmax') rowsxlab(`rowsxlab' `rowsxmlab' `rowsfav') `keepxlabs' 	// Feb 2018: removed `graphopts'
 
-		// xlabel:  insert `textSize'
-		local xlabopt `"xlabel(`s(xlabcmd)', labsize(`textSize') `s(xlabopts)')"'
+		// xlabel:  insert `textSize2'
+		local xlabopt `"xlabel(`s(xlabcmd)', labsize(`textSize2') `s(xlabopts)')"'
 
 		// xmlabel: insert `textSize' if `favours', otherwise default to 0.6*`textSize'
-		local labsizeopt = cond(`"`favours'"'!=`""', `"labsize(`textSize')"', `"labsize(`=.6*`textSize'')"')
+		local labsizeopt = cond(`"`favours'"'!=`""', `"labsize(`textSize2')"', `"labsize(`=.6*`textSize2'')"')
 		local xmlabopt = cond(trim(`"`s(xmlabcmd)'`s(xmlabopts)'"')==`""', `""', ///
 			`"xmlabel(`s(xmlabcmd)', `labsizeopt' `s(xmlabopts)')"')
 		
@@ -910,7 +951,7 @@ program define forestplot, sortpreserve rclass
 		local 0 `", `xlabopts'"'
 		syntax [, LABSize(string) * ]
 		local xlabopts `"`macval(options)'"'
-		if `"`labsize'"'==`""' local labsize `textSize'
+		if `"`labsize'"'==`""' local labsize `textSize2'
 		local xlabopt `"xlabel(`xlabcmd', labsize(`labsize') `xlabopts')"'
 
 		// If `favours', text size of xmlabel defaults to `textSize'; otherwise to 0.6*`textSize';  similarly for lapgap
@@ -918,7 +959,7 @@ program define forestplot, sortpreserve rclass
 		syntax [, LABSize(string) LABGAP(string) * ]
 		local xmlabopts `"`macval(options)'"'
 		if `"`labsize'"'==`""' {
-			local labsize = cond(`"`favours'"'!=`""', `textSize', .6*`textSize')
+			local labsize = cond(`"`favours'"'!=`""', `textSize2', .6*`textSize2')
 		}
 		if `"`labgap'"'==`""' & `"`favours'"'!=`""' local labgap = 5
 		if `"`labgap'"'!=`""' local labgapopt `"labgap(`labgap')"'
@@ -948,8 +989,8 @@ program define forestplot, sortpreserve rclass
 	return scalar spacing = `spacing'
 	return scalar ysize = `ysize'
 	return scalar xsize = `xsize'
-	return scalar textsize = `textSize'
-	if trim(`"`savedims'`usedims'"')!=`""' {
+	return scalar textsize = `textSize2'		// May 2020: if -metan9- option textsize() was applied, returns "post-hoc modified" textsize....
+	if trim(`"`savedims'`usedims'"')!=`""' {	// ... which may differ from the `textsize' value stored in matrix `savedims'
 		return scalar fysize = `fysize'
 		return scalar fxsize = `fxsize'
 	}
@@ -969,7 +1010,7 @@ program define forestplot, sortpreserve rclass
 			exit 198
 		}
 
-		local labsizeopt = cond(`"`labsize'"'!=`""', `"labsize(`labsize')"', `"labsize(`textSize')"')
+		local labsizeopt = cond(`"`labsize'"'!=`""', `"labsize(`labsize')"', `"labsize(`textSize2')"')
 		local labgapopt  = cond(`"`labgap'"'!=`""',  `"labgap(`labgap')"',   `"labgap(5)"')
 		local favopt `"`labsizeopt' `labgapopt'"'
 		foreach opt in format angle labstyle labcolor {
@@ -1045,10 +1086,10 @@ program define forestplot, sortpreserve rclass
 
 	// Commands for plotting columns of text (lcols/rcols)
 	forvalues i = 1/`lcolsN' {
-		local lcolCommands `"`macval(lcolCommands)' scatter `id' `left`i'' if `touse', msymbol(none) mlabel(`leftLB`i'') mlabcolor(black) mlabpos(3) mlabgap(0) mlabsize(`textSize') ||"'
+		local lcolCommands `"`macval(lcolCommands)' scatter `id' `left`i'' if `touse', msymbol(none) mlabel(`leftLB`i'') mlabcolor(black) mlabpos(3) mlabgap(0) mlabsize(`textSize2') ||"'
 	}
 	forvalues i = 1/`rcolsN' {
-		local rcolCommands `"`macval(rcolCommands)' scatter `id' `right`i'' if `touse', msymbol(none) mlabel(`rightLB`i'') mlabcolor(black) mlabpos(3) mlabgap(0) mlabsize(`textSize') ||"'
+		local rcolCommands `"`macval(rcolCommands)' scatter `id' `right`i'' if `touse', msymbol(none) mlabel(`rightLB`i'') mlabcolor(black) mlabpos(3) mlabgap(0) mlabsize(`textSize2') ||"'
 	}	
 	
 
@@ -1120,9 +1161,9 @@ program define forestplot, sortpreserve rclass
 	//  (otherwise, onus is on user as usual)
 	if `"`useopts'"'!=`""' & `"`orig_gropts'"'!=`""' {
 		local 0 `", `graphopts'"'
-		syntax [, BY(varname) EFORM EFFect(string) LABels(varname string) DP(integer 2) KEEPALL ///
+		syntax [, BY(varname) EFORM EFFect(string asis) LABels(varname string) DP(integer 2) KEEPALL ///
 			INTERaction LCols(namelist) RCols(namelist) LEFTJustify COLSONLY RFDIST(varlist numeric min=2 max=2) ///
-			NULLOFF noNAmes noNULL NULL2(string) noKEEPVars noOVerall noSTATs noSUbgroup noWT LEVEL(real 95) ///
+			NULLOFF noNAmes noNULL NULL2(string) noKEEPVars noOVerall noSTATs noSUbgroup noWT LEVEL(cilevel) ///
 			XTItle(passthru) FAVours(passthru) /// /* N.B. -xtitle- is parsed here so that a blank title can be inserted if necessary */
 			CUmulative INFluence /// /* only needed in order to switch _USE==3 back to _USE==1
 			/// /* Sub-plot identifier for applying different appearance options, and dataset identifier to separate plots */
@@ -1138,7 +1179,7 @@ program define forestplot, sortpreserve rclass
 			CLASSIC noDIAmonds WGT(varname numeric) NEWwt BOXscale(real 100.0) noBOX /// /* from BuildPlotCmds */
 			/// /* standard options */
 			BOXOPts(string asis) DIAMOPts(string asis) POINTOPts(string asis) CIOPts(string asis) OLINEOPts(string asis) NLINEOPts(string asis) ///
-			/// /* non-diamond and prediction interval options */
+			/// /* non-diamond and predictive interval options */
 			PPOINTOPts(string asis) PCIOPts(string asis) RFOPts(string asis) * ]
 		
 		local graphopts `"`macval(options)'"'
@@ -1413,8 +1454,9 @@ end
 
 program define ProcessXLabs, rclass
 
-	syntax anything [, XLabel(string asis) XMLabel(string asis) XTICk(string) XMTick(string) ///
+	syntax anything [, XLAbel(string asis) XMLabel(string asis) XTick(string) XMTick(string) FORCE ///
 		RAnge(string) CIRAnge(string) EFORM H0(real 0) noNULL PRoportion * ]
+	
 	local graphopts `"`options'"'
 	tokenize `anything'
 	args DXmin DXmax
@@ -1506,6 +1548,53 @@ program define ProcessXLabs, rclass
 		}
 	}
 	
+	
+	* Initial parse of xlabel and xtick
+	// In case old (v3.x and earlier) syntax is used, with comma-separated values and no sub-options
+	// [added May 2020]
+	local done = 0
+	foreach xl in xlabel xtick {
+		local comma = 0
+		local csv = 1
+		local lblcmd
+		tokenize `"``xl''"', parse(",")
+		while `"`1'"' != `""' {
+			cap confirm number `1'
+			if !_rc local lblcmd `"`lblcmd' `1'"'
+			else cap assert `"`1'"'==`","'
+			if !_rc local comma = 1
+			else local csv = 0
+			mac shift
+		}
+		if `csv' {
+			if `"`lblcmd'"'!=`""' {
+				capture numlist `"`lblcmd'"'
+				if _rc {
+					nois disp as err `"error in option {bf:`xl'()}: invalid numlist"'
+					exit _rc
+				}
+				if `comma' {
+					nois disp as err _n `"Note: with {bf:metan} version 4 and above, the preferred syntax is for {bf:`xl'()}"'
+					nois disp as err `" to contain a standard Stata numlist, so {bf:`xl'(`r(numlist)')}; see {help numlist:help numlist}"'
+					local done = 1
+					
+					c_local twowaynote notwowaynote		// so that -metan- does not print an additional message regarding "force"
+				}
+				local `xl' = r(numlist)
+			}
+		}
+	}
+
+	// legacy -force- option
+	if "`force'"!="" & `csv' {
+		if `done' local xlabel `"`xlabel', force"'
+		else {
+			nois disp as err "option {bf:force} not allowed"
+			exit 198
+		}
+		c_local twowaynote notwowaynote		// so that -metan- does not print an additional message regarding "force"
+	}
+
 	
 	* Parse x[m]label if supplied by user
 	local rowsxmlab = 0
@@ -1632,10 +1721,12 @@ program define ProcessXLabs, rclass
 				if `"`range'"'==`""' {
 					local RXmin : word 1 of `r(numlist)'		// if `range' not specified, default to "forced" xlab limits
 					local RXmax : word `n' of `r(numlist)'
+					local range `"`RXmin' `RXmax'"'
 				}
 				else {
 					local CXmin : word 1 of `r(numlist)'		// otherwise, set `cirange' instead
 					local CXmax : word `n' of `r(numlist)'
+					local cirange `"`CXmin' `CXmax'"'
 				}
 			}
 		}		
@@ -1647,8 +1738,13 @@ program define ProcessXLabs, rclass
 	foreach tick in xtick xmtick {
 		if `"``tick''"' != "" {
 			local 0 `"``tick''"'
-			syntax [anything(name=`tick'list)] , [ * ]	
+			syntax [anything(name=`tick'list)] , [ FORCE * ]	
 			local `tick'opts `"`options'"'	
+		
+			if `"`force'"'!=`""' {
+				nois disp as err "option {bf:force} is not allowed with {bf:xtick()}"
+				exit 198
+			}
 		
 			if `"``tick'list'"' != `""' {
 				cap numlist `"``tick'list'"'
@@ -2277,7 +2373,17 @@ program define ProcessColumns, rclass
 			// [DF JAN 2015: Future work might be to re-write (incl. SpreadTitle) to use width rather than length??]
 			local colName : variable label `rightLB`i''
 			if `"`colName'"'!=`""' {
-				
+
+				// June 2020
+				// If _EFFECT column, make sure a line break is not placed in the middle of "(95% CI)"
+				local ci_break = 0
+				local strpos1 = strpos(`"`colName'"', `"("')
+				local strpos2 = strpos(`"`colName'"', `"% CI)"')
+				if `strpos2' & (`strpos2' - `strpos1' <= 3) {
+				    local colName = subinstr(`"`colName'"', `"% CI)"', `"%_CI)"', 1)
+					local ci_break = 1
+				}
+			
 				if `target' <= 0 | missing(`target') {
 					if `maxwidth' local target_opt = `maxwidth'
 					else local target_opt = max(abs(`fmtlen'), `maxlen')
@@ -2299,7 +2405,19 @@ program define ProcessColumns, rclass
 				local l = `nlines' - `r(nlines)'
 				forvalues j = `r(nlines)'(-1)1 {
 					local k = _N - (`j' + `l') + 1
-					replace `rightLB`i'' = `"`r(title`j')'"' in `k'
+					
+					// June 2020
+					// Reset the "(95% CI)" string, if appropriate
+					local rtitlej `"`r(title`j')'"'
+					if `ci_break' {
+						local strpos1 = strpos(`"`rtitlej'"', `"("')
+						local strpos2 = strpos(`"`rtitlej'"', `"%_CI)"')
+						if `strpos2' & (`strpos2' - `strpos1' <= 3) {
+							local rtitlej = subinstr(`"`rtitlej'"', `"%_CI)"', `"% CI)"', 1)
+							local ci_break = 1
+						}
+					}
+					replace `rightLB`i'' = `"`rtitlej'"' in `k'
 				}
 				
 				getWidth `rightLB`i'' `strwid', replace			// re-calculate `strwid' to include titles
@@ -2720,11 +2838,14 @@ end
 // (Note that the default `graphAspect' = 4/5.5 = 0.73 < 1)
 // We then let `approxChars' = x, and manipulate to find the optimum text size for the plot layout.
 
-// FEB 2015: `textscale' is deprecated, since it causes problems with spilling on the RHS.
+// FEB 2015: `textsize' is deprecated, since it causes problems with spilling on the RHS.
 // Instead, using `spacing' to fine-tune the aspect ratio (and hence the text size)
 //   or use `aspect' to completely user-define the aspect ratio.
-	
-//  - Note that this code has been changed considerably from the original -metan- code.
+// MAY 2020: Following discussion with Jonathan Sterne, option textsize() has been reinstated
+// But it works *at the end*, after the aspect ratio has already been calculated -- so it's "use at your own risk"
+// Internally, it is renamed to `textscale', since it is actually a scale, and it avoids clashing with already-coded `textsize'
+
+//  - Note that this code has been changed considerably from the original -metan9- code.
 
 // Moved into separate subroutine Nov 2017 for v2.2 beta
 // GetAspectRatio, astext(`astext') colwdtot(`colWDtot') height(`height') rowsxlab(`rowsxlab') `graphopts' `usedimsopt'
@@ -2736,9 +2857,20 @@ program define GetAspectRatio, rclass
 		ASPECT(real -9) SPacing(real -9) XSIZe(real -9) YSIZe(real -9) FXSIZe(real -9) FYSIZe(real -9) ///
 		TItle(string asis) SUBtitle(string asis) CAPTION(string asis) NOTE2(string asis) noNOTE noWARNing ///
 		XTItle(string asis) FAVours(string asis) ADDHeight(real 0) /*(undocumented)*/ ///
+		TEXTSize(real 100.0) /// /* legacy -metan9- option, implemented here as a post-hoc option; use at own risk */
 		ROWSXLAB(real 0) DXWIDTHChars(real -9) DOUBLE COLSONLY * ]
 	
 	local graphopts `"`options'"'
+	
+	// Error message copied directly from -metan9-
+	if `textsize' < 20 | `textsize' > 500 {
+		di as error "Text scale (TEXTSize) must be within 20-500"
+		di as error "Value is character size relative to graph"
+		di as error "Outside range will either be unreadable or too large"
+		exit 198
+	}
+	local textscale : copy local textsize	// rename to `textscale' for internal use...
+	local textsize							// ... and reset `textsize' macro [May 2020]
 	
 	* Unpack `usedims'
 	local DXwidthChars : copy local dxwidthchars		// added Feb 2018: clarity
@@ -3003,8 +3135,8 @@ program define GetAspectRatio, rclass
 	if `"`note2'"'!=`""' {
 		local 0 `"`note2'"'
 		syntax [anything(name=notetxt everything)] [, SIze(string) * ]
-		if "`size'"=="" local size = `textSize'*.75			// use 75% of text size used for rest of plot
-		if "`colsonly'"!="" local notetxt `"`" "'"'			// added Feb 2018
+		if "`size'"=="" local size = `textSize' * .75 * `textscale'/100		// use 75% of text size used for rest of plot
+		if "`colsonly'"!="" local notetxt `"`" "'"'							// added Feb 2018
 		
 		// May 2018: Having parsed the note, now suppress it if noWARNing or noNOTE
 		if `"`warning'`note'"'==`""' local noteopt `"note(`notetxt', size(`size') `options')"'
@@ -3020,14 +3152,15 @@ program define GetAspectRatio, rclass
 	}
 	return local graphopts `"`graphopts' `noteopt'"'
 
-
+	
 	* Return scalars
 	return scalar xsize = cond(`xsize'==-9, 5.5, `xsize')		// [added 2nd Nov for v2.2 beta]
 	return scalar ysize = cond(`ysize'==-9, 4, `ysize')			// [added 2nd Nov for v2.2 beta]
 	return scalar fxsize = `fxsize'
 	return scalar fysize = `fysize'
 	return scalar yheight = `ydelta'*`height'
-	return scalar textsize = `textSize'
+	return scalar textsize = `textSize'						// textsize as calculated by this routine
+	return scalar textsize2 = `textSize' * `textscale'/100	// textsize as modified post-hoc by textscale() option [May 2020]
 	return scalar spacing = `spacing'
 	return scalar approxchars = `approxChars'
 	return scalar graphaspect = `graphAspect'
@@ -3172,7 +3305,7 @@ program define BuildPlotCmds, sclass
 	// Construct groups of observations containing a single obs where _USE==3 or 5
 	// Within each `dataid', such groups ("olinegroup") are identified by _USE==5 if present ("overall"), or _USE==3 otherwise ("subgroup").
 	qui count if `touse' & inlist(`_USE', 3, 5)
-	if r(N) {		
+	if r(N) {
 		tempvar useno
 		qui gen byte `useno' = `_USE' * inlist(`_USE', 3, 5) if `touse'
 	
@@ -3298,7 +3431,7 @@ program define BuildPlotCmds, sclass
 	* Confidence intervals
 	// since capped lines require a different -twoway- command (-rcap- vs -rspike-)
 	if `"`rfdist'"'==`""' & `"`rfopts'"'!=`""' {
-		nois disp as err `"prediction interval not specified; relevant options will be ignored"'
+		nois disp as err `"predictive interval not specified; relevant options will be ignored"'
 		local rfopts
 	}
 
@@ -3474,7 +3607,7 @@ program define BuildPlotCmds, sclass
 				// Added Jan 2020
 				if trim(`"`rfciline`p'opts'"') != `""' {
 					if `"`rfdist'"'==`""' {
-						nois disp as err `"prediction interval not specified; relevant suboptions for {bf:plotid==`p'} will be ignored"'
+						nois disp as err `"predictive interval not specified; relevant suboptions for {bf:plotid==`p'} will be ignored"'
 					}
 					else {
 						local 0 `", `rfciline`p'opts'"'
@@ -3634,7 +3767,7 @@ program define BuildPlotCmds, sclass
 				* PREDICTION INTERVAL
 				if trim(`"`rf`p'opts'"') != `""' {
 					if `"`rfdist'"'==`""' {
-						nois disp as err `"prediction interval not specified; relevant suboptions for {bf:plotid==`p'} will be ignored"'
+						nois disp as err `"predictive interval not specified; relevant suboptions for {bf:plotid==`p'} will be ignored"'
 					}
 					else {
 						local 0 `", `rf`p'opts'"'
@@ -3861,7 +3994,7 @@ program define BuildPlotCmds, sclass
 			// Added Jan 2020
 			if trim(`"`rfcilineopts'"') != `""' {
 				if `"`rfdist'"'==`""' {
-					nois disp as err `"prediction interval not specified; relevant suboptions will be ignored"'
+					nois disp as err `"predictive interval not specified; relevant suboptions will be ignored"'
 				}
 				else {
 					local 0 `", `rfcilineopts'"'
@@ -3981,7 +4114,7 @@ program define BuildPlotCmds, sclass
 			* PREDICTION INTERVAL
 			if `"`rfdist'"'==`""' {
 				if trim(`"`rfopts'"') != `""' {
-					nois disp as err `"prediction interval not specified; relevant suboptions will be ignored"'
+					nois disp as err `"predictive interval not specified; relevant suboptions will be ignored"'
 				}
 			}
 			
@@ -4077,14 +4210,14 @@ program define BuildPlotCmds, sclass
 	
 	* If necessary, finish off storing values for later plotting
 	// added Jan 2020
-	qui count if `touseOCI'
+	qui count if `touse' & `touseOCI'
 	if r(N) {
 		sort `touse' `dataid' `olinegroup' `id'
 		qui by `touse' `dataid' `olinegroup' : gen `ovLineLCI' = `_LCI'[1] if `touse' & `check' & !(`_LCI'[1] > `CXmax' | `_LCI'[1] < `CXmin')
 		qui by `touse' `dataid' `olinegroup' : gen `ovLineUCI' = `_UCI'[1] if `touse' & `check' & !(`_UCI'[1] > `CXmax' | `_UCI'[1] < `CXmin')
 	}
 	if `"`rfdist'"'!=`""' {
-		qui count if `touseRFCI'
+		qui count if `touse' & `touseRFCI'
 		if r(N) {
 			sort `touse' `dataid' `olinegroup' `id'
 			qui by `touse' `dataid' `olinegroup' : gen `rfLineLCI' = `_rfLCI'[1] if `touse' & `check' & !(`_rfLCI'[1] > `CXmax' | `_rfLCI'[1] < `CXmin')
@@ -4113,13 +4246,13 @@ program define BuildPlotCmds, sclass
 	qui by `touse' `dataid' `olinegroup' : gen `ovMin' = `id'[1]  - 0.5 if `touse' & _n==1 & !missing(`ovLine')
 	qui by `touse' `dataid' `olinegroup' : gen `ovMax' = `id'[_N] + 0.5 if `touse' & _n==1 & !missing(`ovLine')
 
-	qui count if `touseOCI'
+	qui count if `touse' & `touseOCI'
 	if r(N) {
 		qui by `touse' `dataid' `olinegroup' : replace `ovLineLCI' = . if _n > 1
 		qui by `touse' `dataid' `olinegroup' : replace `ovLineUCI' = . if _n > 1
 	}
 	if `"`rfdist'"'!=`""' {
-		qui count if `touseRFCI'
+		qui count if `touse' & `touseRFCI'
 		if r(N) {
 			qui by `touse' `dataid' `olinegroup' : replace `rfLineLCI' = . if _n > 1
 			qui by `touse' `dataid' `olinegroup' : replace `rfLineLCI' = . if _n > 1

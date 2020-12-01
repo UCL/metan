@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.6 (beta)  David Fisher  22may2020}{...}
+{* *! version 3.7 (beta)  David Fisher  10jul2020}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
 {vieweralsosee "metan_continuous" "help metan_continuous"}{...}
@@ -61,6 +61,9 @@ The first syntax for {it:model_spec} directly maintains the previous syntax of {
 In particular, note that the synonyms {opt fixed}, {opt fixedi} and {opt randomi} (for {opt mhaenszel}, {opt ivcommon} and {opt random}, respectively) still work.
 Previous options for user-supplied estimates, such as {opt first()} and {opt second()}, also continue to be supported; see {it:{help metan_model##options_user:options_user}}.
 
+{pmore}
+Another, more general, way of incorporating user-supplied estimates is to use {cmd:forestplot} "results sets"; see {bf:{help forestplot}}.
+
 {pstd}
 The second syntax for {it:model_spec} is more general, and allows the results of multiple different pooling methods (or variations of methods) to be displayed simultaneously.
 Such methods include alternative estimators of the between-study heterogeneity (tau-squared),
@@ -117,9 +120,8 @@ if not specifically referenced below.{p_end}
 (for more details see {it:{help metan##options_main:options_main}}){p_end}
 {synopt :{opt hk:sj}}Hartung-Knapp-Sidik-Jonkman (HKSJ) variance correction, applicable to any standard tau-squared estimator{p_end}
 {synopt :{opt ro:bust}}Sidik-Jonkman robust (sandwich-like) variance estimator ({help metan_model##refs:Sidik and Jonkman 2006}){p_end}
-{synopt :{opt tsqlevel(#)}}set confidence level for reporting confidence intervals for tau-squared; default is {cmd:tsqlevel(95)}{p_end}
 
-{syntab :model-specific options (see {it:{help metan_model##model_name:model_name}})}
+{syntab :Model-specific options (see {it:{help metan_model##model_name:model_name}})}
 {synopt :{opt init(model_name)}}initial estimate of tau-squared for two-step estimators {opt sj2s} and {opt dk2s}.
 For Sidik-Jonkman, the default is the mean dispersion of effect sizes from their unweighted mean ({help metan_model##refs:Sidik and Jonkman 2005});
 any standard tau-squared estimator may instead be used.
@@ -136,10 +138,11 @@ or Skovgaard's ({help metan_model##refs:Guolo 2012}) corrections to the likeliho
 ({help metan_model##refs:Morris et al 2018}){p_end}
 {synopt :{opt qwt(varname)}}variable containing Quality Effect weights (model {cmd:qe} only; see {help metan_model##refs:Doi et al 2015b}){p_end}
 
-{syntab :options for iteration, replication or numerical integration}
+{syntab :Options for iteration, replication or numerical integration}
 {synopt :{opt itol(#)}}tolerance for iteration convergence (with {opt mpaule}, {opt mle}, {opt reml}, {opt pl}, {opt kroger}, {opt btweedie} or {opt hcopas}){p_end}
 {synopt :{opt maxit:er(#)}}maximum number of iterations (as above){p_end}
-{synopt :{opt maxt:ausq(#)}}upper bound of search interval; may need to be raised in extreme cases (as above){p_end}
+{synopt :{opt maxt:ausq(#)}}upper bound of search for tau-squared confidence limits; may need to be raised in extreme cases (as above){p_end}
+{synopt :{opt difficult} {opt technique(algorithm_spec)}}likelihood maximisation options; see {help maximize:help maximize}{p_end}
 {synopt :{opt quadpts(#)}}number of quadrature points to use in numerical integration (with {opt bt} or {opt hc}; see help for {bf:{help integrate}}){p_end}
 {synopt :{opt reps(#)}}number of replications for Bootstrap DerSimonian-Laird estimator (with {opt bdl}){p_end}
 {synoptline}
@@ -148,7 +151,8 @@ or Skovgaard's ({help metan_model##refs:Guolo 2012}) corrections to the likeliho
 {marker options_test}{...}
 {synopthdr :options_test}
 {synoptline}
-{synopt :{opt z} {opt t} {opt chi2}}specify distribution for testing significance of pooled result{p_end}
+{synopt :{opt z} {opt t} {opt chi2}}specify distribution for testing significance of pooled result;
+default is usually {cmd:z}, but is {cmd:t} with {opt hksj} or {opt robust}, and is {cmd:chi2} with {opt mhaenszel}, {opt peto} or {opt pl}{p_end}
 {synopt :{opt cmh}}Cochran-Mantel-Haenszel test statistic (Mantel-Haenszel odds ratios only){p_end}
 {synoptline}
 
@@ -156,14 +160,19 @@ or Skovgaard's ({help metan_model##refs:Guolo 2012}) corrections to the likeliho
 {marker options_het}{...}
 {synopthdr :options_het}
 {synoptline}
+{syntab :Heterogeneity statistic}
 {synopt :{opt coch:ranq}}Cochran's Q heterogeneity statistic (default, unless Mantel-Haenszel){p_end}
-{synopt :{opt qp:rofile}}confidence interval for tau-squared using Q Profile method ({help metan_model##refs:Viechtbauer 2007}){p_end}
-{synopt :{opt hig:gins}}test-based confidence interval for {it:H} ({help metan_model##refs:Higgins and Thompson 2002}){p_end}
-{synopt :{opt nc:chi2}}heterogeneity confidence intervals based on a non-central chi-squared distribution for {it:Q}{p_end}
-{synopt :{opt qg:amma}}heterogeneity confidence intervals based on a Gamma distribution for {it:Q}{p_end}
 {synopt :{opt bre:slow}}Breslow-Day test for homogeneity of odds ratios (Mantel-Haenszel only){p_end}
 {synopt :{opt ta:rone}}Breslow-Day-Tarone test for homogeneity of odds ratios
 (Mantel-Haenszel only; preferred to {opt breslow}, see e.g. {help metan_model##refs:Breslow 1996}){p_end}
+
+{syntab :Heterogeneity confidence intervals}
+{synopt :{opt hl:evel(#)}}set confidence level for reporting confidence intervals for heterogeneity; default is {cmd:hlevel(95)}{p_end}
+{synopt :{opt hig:gins}}test-based confidence interval for {it:H} ({help metan_model##refs:Higgins and Thompson 2002};
+default, unless tau-squared is estimated using an iterative procedure from which a confidence interval can be derived){p_end}
+{synopt :{opt qp:rofile}}confidence interval for tau-squared using Q Profile method ({help metan_model##refs:Viechtbauer 2007}){p_end}
+{synopt :{opt qnc:chi2}}heterogeneity confidence interval based on a non-central chi-squared distribution for {it:Q}{p_end}
+{synopt :{opt qg:amma}}heterogeneity confidence interval based on a Gamma distribution for {it:Q}{p_end}
 {synoptline}
 
 
@@ -176,11 +185,11 @@ or Skovgaard's ({help metan_model##refs:Guolo 2012}) corrections to the likeliho
 {synopt :{opt secondstats(string)}}further description of externally-derived estimate as a second analysis, taking the place of heterogeneity statistics in the forest plot{p_end}
 {synoptline}
 
-{pstd}
+{pmore}
 where {it:ES lci uci} are an effect estimate and 95% confidence interval based on calculations performed externally to {cmd:metan},
 and {it:desc} is a brief description of the calculation, similar to {it:model_name} (e.g. "Bayesian")
 
-{pstd}
+{pmore}
 If {opt first()} is specified, then {opt wgt(varname)} must also be supplied.
 However, {opt second()} may not be used in this case, and neither may {opt by()} for obvious reasons.
 If {opt second(ES lci uci desc)} is specified then {opt nosecsub} is invoked for obvious reasons.
