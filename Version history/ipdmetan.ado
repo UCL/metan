@@ -110,8 +110,9 @@
 //  - allow by() AND byad??  (with the effect that studies are stratified by both "by" and "source")
 //  - see statalist post re weights with -teffects-
 
-// Oct 2018: CHECK GRAPHS!!  (v2 vs v3)
-
+*! version 3.0.1  David Fisher  04dec2018
+// only pass straight to admetan_setup if one obs per study *AND* "`cmdstruc'"=="specific"
+// minor correction/clarification to options `admopts' passed to -admetan-
 
 
 program define ipdmetan, rclass
@@ -343,7 +344,9 @@ program define ipdmetan, rclass
 	** Now, if one observation per study, pass directly to -admetan- ...
 	if `"`ipdover'"'==`""' {
 		qui tab `study' if `touse', `smissing'
-		if r(r)==r(N) {
+		// if r(r)==r(N) {		
+		// Dec 2018: added "`cmdstruc'"=="specific"
+		if r(r)==r(N) & "`cmdstruc'"=="specific" {
 			if `"`smissing'"'==`""' {
 				markout `touse' `study', strok		// can't do this in main routine due to possibility of `study' as a varlist (if ipdover)
 				qui count if `touse'
@@ -1069,7 +1072,8 @@ program define ipdmetan, rclass
 
 	// Finalise "ipdmetan" options to send to admetan_setup
 	local lrvlist = cond(`"`logrank'"'==`""', `""', `"`lrvlist'"')		// in case `lrvlist' passed from -ipdover-
-	local admopts `"estexp(`estexp') `interaction' ipdxline(`extraline') lrvlist(`lrvlist')"'
+	local admopts `"estexp(`estexp') explist(`exp_list') `interaction' ipdxline(`extraline') lrvlist(`lrvlist')"'
+	// explist(`exp_list') added Dec 2018 for v3.0.1
 	
 
 	*** Perform -collapse- on `cclist' supplied to lcols/rcols, plus processing of raw data
@@ -1327,9 +1331,11 @@ program define ipdmetan, rclass
 		confirm numeric var _STUDY
 		// cap label drop _STUDY
 		// label copy `vallab1' _STUDY				// standardise value label name
-		// label values _STUDY _STUDY				// 3rd July 2018: but what if IPD "is AD"? (i.e. is original data)
+		// label values _STUDY _STUDY
 		label values  _STUDY `vallab1'
-		label variable _STUDY `"`svarlab'"'		//  - this is why a separate subroutine, "admetan_setup", is needed
+		label variable _STUDY `"`svarlab'"'
+		// 3rd July 2018: but what if IPD "is AD"? (i.e. is original data)
+		//  - this is why a separate subroutine, "admetan_setup", is needed
 
 		cap nois admetan_setup `outvlist', study(`studyopt') by(`byopt') citype(`citype') `interaction' ///
 			effect(`effect') df(`_df') wgt(`wgtvar') `eform' `log' ///
@@ -3527,7 +3533,7 @@ program define admetan_setup, rclass
 		effect(`effect') `eform' `logrank' `method' plotid(`plotid') `opts_ipdm' `rsample' `keepvars' ///
 		///
 		/// /* extra admetan options, only relevant to ipdmetan; e.g. to prompt suitable display text: */
-		/// /*  [N.B. `admopts' also contains:  estexp(`estexp') `interaction' ipdxline(`extraline') lrvlist(`lrvlist') ] */
+		/// /*  [N.B. `admopts' also contains:  estexp(`estexp') explist(`explist') `interaction' ipdxline(`extraline') lrvlist(`lrvlist') ] */
 		ipdmetan(`admopts' use(`_USE') `byad' `sourceopt' `preserve')
 	
 	// N.B. `summstat' and `log' are *not* passed to -admetan-

@@ -27,6 +27,9 @@
 // upversioned to v3.0 to match with ipdmetan and admetan
 // added `useopts' functionality
 
+*! version 3.0.1  David Fisher 03dec2018
+// fixed bug in RD option
+
 
 
 program define ipdover, rclass
@@ -1053,9 +1056,9 @@ program define GenEffectVars, rclass
 		// setup for RD
 		else if "`summstat'" == "rd" {
 			tempvar v
-			qui gen double `v'  = `a_cont'*`b_cont'/(`r1_cont'^3) + `c_cont'*`d_cont'/(`r0_cont'^3)
-			qui gen double `_ES'   = `a'/`r1' - `c'/`r0' if inlist(`_USE', 1, 3, 5)
-			qui gen double `_seES' = sqrt(`v')           if inlist(`_USE', 1, 3, 5)
+			qui gen double `v'     = `e1_cont'*`f1_cont'/(`r1_cont'^3) + `e0_cont'*`f0_cont'/(`r0_cont'^3)
+			qui gen double `_ES'   = `e1'/`r1' - `e0'/`r0' if inlist(`_USE', 1, 3, 5)
+			qui gen double `_seES' = sqrt(`v')             if inlist(`_USE', 1, 3, 5)
 		}
 
 	}	/* end if `params' == 4 */

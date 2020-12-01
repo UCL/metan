@@ -65,6 +65,12 @@
 
 *! version 3.0  David Fisher  08nov2018
 
+*! version 3.0.1  David Fisher  03dec2018
+// only implement lalign() if c(stata_version)>=15
+// corrected order of `graphopts' and `fpuseopts' so that -useopts- works as intended
+// -forestplot- now consistently honours blank varlabels in lcols/rcols (whether string or numeric)
+
+
 
 program define forestplot, sortpreserve rclass
 
@@ -99,7 +105,8 @@ program define forestplot, sortpreserve rclass
 		nois disp as text `"  with the exception of built in Stata graph options; see {help repeated_options}"'
 	}
 
-	local 0 `"`usevlist' `useifin', `fpuseopts' `graphopts'"'
+	// Nov 2018: note that -syntax- is *leftmost*, not rightmost; so `graphopts' must come first to overrule `fpuseopts'
+	local 0 `"`usevlist' `useifin', `graphopts' `fpuseopts'"'
 	
 	// June 2018: main parse
 	syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varname numeric) ///
@@ -563,6 +570,7 @@ program define forestplot, sortpreserve rclass
 	//  so use -preserve-
 	preserve
 
+	// [added Nov 2018]
 	// Make data obey the conventions of _USE
 	qui replace `_USE' = 6 if `_USE'>6 & `touse'
 	qui replace `_ES' = .  if `touse' & `_USE'==2
@@ -575,14 +583,14 @@ program define forestplot, sortpreserve rclass
 	************************
 	* LEFT & RIGHT COLUMNS * -- begin measuring/generating text columns from namelists given in `lcols'/`rcols'
 	************************
-
+	
 	// Setup: generate tempvars to send to ProcessColumns
 	foreach xx in left right {
 		local x = substr("`xx'", 1, 1)		// extract "l" from "left" and "r" from "right"
 
 		forvalues i=1/``x'colsN' {		// N.B. if `lcolsN' or `rcolsN'==0, this loop will be skipped
 			tempvar `xx'`i'
-			local `x'vallist `"``x'vallist' ``xx'`i''"'		// store x-axis positions of columns
+			local `x'vallist ``x'vallist' ``xx'`i''			// store x-axis positions of columns
 				
 			local `x'coli : word `i' of ``x'cols'
 			local f: format ``x'coli'
@@ -600,19 +608,21 @@ program define forestplot, sortpreserve rclass
 				else qui gen str ``xx'LB`i'' = string(``x'coli', "`f'")
 				qui replace ``xx'LB`i'' = "" if ``xx'LB`i'' == "."
 				
-				local colName: variable label ``x'coli'
-				if `"`colName'"' == "" & `"``x'coli'"' !=`"`labels'"' local colName = `"``x'coli'"'
+				local colName : variable label ``x'coli'
+				// Removed v3.0.1 for consistency with string variables
+				// Now -forestplot- consistently honours *blank* varlabels
+				// if `"`colName'"' == "" & `"``x'coli'"' !=`"`labels'"' local colName = `"``x'coli'"'
 				label var ``xx'LB`i'' `"`colName'"'
 			}
 			
 			if `"`leftjustify'"'!=`""' local flen = -abs(`flen')
-			local `x'lablist `"``x'lablist' ``xx'LB`i''"'	// store contents (text/numbers) of columns
-			local `x'fmtlist `"``x'fmtlist' `flen'"'		// desired max no. of characters based on format
+			local `x'lablist ``x'lablist' ``xx'LB`i''	// store contents (text/numbers) of columns
+			local `x'fmtlist ``x'fmtlist' `flen'		// desired max no. of characters based on format
 		}
 		
 		if !`lcolsN' {
 			tempvar left1
-			local lvallist `"`left1'"'
+			local lvallist `left1'
 		}
 	}
 
@@ -659,7 +669,7 @@ program define forestplot, sortpreserve rclass
 		assert `astext' >= 0
 		local astextopt `"astext(`astext')"'
 	}
-
+	
 	// niche case:  possible that user-specified `_USE' already contains values of 9 for some reason
 	// if so, change them to 99 (doesn't matter what value they are as long as not 0 to 6, or 9)
 	qui replace `_USE' = 99 if `touse' & `_USE'==9
@@ -3088,7 +3098,9 @@ program define BuildPlotCmds, sclass
 	// ...and for "pooled" estimates
 	local defShape = cond("`interaction'"!="", "circle", "diamond")
 	local defColor "0 0 100"
-	local defDiamOpts `"lcolor("`defColor'") lalign(center) fcolor("none")"'
+	// local defDiamOpts `"lcolor("`defColor'") lalign(center) fcolor("none")"'
+	local defDiamOpts `"lcolor("`defColor'") fcolor("none")"'
+	if c(stata_version)>=15 local defDiamOpts `"`defDiamOpts' lalign(center)"'			// v3.0.1: lalign() only valid for Stata 15+
 	local defPPointOpts `"msymbol("`defShape'") mlcolor("`defColor'") mfcolor("none")"'	// "pooled" point options (alternative to diamond)
 	local defPCIOpts `"lcolor("`defColor'") mcolor("`defColor'")"'						// "pooled" CI options (alternative to diamond)
 	local defRFOpts `"`defPCIOpts'"'													// prediction interval options (includes "mcolor" for arrows)

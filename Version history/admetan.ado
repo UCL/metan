@@ -79,6 +79,12 @@
 // various bug fixes and minor improvements
 // implemented -useopts- facility and _EFFECT variable
 
+*! version 3.0.1  David Fisher  04dec2018
+// Allow `oev' with Peto ORs
+// Specify default format & title for numeric vars in results sets, so that they display nicely in forestplot
+// Fixed bug which meant "HKSJ method" was not displayed on screen (although the method itself was used)
+// `hksj' and `bartlett' are returned (if applicable) in r(vce_model)
+
 
 program define admetan, rclass
 
@@ -86,7 +92,7 @@ program define admetan, rclass
 	local version : di "version " string(_caller()) ":"
 
 	syntax varlist(numeric min=2 max=6) [if] [in] [, ///
-		STUDY(string) LABEL(string) BY(string)       /// label() is included solely for back-compatibility with metan.ado
+		STUDY(string) LABEL(string) BY(string)       /// label() is included solely for backward-compatibility with metan.ado
 		FORESTplot(passthru)                         /// forestplot (ultimately -twoway-) options
 		noKEEPVars noRSample                         /// whether to leave behind study-estimate variables
 		LEVEL(passthru) * ]
@@ -124,10 +130,11 @@ program define admetan, rclass
 		// Parse options passed through from -ipdmetan-
 		local opts_adm `"`macval(options)'"'
 		local 0 `", `ipdmetan'"'
-		syntax, [USE(varname numeric) INTERaction PRESERVE * ]
+		syntax, [USE(varname numeric) SOURCE(varname numeric) PRESERVE * ]
 		local _USE `use'
-		local opts_ipdm `"`options'"'
-		local orbyad `"(or {bf:byad}) "'		// for warning/error text later
+		local opts_ipdm `"`options' source(`source') ipdmetan"'		// `source' is needed both by main -admetan- routine and by BuildResultsSet
+																	// (N.B. `options' and `ipdmetan' are needed by PrintDesc but *not* necessarily by BuildResultsSet)
+		local orbyad `"(or {bf:byad}) "'							// for warning/error text later
 	}
 		
 	
@@ -422,11 +429,9 @@ program define admetan, rclass
 	}	
 	
 	local model      `s(model)'
-	local opts_model `"`s(opts_model)'"'	// contains breslow, chi2opt, t, qprofile, hksj, bartlett, tsqlevel;
-											//  plus qe(), itol/maxtausq/reps/maxiter/quadpts, eim/oim, truncate
-	local opts_adm `"`s(options)'"'			// all other options (rationalised)
-	local isqsa    `"`s(isqsa)'"'			// need to be returned separately
-	local tsqsa    `"`s(tsqsa)'"'
+	local opts_adm   `"`s(options)'"'		// all other options (rationalised) not in `opts_model'
+	local opts_model `"`s(opts_model)'"'	// contains breslow, chi2opt, t, qprofile, hksj, bartlett, tsqlevel, isqsa(), tsqsa(), qe();
+											//  plus itol/maxtausq/reps/maxiter/quadpts, eim/oim, truncate
 
 	// Finalise method of *pooling* (M-H; fixed IV; random IV)
 	//  (N.B. those are the only three possibilities, since Peto, logrank, SMD/WMD are all IV.)
@@ -441,12 +446,17 @@ program define admetan, rclass
 		}
 		
 		// sensitivity analysis
-		if "`tsqopt'"=="sa" & "`by'"!="" {
+		if "`model'"=="sa" & "`by'"!="" {
 			nois disp as err `"Sensitivity analysis cannot be used with {bf:by()}"'
 			exit 198
 		}
 	}
-	// `model' is now established
+	
+	// `method' and `model' are now established
+	return local method    `method'
+	return local model     `model'
+	return local vce_model `s(vce_model)'
+
 	
 
 	
@@ -678,7 +688,7 @@ program define admetan, rclass
 		outvlist(`outvlist') xoutvlist(`xoutvlist') rownames(`rownames') ///
 		`cumulative' `influence' `overall' `subgroup' `rfdist' `rflevel' ///
 		`ovwt' `sgwt' `altwt' wgt(`wgt') use3(`use3') ///
-		`logrank' `level' `opts_model' `isqsa' `tsqsa'
+		`logrank' `level' `opts_model'
 	
 	if _rc {
 		if `"`err'"'==`""' {
@@ -726,16 +736,13 @@ program define admetan, rclass
 		return scalar nby = `nby'
 	}
 
-	// Methods
-	return local method    `method'
-	return local model     `model'
-	return local vce_model `hksj'`bartlett'
-
 	// Return other scalars
 	//  some of which are also saved in r(ovstats)
 	return scalar eff    = r(eff)
 	return scalar se_eff = r(se_eff)
-	return scalar Q      = r(Q)
+	return scalar Q    = r(Q)
+	return scalar Isq  = r(Isq)
+	return scalar HsqM = r(HsqM)
 	
 	if `params'==4 {
 		return scalar tger = r(tger)
@@ -749,8 +756,6 @@ program define admetan, rclass
 			return scalar Qr = r(Qr)
 			return scalar tausq   = r(tausq)
 			return scalar sigmasq = r(sigmasq)
-			return scalar Isq  = r(Isq)
-			return scalar HsqM = r(HsqM)
 		}
 		
 		if !missing(rownumb(`ovstats', "tausq_lci")) {
@@ -761,10 +766,7 @@ program define admetan, rclass
 			return scalar rc_tsq_lci = r(rc_tsq_lci)
 			return scalar rc_tsq_uci = r(rc_tsq_uci)
 		}
-	}	
-	// N.B. `opts_model' now contains:
-	// `breslow' `chi2opt' `t' `tsqlevel' `qprofile' `isqsa' `tsqsa'
-	
+	}
 	
 	/*
 	// return scalars for AD & IPD separately if "byad"
@@ -832,11 +834,7 @@ program define admetan, rclass
 	* Print number of studies/participants to screen
 	//  (NB nos. actually analysed as opposed to the number supplied in original data)
 
-	// First, need to parse relevant -ipdmetan- options:
-	local 0 `", `opts_ipdm'"'
-	syntax [, SOURCE(varname numeric) ESTEXP(string) * ]	// estexp(string), as could include equation term
-	
-	// Further:  if passed from -ipdmetan- with option ad(), need to print non-standard text:
+	// If passed from -ipdmetan- with option ad(), need to print non-standard text:
 	if `"`source'"'!=`""' {
 		tempname KIPD totnptsIPD
 		qui count if `touse' & inlist(`_USE', 1, 2) & `source'==1
@@ -926,153 +924,23 @@ program define admetan, rclass
 	}	
 	
 	
-	** Full descriptions of `summstat', `method' and `model' options, for printing to screen
+	** Full descriptions of `summstat', `method' and `model' options, for printing to screen	
+	// Involves `opts_model', so pass to a subroutine
+	PrintDesc, summstat(`summstat') method(`method') model(`model') ///
+		bystats(`bystats') ovstats(`ovstats') wgt(`wgt') ///
+		`log' `logrank' `cumulative' `influence' `opts_model' `opts_ipdm'
 	
-	// Build up description of effect estimate type (interaction, cumulative etc.)
-	local pooltext = cond(`"`cumulative'"'!=`""', "Cumulative meta-analysis of", ///
-		cond(`"`influence'"'!=`""', "Influence meta-analysis of", ///
-		cond(`"`ovstats'`bystats'"'!=`""', "Meta-analysis pooling of", "Presented effect estimates are")))
+	local fpnote     `"`s(fpnote)'"'
+	local opts_model `"`s(opts_model)'"'
+	// N.B. `opts_model' now contains:  `breslow' `chi2opt' `t' `tsqlevel' `qprofile'
+	local opts_ipdm  `"`s(opts_ipdm)'"'
+	// N.B. `opts_ipdm' now contains:   `byad' `source' `lrvlist' `ipdxline'
 	
-	// Again, if passed from -ipdmetan- with "generic" effect measure,
-	//   print non-standard text including `estexp':
-	if "`estexp'"!="" {
-		if `"`interaction'"'!=`""' local pooltext "`pooltext' interaction effect estimate"
-		else if `"`exp_list'"'!=`""' local pooltext "`pooltext' user-specified effect estimate"
-		else local pooltext "`pooltext' main (treatment) effect estimate"
-		di _n as text "`pooltext'" as res " `estexp'"
-	}	
-
-	// Standard -admetan- text:
-	else if `"`summstat'"'==`""' {
-		if `"`ovstats'`bystats'`ipdmetan'"'!=`""' di _n as text "`pooltext' aggregate data"
-	}
-	else {
-		local logtext = cond(`"`log'"'!=`""', `"log "', `""')		// add a space if `log'
-		if "`summstat'"=="rr" local efftext `"`logtext'Risk Ratios"'
-		else if "`summstat'"=="irr" local efftext `"`logtext'Incidence Rate Ratios"'
-		else if "`summstat'"=="rrr" local efftext `"`logtext'Relative Risk Ratios"'
-		else if "`summstat'"=="or"  local efftext `"`logtext'Odds Ratios"'
-		else if "`summstat'"=="rd"  local efftext `" Risk Differences"'
-		else if "`summstat'"=="hr"  local efftext `"`logtext'Hazard Ratios"'
-		else if "`summstat'"=="shr" local efftext `"`logtext'Sub-hazard Ratios"'
-		else if "`summstat'"=="tr"  local efftext `"`logtext'Time Ratios"'
-		else if "`summstat'"=="wmd" local efftext `" Weighted Mean Differences"'
-		else if "`summstat'"=="smd" {
-			local efftext " Standardised Mean Differences"
-			if "`method'"=="cohen"       local efftextf `" as text " by the method of " as res "Cohen""'
-			else if "`method'"=="glass"  local efftextf `" as text " by the method of " as res "Glass""'
-			else if "`method'"=="hedges" local efftextf `" as text " by the method of " as res "Hedges""'
-		}
-			
-		// Study-level effect derivation method
-		if "`logrank'"!="" local efftext "Peto (logrank) `efftext'"
-		else if "`model'"=="fe" & "`method'"=="peto" local efftext "Peto `efftext'"
-		di _n as text "`pooltext'" as res " `efftext'" `efftextf' `continue'
-	}
-	
-	if `"`ovstats'`bystats'"'!=`""' {
-	
-		// fpnote = "NOTE: Weights are from Mantel-Haenszel model"
-		// or "NOTE: Weights are from random-effects model"
-		// or "NOTE: Weights are user-defined"
-		
-		// Pooling method (Mantel-Haenszel; fixed-effect; random-effects)
-		if "`model'"=="mh" {
-			disp as text "using the " as res "Mantel-Haenszel" as text " method"
-			local fpnote "NOTE: Weights are from Mantel-Haenszel model"								// for forestplot
-		}
-		else if !inlist("`model'", "ivhet", "qe") {
-			if "`model'"=="fe" local modeltext "fixed-effect inverse-variance"
-			else {	
-				local modeltext "random-effects inverse-variance"
-				if "`model'"!="sa" local fpnote "NOTE: Weights are from random-effects model"		// for forestplot
-			}
-			local the = cond("`model'"=="qe", "", "the ")		
-			disp as text `"using `the'"' as res `"`modeltext'"' as text " model"
-		}
-		
-		// Doi's IVHet and Quality Effects models
-		else {
-			local modeltext = cond("`model'"=="ivhet", "Doi's IVHet", "Doi's Quality Effects")
-			disp as text "using " as res `"`modeltext'"' as text " model"
-			local fpnote `"NOTE: Weights are from `modeltext' model"'								// for forestplot
-		}	
-		
-		// Profile likelihood
-		if "`model'"=="pl" {
-			local continue = cond("`bartlett'"!="", "_c", "")
-			disp as text `"estimated using "' as res "Profile Likelihood" `continue'
-			if "`bartlett'"!="" disp as text " with " as res `"Bartlett's correction"'
-		}	
-			
-		// Gamma alternative weighting
-		else if "`model'"=="gamma" {
-			disp as text `"with "' as res "Biggerstaff-Tweedie approximate Gamma" as text `" weighting"'
-		}
-
-		// Variance correction
-		else if "`hksj'"!="" | "`model'"=="kr" {
-			if "`hksj'"!="" local vcetext "Hartung-Knapp-Sidik-Jonkman"
-			else if "`model'"=="kr" local vcetext "Kenward-Roger"
-			disp as text "with " as res "`vcetext'" as text " variance correction"
-		}
-			
-		// Henmi-Copas
-		else if "`model'"=="hc" {
-			disp as text "estimated using " as res `"Henmi and Copas's approximate exact distribution"'
-		}
-		
-		// Estimators of tausq
-		if !inlist("`model'", "mh", "fe") {
-			if inlist("`model'", "dl", "gamma", "ivhet", "qe", "hc") local tsqtext "DerSimonian-Laird"
-			else if "`model'"=="dlb"  local tsqtext "Bootstrap DerSimonian-Laird"
-			else if "`model'"=="mp"   local tsqtext "Mandel-Paule"
-			else if "`model'"=="vc"   local tsqtext `"Cochran's ANOVA-type (Hedges')"'
-			else if "`model'"=="sj2s" local tsqtext "Sidik-Jonkman two-step"
-			else if inlist("`model'", "ml",   "pl") local tsqtext "ML"
-			else if inlist("`model'", "reml", "kr") local tsqtext "REML"
-			else if "`model'"=="bp"   local tsqtext "Rukhin's BP"
-			else if "`model'"=="b0"   local tsqtext "Rukhin's B0"
-		
-			local linktext = cond("`hksj'"!="" | inlist("`model'", "pl", "gamma", "ivhet", "qe", "kr", "hc"), "based on", "with")
-			if "`model'"!="sa" disp as text `"`linktext' "' as res `"`tsqtext'"' as text `" estimate of tau{c 178}"'
-			else {
-				local 0 `", `isqsa' `tsqsa'"'
-				syntax [, ISQSA(real 80) TSQSA(real -99)]
-				disp as text "Sensitivity analysis with user-defined " _c
-				if `tsqsa'==-99 {
-					disp "I{c 178} = " as res "`isqsa'%"
-					local fpnote `"Sensitivity analysis with user-defined I{c 178}"'
-				}
-				else {
-					disp "tau{c 178} = " as res "`tsqsa'"
-					local fpnote `"Sensitivity analysis with user-defined tau{c 178}"'
-				}
-			}
-		}
-
-		// Multiplicative heterogeneity model
-		if "`model'"=="mu" {
-			disp as text "with " as res `"multiplicative heterogeneity"'
-		}
-	
-		// User-defined weights
-		if "`wgt'" != "" {
-			local wgttitle : variable label `wgt'
-			if `"`wgttitle'"'==`""' local wgttitle `wgt'
-			
-			disp as text "and with user-defined weights " as res "`wgttitle'"
-			if `"`fpnote'"'!=`""' local fpnote `"`fpnote' and with user-defined weights"'
-			else local fpnote `"NOTE: Weights are user-defined"'
-		}
-	
-	}		// end if `"`ovstats'`bystats'"'!=`""' 
 
 
-
-	***************************
-	* Print results to screen *
-	***************************
+	*********************************
+	* Print results table to screen *
+	*********************************
 		
 	// Unless no table AND no graph AND no saving, store study value labels in new var "_LABELS"
 	if !(`"`table'"'!=`""' & `"`graph'"'!=`""' & `"`saving'"'==`""') {
@@ -1447,7 +1315,7 @@ program define ParseFPlotOpts, sclass
 	local 0 `", `options'"'
 	syntax [, noGRaph noHET noOVerall noSUbgroup noWARNing noWT noSTATs ///
 		EFFect(string asis) COUNTS(string asis) ///
-		HETStat(passthru) PLOTID(passthru) LCols(passthru) RCols(passthru) /*SWitch(passthru)*/ ///
+		HETStat(passthru) PLOTID(passthru) LCols(passthru) RCols(passthru) ///
 		OVWt SGWt SGWEIGHT CUmulative INFluence INTERaction EFFIcacy RFDist RFLevel(passthru) ///
 		COUNTS2 GROUP1(passthru) GROUP2(passthru) * ]
 
@@ -2289,6 +2157,7 @@ program define ParseModel, sclass
 	// Other model types (with synonyms)
 	else if inlist("`model'", "g", "ga", "gam", "gamm", "gamma", "bt", "bs", "hc") local model gamma	// Biggerstaff-Tweedie
 	else if inlist("`model'", "mu", "mul", "mult", "fv") local model mu									// Multiplicative heterogeneity
+	else if inlist("`model'", "ivh", "ivhe", "ivhet") local model ivhet									// Doi's IVHet
 	
 	// Hartung-Knapp-Sidik-Jonkman variance correction
 	if "`hksj'"!="" {
@@ -2450,17 +2319,17 @@ program define ParseModel, sclass
 	sreturn local model    `model'
 	sreturn local options `"`macval(opts_adm)' `rfdist'"'
 	
-	local opts_model `"`breslow' `chi2opt' `t' `qprofile' `hksj' `bartlett' `tsqlevel' `qe_opt'"'
+	local opts_model `"`breslow' `chi2opt' `t' `qprofile' `hksj' `bartlett' `tsqlevel' `isqsa_opt' `tsqsa_opt' `qe_opt'"'
 	local opts_model `"`opts_model' `itol' `maxtausq' `reps' `maxiter' `quadpts' `eim' `oim' `truncate'"'
 	sreturn local opts_model `"`opts_model'"'
+	sreturn local vce_model `hksj'`bartlett'
 	
-	// return "sa" options in isolation, as they are needed both by the main routine *and* by PerformMetaAnalysis *and* by DrawTable.
-	sreturn local isqsa `isqsa_opt'
-	sreturn local tsqsa `tsqsa_opt' 
-		
 end
 
 
+
+
+********************************************************************************
 
 * Subroutine to initialise rownames for matrices `ovstats' and `bystats'
 // where outputs from PerformPooling are stored
@@ -2490,7 +2359,7 @@ end
 
 
 
-**********************************************************************
+********************************************************************************
 
 * PerformMetaAnalysis
 // Create list of "pooling" variables
@@ -3024,17 +2893,181 @@ program define PerformMetaAnalysis, rclass sortpreserve
 
 	return scalar k = `k'
 	
-	// Finally: alter the contents of `opts_re' in the main -admetan- routine
-	//   for use with DrawTable and BuildResultsSet, without the rest of the `opts_re' options.
-	// (use c_local since "return all" is used by main routine!)
-	c_local opts_model `"`breslow' `chi2opt' `t' `tsqlevel' `qprofile' `isqsa' `tsqsa'"'
-	
 end
 	
 	
 	
 
 	
+**********************************************************************
+
+* PrintDesc
+// Print descriptive text to screen, above table
+
+program define PrintDesc, sclass
+	
+	syntax, METHOD(string) MODEL(string) [SUMMSTAT(string) ///
+		BYSTATS(name) OVSTATS(name) WGT(varname numeric) ///
+		LOG LOGRank CUmulative INFluence INTERaction BREslow CHI2opt T TSQLEVEL(passthru) QProfile ISQSA(real 80) TSQSA(real -99) ///
+		BYAD SOURCE(passthru) LRVLIST(passthru) ESTEXP(passthru) EXPLIST(passthru) IPDXLINE(passthru) IPDMETAN ///
+		BArtlett HKsj noTRUNCate * ]
+
+	// Build up description of effect estimate type (interaction, cumulative etc.)
+	local pooltext = cond(`"`cumulative'"'!=`""', "Cumulative meta-analysis of", ///
+		cond(`"`influence'"'!=`""', "Influence meta-analysis of", ///
+		cond(`"`ovstats'`bystats'"'!=`""', "Meta-analysis pooling of", "Presented effect estimates are")))
+	
+	// Again, if passed from -ipdmetan- with "generic" effect measure,
+	//   print non-standard text including `estexp':
+	if "`estexp'"!="" {
+		if `"`interaction'"'!=`""' local pooltext "`pooltext' interaction effect estimate"
+		else if `"`explist'"'!=`""' local pooltext "`pooltext' user-specified effect estimate"
+		else local pooltext "`pooltext' main (treatment) effect estimate"
+		di _n as text "`pooltext'" as res " `estexp'"
+	}	
+
+	// Standard -admetan- text:
+	else if `"`summstat'"'==`""' {
+		if `"`ovstats'`bystats'`ipdmetan'"'!=`""' di _n as text "`pooltext' aggregate data"
+	}
+	else {
+		local logtext = cond(`"`log'"'!=`""', `"log "', `""')		// add a space if `log'
+		if "`summstat'"=="rr" local efftext `"`logtext'Risk Ratios"'
+		else if "`summstat'"=="irr" local efftext `"`logtext'Incidence Rate Ratios"'
+		else if "`summstat'"=="rrr" local efftext `"`logtext'Relative Risk Ratios"'
+		else if "`summstat'"=="or"  local efftext `"`logtext'Odds Ratios"'
+		else if "`summstat'"=="rd"  local efftext `" Risk Differences"'
+		else if "`summstat'"=="hr"  local efftext `"`logtext'Hazard Ratios"'
+		else if "`summstat'"=="shr" local efftext `"`logtext'Sub-hazard Ratios"'
+		else if "`summstat'"=="tr"  local efftext `"`logtext'Time Ratios"'
+		else if "`summstat'"=="wmd" local efftext `" Weighted Mean Differences"'
+		else if "`summstat'"=="smd" {
+			local efftext " Standardised Mean Differences"
+			if "`method'"=="cohen"       local efftextf `" as text " by the method of " as res "Cohen""'
+			else if "`method'"=="glass"  local efftextf `" as text " by the method of " as res "Glass""'
+			else if "`method'"=="hedges" local efftextf `" as text " by the method of " as res "Hedges""'
+		}
+			
+		// Study-level effect derivation method
+		if "`logrank'"!="" local efftext "Peto (logrank) `efftext'"
+		else if "`model'"=="fe" & "`method'"=="peto" local efftext "Peto `efftext'"
+		di _n as text "`pooltext'" as res " `efftext'" `efftextf' `continue'
+	}
+	
+	if `"`ovstats'`bystats'"'!=`""' {
+	
+		// fpnote = "NOTE: Weights are from Mantel-Haenszel model"
+		// or "NOTE: Weights are from random-effects model"
+		// or "NOTE: Weights are user-defined"
+		
+		// Pooling method (Mantel-Haenszel; fixed-effect; random-effects)
+		if "`model'"=="mh" {
+			disp as text "using the " as res "Mantel-Haenszel" as text " method"
+			local fpnote "NOTE: Weights are from Mantel-Haenszel model"								// for forestplot
+		}
+		else if !inlist("`model'", "ivhet", "qe") {
+			if "`model'"=="fe" local modeltext "fixed-effect inverse-variance"
+			else {	
+				local modeltext "random-effects inverse-variance"
+				if "`model'"!="sa" local fpnote "NOTE: Weights are from random-effects model"		// for forestplot
+			}
+			local the = cond("`model'"=="qe", "", "the ")		
+			disp as text `"using `the'"' as res `"`modeltext'"' as text " model"
+		}
+		
+		// Doi's IVHet and Quality Effects models
+		else {
+			local modeltext = cond("`model'"=="ivhet", "Doi's IVHet", "Doi's Quality Effects")
+			disp as text "using " as res `"`modeltext'"' as text " model"
+			local fpnote `"NOTE: Weights are from `modeltext' model"'								// for forestplot
+		}	
+		
+		// Profile likelihood
+		if "`model'"=="pl" {
+			local continue = cond("`bartlett'"!="", "_c", "")
+			disp as text `"estimated using "' as res "Profile Likelihood" `continue'
+			if "`bartlett'"!="" disp as text " with " as res `"Bartlett's correction"'
+		}	
+			
+		// Gamma alternative weighting
+		else if "`model'"=="gamma" {
+			disp as text `"with "' as res "Biggerstaff-Tweedie approximate Gamma" as text `" weighting"'
+		}
+
+		// Variance correction
+		else if "`hksj'"!="" | "`model'"=="kr" {
+			if "`hksj'"!="" {
+				if "`truncate'"!="" local vcetext "(untruncated) "
+				local vcetext "`vcetext'Hartung-Knapp-Sidik-Jonkman"
+			}
+			else if "`model'"=="kr" local vcetext "Kenward-Roger"
+			disp as text "with " as res "`vcetext'" as text " variance correction"
+		}
+			
+		// Henmi-Copas
+		else if "`model'"=="hc" {
+			disp as text "estimated using " as res `"Henmi and Copas's approximate exact distribution"'
+		}
+		
+		// Estimators of tausq
+		if !inlist("`model'", "mh", "fe") {
+			if inlist("`model'", "dl", "gamma", "ivhet", "qe", "hc") local tsqtext "DerSimonian-Laird"
+			else if "`model'"=="dlb"  local tsqtext "Bootstrap DerSimonian-Laird"
+			else if "`model'"=="mp"   local tsqtext "Mandel-Paule"
+			else if "`model'"=="vc"   local tsqtext `"Cochran's ANOVA-type (Hedges')"'
+			else if "`model'"=="sj2s" local tsqtext "Sidik-Jonkman two-step"
+			else if inlist("`model'", "ml",   "pl") local tsqtext "ML"
+			else if inlist("`model'", "reml", "kr") local tsqtext "REML"
+			else if "`model'"=="bp"   local tsqtext "Rukhin's BP"
+			else if "`model'"=="b0"   local tsqtext "Rukhin's B0"
+		
+			local linktext = cond("`hksj'"!="" | inlist("`model'", "pl", "gamma", "ivhet", "qe", "kr", "hc"), "based on", "with")
+			if "`model'"!="sa" disp as text `"`linktext' "' as res `"`tsqtext'"' as text `" estimate of tau{c 178}"'
+			else {
+				// local 0 `", `isqsa' `tsqsa'"'
+				// syntax [, ISQSA(real 80) TSQSA(real -99)]
+				disp as text "Sensitivity analysis with user-defined " _c
+				if `tsqsa'==-99 {
+					disp "I{c 178} = " as res "`isqsa'%"
+					local fpnote `"Sensitivity analysis with user-defined I{c 178}"'
+				}
+				else {
+					disp "tau{c 178} = " as res "`tsqsa'"
+					local fpnote `"Sensitivity analysis with user-defined tau{c 178}"'
+				}
+			}
+		}
+
+		// Multiplicative heterogeneity model
+		if "`model'"=="mu" {
+			disp as text "with " as res `"multiplicative heterogeneity"'
+		}
+	
+		// User-defined weights
+		if "`wgt'" != "" {
+			local wgttitle : variable label `wgt'
+			if `"`wgttitle'"'==`""' local wgttitle `wgt'
+			
+			disp as text "and with user-defined weights " as res "`wgttitle'"
+			if `"`fpnote'"'!=`""' local fpnote `"`fpnote' and with user-defined weights"'
+			else local fpnote `"NOTE: Weights are user-defined"'
+		}
+	
+	}		// end if `"`ovstats'`bystats'"'!=`""' 
+
+	sreturn local fpnote `"`fpnote'"'
+	
+	// Finally: simplify the contents of `opts_model' and `opts_ipdm' in the main -admetan- routine
+	//   for use with DrawTable and BuildResultsSet, without options which are no longer needed.
+	sreturn local opts_model `"`breslow' `chi2opt' `t' `tsqlevel' `qprofile'"'
+	sreturn local opts_ipdm  `"`byad' `source' `lrvlist' `ipdxline'"'
+
+	
+end
+
+
+
+
 *******************************************************
 
 * Routine to draw output table (admetan.ado version)
@@ -3816,12 +3849,12 @@ program define BuildResultsSet, rclass sortpreserve
 		[SUMMSTAT(string) STUDY(varname numeric) BY(varname numeric) BYSTATS(name) OVSTATS(name) ///
 		CUmulative INFluence noOVerall noSUbgroup SUMMARYONLY OVWt SGWt ALTWt WGT(varname numeric) ///
 		EFORM EFFect(string asis) T BREslow LOGRank CHI2opt ///
-		LCols(namelist) RCols(namelist) COUNTS(string asis) EFFIcacy OEV NPTS /*SWitch(namelist)*/ ///
+		LCols(varlist) RCols(varlist) COUNTS(string asis) EFFIcacy OEV NPTS ///
 		XOUTVLIST(varlist numeric) RFDist RFLEVEL(real 95) LEVEL(real 95) TSQLEVEL(real 95) ///
 		noEXTRALine HETStat(string) OVStat(string) noHET noWT noSTATs ///
 		KEEPAll KEEPOrder noGRaph noWARNing SAVING(string) FORESTplot(string asis) FPNOTE(string asis) ///
 		SFMTLEN(integer 0) USE3(varname numeric) PLOTID(passthru) ///
-		BYAD SOURCE(varname numeric) LRVLIST(varlist numeric) ESTEXP(string) IPDXLINE(string)] 	/* IPD+AD options */
+		BYAD SOURCE(varname numeric) LRVLIST(varlist numeric) IPDXLINE(string) ] 	/* IPD+AD options */
 		
 	// Extra line for heterogeneity in forest plot:
 	//  either specified here, or previously via -ipdmetan- using `ipdxline' option
@@ -3835,37 +3868,93 @@ program define BuildResultsSet, rclass sortpreserve
 	
 	tokenize `outvlist'
 	args _ES _seES _LCI _UCI _WT _NN
-	
+
 	if `"`npts'"'!=`""' {
 		cap confirm numeric var `_NN'
 		if _rc {
-			nois disp as err "cannot use {bf:npts} option; no patient numbers available"
+			nois disp as err _n "cannot use {bf:npts} option; no patient numbers available"
 			exit 198
 		}
 		local npts npts(`_NN')
 	}
 	
-	
-	** "switch" option:
-	// By default, `npts', `counts' and `oev' are displayed (if requested) on the *left* hand side of the forest plot;
-	//   and `stats', `ve' and `weight' (if requested) on the *right* hand side.
-	// This can be changed using the switch() option.
-	// Options supplied to switch() need to be identified as being requested *in general* ; do this now, early on.
+	// rename locals for consistency with rest of admetan.ado
+	local _BY     `by' 
+	local _STUDY  `study'
+	local _LABELS `labels'
+	local _SOURCE `source'
 
-	// OCT 2018: Also, xlcols() and xrcols()??  [containing _Q, _Qdf etc. ]
-	// Leave this, and switch(), for future v3.1
 
+	** Test validity of lcols/rcols -- cannot be any of the names -admetan- (or -ipdmetan- etc.) uses for other things
+	// To keep things simple, forbid any varnames:
+	//  - beginning with a single underscore followed by a capital letter
+	//  - beginning with "_counts" 
+	// (Oct 2018: N.B. was `badnames')
+	local lrcols `lcols' `rcols'
+	local check = 0	
+	if trim(`"`lrcols'"') != `""' {
+		local cALPHA `c(ALPHA)'
+
+		foreach el of local lrcols {
+			local el2 = substr(`"`el'"', 2, 1)
+			if substr(`"`el'"', 1, 1)==`"_"' & `: list el2 in cALPHA' {
+				nois disp as err _n `"Error in option {bf:lcols()} or {bf:rcols()}:  Variable names such as {bf:`el'}, beginning with an underscore followed by a capital letter,"'
+				nois disp as err `" are reserved for use by {bf:ipdmetan}, {bf:ipdover} and {bf:forestplot}."'
+				nois disp as err `"In order to save the results set, please rename this variable or use {bf:{help clonevar}}."'
+				exit 101
+			}
+			else if substr(`"`el'"', 1, 7)==`"_counts"' {
+				nois disp as err _n `"Error in option {bf:lcols()} or {bf:rcols()}:  Variable names beginning {bf:_counts} are reserved for use by {bf:ipdmetan}, {bf:ipdover} and {bf:forestplot}."'
+				nois disp as err `"In order to save the results set, please rename this variable or use {bf:{help clonevar}}."'
+				exit 101
+			}
+		
+			// `saving' only:
+			// Test validity of (value) *label* names: just _BY, _STUDY, _SOURCE as applicable
+			// [modified Dec 2018 for v3.0.1]
+			// Value labels are unique within datasets. Hence, not a problem for a var in lcols/rcols to have same value label as the by() or study() variable.
+			// However, a var in lcols/rcols **cannot** use the label name _BY or _STUDY **unless** the by() or study() variable is already sharing that label name.
+			// (Also, cannot use _SOURCE as a value label if `"`_SOURCE'"'!=`""')
+			if `"`saving'"' != `""' {
+				local lrlab : value label `el'
+				if `"`lrlab'"'==`"_BY"' {
+					if `"`_BY'"'==`""' local check = 1
+					else {
+						if `"`: value label `_BY''"'!=`"_BY"' local check = 1
+					}
+				}
+				if `"`lrlab'"'==`"_STUDY"' {
+					if `"`_STUDY'"'==`""' local check = 1
+					else {
+						if `"`: value label `_STUDY''"'!=`"_STUDY"' local check = 1
+					}
+				}
+				if `"`lrlab'"'==`"_SOURCE"' {
+					if `"`_SOURCE'"'==`""' local check = 1
+					else {
+						if `"`: value label `_SOURCE''"'!=`"_SOURCE"' local check = 1
+					}
+				}
+				if `check' {
+					disp as err _n `"Error in option {bf:lcols()} or {bf:rcols()}:  Label name {bf:`lrlab'} attached to variable {bf:`el'}"'
+					disp as err `"  is reserved for use by {bf:ipdmetan}, {bf:admetan} and {bf:forestplot}."'
+					disp as err `"In order to save the results set, please rename the label attached to this variable (e.g. using {bf:{help label copy}})."'
+					exit 101
+				}
+			}		// end if `"`saving'"' != `""'
+		}		// end foreach el of local lrcols
+	}		// end if trim(`"`lrcols'"') != `""'		
 	
-	// vaccine efficacy: OR and RR only
-	if `"`efficacy'"'!=`""' {
-		cap assert inlist("`summstat'", "or", "rr")
-		if _rc {
-			nois disp as err "Vaccine efficacy statistics only possible with odds ratios and risk ratios"
-			exit _rc
-		}
-	}
 	
-	// `saving' only
+	** Create new observations to hold subgroup & overall effects (_USE==3, 5)
+	//   (these can simply be removed again to restore the original data.)
+	
+	// N.B. Such observations may already have been created if passed through from -ipdmetan-
+	//   but in any case, cover all bases by checking for (if applicable) a _USE==3 corresponding to each `by'-value,
+	//   plus a single overall _USE==5.
+	
+	// If `saving', need to -preserve- at this point
+	//  (also take the opportunity to test validity of filename)
 	if `"`saving'"' != `""' {
 	
 		// use modified version of _prefix_saving.ado to handle `stacklabel' option
@@ -3875,80 +3964,14 @@ program define BuildResultsSet, rclass sortpreserve
 		syntax [, STACKlabel * ]
 		local saveopts `"`options'"'
 		
-		// Initialize vars to save in Results Set: "core" variables
-		local core _ES _seES _LCI _UCI _WT
-		
-		// if intention is to save, we may as well preserve/keep now
-		// but keep `touse' itself for now to make subsequent coding easier
 		// (N.B. if _rsample!="", i.e. no saved vars: already preserved)
 		if `"`rsample'"'==`""' preserve
-		qui keep if `touse'
 		
-		* Test validity of names -- cannot be any of the names -admetan- (or -ipdmetan- etc.) uses for other things
-		// To keep things simple, forbid any varnames:
-		//  - beginning with a single underscore followed by a capital letter
-		//  - beginning with "_counts" 
-		// (Oct 2018: N.B. was `badnames')
-		local lrcols `lcols' `rcols'
-		if trim(`"`lrcols'"') != `""' {
-			local cALPHA `c(ALPHA)'
+		// keep `touse' itself for now to make subsequent coding easier
+		qui keep if `touse'
 
-			foreach el of local lrcols {
-				local el2 = substr(`"`el'"', 2, 1)
-				if substr(`"`el'"', 1, 1)==`"_"' & `: list el2 in cALPHA' {
-					nois disp as err `"Error in option {bf:lcols()} or {bf:rcols()}:  Variable names such as {bf:`el'}, beginning with an underscore followed by a capital letter,"'
-					nois disp as err `" are reserved for use by {bf:ipdmetan}, {bf:ipdover} and {bf:forestplot}."'
-					nois disp as err `"In order to save the results set, please rename this variable or use {bf:{help clonevar}}."'
-					exit 101
-				}
-				else if substr(`"`el'"', 1, 7)==`"_counts"' {
-					nois disp as err `"Error in option {bf:lcols()} or {bf:rcols()}:  Variable names beginning {bf:_counts} are reserved for use by {bf:ipdmetan}, {bf:ipdover} and {bf:forestplot}."'
-					nois disp as err `"In order to save the results set, please rename this variable or use {bf:{help clonevar}}."'
-					exit 101
-				}
+	}		// end if `"`saving'"'!=`""'	
 
-				// bad (value) *label* names: just _BY, _STUDY, _SOURCE as applicable
-				local lrlab : value label `el'
-				if `"`lrlab'"'!=`""' {
-				
-					// allowed to have same value label name *only if* a clone in terms of observations
-					// modified 13th July 2017; double check!!
-					local check
-					if `"`by'"'!=`""' {
-						local check = (`el'==`by'     & `"`lrlab'"'==`"`: value label `by''"')
-					}
-					if `"`check'"'==`""' & `"`study'"'!=`""' {
-						local check = (`el'==`study'  & `"`lrlab'"'==`"`: value label `study''"')
-					}
-					if `"`check'"'==`""' & `"`source'"'!=`""' {
-						local check = (`el'==`source' & `"`lrlab'"'==`"`: value label `source''"')
-					}
-					
-					if `check' {
-						disp as err `"Error in option {bf:lcols()} or {bf:rcols()}:  Label name {bf:`lrlab'} attached to variable {bf:`el'}"'
-						disp as err `"  is reserved for use by {bf:ipdmetan}, {bf:admetan} and {bf:forestplot}."'
-						disp as err `"In order to save the results set, please rename the label attached to this variable."'
-						exit 101
-					}
-				}
-			}		// end foreach el of local lrcols
-		}		// end if trim(`"`lrcols'"') != `""'
-	}		// end if `"`saving'"'!=`""'
-	
-	
-	** Create new observations to hold subgroup & overall effects (_USE==3, 5)
-	//   (these can simply be removed again to restore the original data.)
-	
-	// N.B. Such observations may already have been created if passed through from -ipdmetan-
-	//   but in any case, cover all bases by checking for (if applicable) a _USE==3 corresponding to each `by'-value,
-	//   plus a single overall _USE==5.
-
-	// rename locals for consistency with rest of admetan.ado
-	local _BY     `by' 
-	local _STUDY  `study'
-	local _LABELS `labels'
-	local _SOURCE `source'
-	
 	if `"`_BY'"'!=`""' {
 		qui levelsof `_BY' if `touse' & inlist(`_USE', 1, 2), missing local(bylist)
 		local nby : word count `bylist'
@@ -4064,7 +4087,7 @@ program define BuildResultsSet, rclass sortpreserve
 				if `"`lrvlist'"'!=`""' {
 					cap assert `params'==2 & "`logrank'"!=""
 					if _rc {
-						nois disp as err `"Error in communication between {bf:ipdmetan} and {bf:admetan}"'
+						nois disp as err _n `"Error in communication between {bf:ipdmetan} and {bf:admetan}"'
 						exit 198
 					}
 					tokenize `lrvlist'
@@ -4088,19 +4111,27 @@ program define BuildResultsSet, rclass sortpreserve
 		}
 		
 		if `"`oev'"'!=`""' {
-			if "`logrank'"=="" {
-				disp as err _n `"Note: {bf:oev} is not applicable without log-rank data, so will be ignored"'
-				local oev
-			}
-			else {
+		
+			// modified 28nov2018 for v3.0.1
+			if "`logrank'"!="" {
 				tokenize `invlist'
 				args _OE _V
-
-				label variable `_OE' `"O-E(o)"'
-				label variable `_V'  `"V(o)"'
-				format `_OE' %6.2f
-				format `_V' %6.2f
 			}
+			else if "`method'"=="peto" {
+				tempvar _OE _V
+				qui gen double `_OE' = `_ES' / `_seES'^2
+				qui gen double `_V'  =    1  / `_seES'^2
+			}
+			else {
+				disp as err _n `"Note: {bf:oev} is not applicable without log-rank data or Peto ORs, so will be ignored"'
+				local oev
+			}
+		}
+		if `"`oev'"'!=`""' {
+			label variable `_OE' `"O-E(o)"'
+			label variable `_V'  `"V(o)"'
+			format `_OE' %6.2f
+			format `_V' %6.2f
 		}
 	}			// end if `"`counts'"'!=`""' | `"`oev'"'!=`""'
 
@@ -4184,10 +4215,6 @@ program define BuildResultsSet, rclass sortpreserve
 			}
 		}
 	}
-	if `"`saving'"'!=`""' {
-		if `"`_NN'"'!=`""' local tosave `tosave' _NN
-		if `"`oev'"'!=`""' local tosave `tosave' _OE _V		// these lines delayed from earlier so that `tosave' is in a specific order
-	}
 
 	
 	** Finally, create `counts' string for forestplot
@@ -4244,39 +4271,72 @@ program define BuildResultsSet, rclass sortpreserve
 			}
 		}
 				
-		// 26th March 2018
+		// 26th March 2018:
+		// If `saving', local countsvl contains *permanent* varnames rather than temp varnames
+		// (although the pernament names are not yet in use!)
 		local countsvl `_counts1' `_counts1msd' `_counts0' `_counts0msd'
 		if `"`saving'"' != `""' {
 			if `params'==6 local countsvl _counts1 _counts1msd _counts0 _counts0msd
 			else local countsvl _counts1 _counts0
-			local tosave `tosave' `countsvl'
 		}
 
 	}	// end if `"`counts'"'!=`""'
 	
 	// end of "filling-down counts" section
+
 	
+	** Vaccine efficacy
+	// (carried over from -metan- )
+	tempvar strlen
+	if `"`efficacy'"'!=`""' {
+
+		// check: OR and RR only
+		cap assert inlist("`summstat'", "or", "rr")
+		if _rc {
+			nois disp as err _n "Vaccine efficacy statistics only possible with odds ratios and risk ratios"
+			exit _rc
+		}
+	
+		if `"`saving'"' != `""' {
+			cap drop _VE
+			local _VE _VE
+		}
+		else tempvar _VE
+		qui gen `_VE' = string(100*(1 - exp(`_ES')), "%4.0f") + " (" ///
+			+ string(100*(1 - exp(`_LCI')), "%4.0f") + ", " ///
+			+ string(100*(1 - exp(`_UCI')), "%4.0f") + ")" if inlist(`_USE', 1, 3, 5)
+		
+		label variable `_VE' "Vaccine efficacy (%)"
+		
+		qui gen `strlen' = length(`_VE')
+		summ `strlen', meanonly
+		format %`r(max)'s `_VE'
+		qui compress `_VE'
+		drop `strlen'
+	}
+
 	
 	** If `saving', finish off renaming tempvars to permanent varnames
 	// ...in order to store them in the *saved* dataset (NOT the data in memory)
 	if `"`saving'"' != `""' {
 
-		// Core variables (`tostore'): _ES _seES _LCI _UCI _WT (_NN)
-
-		if `"`rfdist'"'!=`""' local tosave `tosave' _rfLCI _rfUCI
 		// Sep 2018:
-		// `tosave' may contain:  _OE _V if `oev';  `countsvl' if `counts';  _rfLCI _rfUCI if `rfdist'
+		// Initialize varlists to save in Results Set:
+		// `core':  "core" variables (N.B. *excluding* _NN)
+		local core _ES _seES _LCI _UCI _WT	
+		// tosave':  additional "internal" vars created by specific options
+		// [may contain:  _NN;  _OE _V if `oev';  `countsvl' if `counts';  _VE if `efficacy';  _rfLCI _rfUCI if `rfdist']
+		if `"`_NN'"'!=`""' local tosave `tosave' _NN
+		if `"`oev'"'!=`""' local tosave `tosave' _OE _V
+		if `"`counts'"'!=`""' local tosave `tosave' `countsvl'
+		if `"`rfdist'"'!=`""' local tosave `tosave' _rfLCI _rfUCI
 		
 		// Separately, `xoutvlist' contains the same elements as `rownames' (excluding the "core" variables),
 		//  except _NN, and with the addition of _WT2.
 		if `"`xoutvlist'"'!=`""' {
-		
-			if `"`ovstats'"'!=`""' {
-				local rownames : rownames `ovstats'
-			}
-			else if `"`bystats'"'!=`""' {
-				local rownames : rownames `bystats'
-			}		
+			local rownames
+			cap local rownames : rownames `ovstats'
+			if _rc cap local rownames : rownames `bystats'
 		
 			if `"`rownames'"'!=`""' {
 				local rnfull  crit  chi2  df_kr pvalue  oe  v  Q  Qdf  Isq  HsqM  sigmasq  tausq  tsq_lci tsq_uci rflci  rfuci
@@ -4326,7 +4386,13 @@ program define BuildResultsSet, rclass sortpreserve
 				// If it does not, first drop any existing var named _BY, _STUDY (e.g. left over from previous -admetan- call), then rename.
 				if `"``v''"'!=`"`v'"' {
 					cap drop `v'
-					rename ``v'' `v'	// (N.B. no need to use -clonevar- here)
+					
+					// If ``v'' is in `lrcols', use -clonevar-, so as also to keep original name
+					// [Added Nov 2018 for v3.0.1]
+					if `: list `v' in lrcols' {
+						qui clonevar `v' = ``v'' if `touse'
+					}
+					else qui rename ``v'' `v'
 				}
 				
 				local `v' `v'				// for use with subsequent code
@@ -4344,40 +4410,96 @@ program define BuildResultsSet, rclass sortpreserve
 			local _BY _BY
 		}			
 				
-		// September 2018: variable labels
-		label variable `_ES'   "Effect size (interval scale)"
-		label variable `_seES' "Standard error of effect size"
+		// September 2018 [modified Nov 2018 for v3.0.1]: labels and formats
+		// Label variables with short-ish names for display on forest plots
+		// Use characteristics to store longer, explanatory names
+		label variable `_ES' "ES"
+		char define `_ES'[Desc] "Effect size (interval scale)"
+		label variable `_seES' "seES"
+		char define `_seES'[Desc] "Standard error of effect size"
 
 		if `"`xoutvlist'"'!=`""' {
-			if `"`_crit'"'!=`""'    label variable `_crit' "Critical value"
-			if `"`_chi2'"'!=`""'    label variable `_chi2' "Chi-square statistic"
-			if `"`_dfkr'"'!=`""'    label variable `_dfkr' "Kenward-Roger degrees of freedom"
-			if `"`_pvalue'"'!=`""'  label variable `_pvalue' "p-value"
-			if `"`_Q'"'!=`""'       label variable `_Q' "Cochran's Q heterogeneity statistic"
-			if `"`_Qdf'"'!=`""'     label variable `_Qdf' "Degrees of freedom for Cochran's Q"
-			if `"`_Isq'"'!=`""'     label variable `_Isq' "I-squared heterogeneity statistic"
-			if `"`_HsqM'"'!=`""'    label variable `_HsqM' "Modified H-squared heterogeneity statistic"
-			if `"`_sigmasq'"'!=`""' label variable `_sigmasq' "Estimated average within-trial heterogeneity"
-			if `"`_tausq'"'!=`""'   label variable `_tausq' "Estimated between-trial heterogeneity"
-			if `"`_tsqlci'"'!=`""'  label variable `_tsqlci' "`tsqlevel'% lower confidence limit for tau-squared"
-			if `"`_tsquci'"'!=`""'  label variable `_tsquci' "`tsqlevel'% upper confidence limit for tau-squared"
+			if `"`_crit'"'!=`""' {
+				label variable `_crit' "Crit. val."
+				char define `_crit'[Desc] "Critical value"
+				format %6.2f `_crit'
+			}
+			if `"`_chi2'"'!=`""' {
+				label variable `_chi2' "chi2"
+				char define `_chi2'[Desc] "Chi-square statistic"
+				format %6.2f `_chi2'
+			}
+			if `"`_dfkr'"'!=`""' {
+				label variable `_dfkr' "Kenward-Roger df"
+				char define `_dfkr'[Desc] "Kenward-Roger degrees of freedom"
+				format %6.2f `_dfkr'
+			}
+			if `"`_pvalue'"'!=`""' {
+				label variable `_pvalue' "p"
+				char define `_pvalue'[Desc] "p-value for effect size"
+				format %05.3f `_pvalue'
+			}
+			if `"`_Q'"'!=`""' {
+				label variable `_Q' "Q"
+				char define `_Q'[Desc] "Cochran's Q heterogeneity statistic"
+				format %6.2f `_Q'
+			}
+			if `"`_Qdf'"'!=`""' {
+				label variable `_Qdf' "Q df"
+				char define `_Qdf'[Desc] "Degrees of freedom for Cochran's Q"
+				format %6.0f `_Qdf'
+			}
+			if `"`_Isq'"'!=`""' {
+				label variable `_Isq' "I2"
+				char define `_Isq'[Desc] "I-squared heterogeneity statistic"
+				format %6.1f `_Isq'
+			}
+			if `"`_HsqM'"'!=`""' {
+				label variable `_HsqM' "H2"
+				char define `_HsqM'[Desc] "Modified H-squared heterogeneity statistic"
+				format %6.2f `_HsqM'
+			}
+			if `"`_sigmasq'"'!=`""' {
+				label variable `_sigmasq' "sigma2"
+				char define `_sigmasq'[Desc] "Estimated average within-trial heterogeneity"
+				format %6.3f `_sigmasq'
+			}
+			if `"`_tausq'"'!=`""' {
+				label variable `_tausq' "tau2"
+				char define `_tausq'[Desc] "Estimated between-trial heterogeneity"
+				format %6.3f `_tausq'
+			}
+			if `"`_tsqlci'"'!=`""' {
+				label variable `_tsqlci' "tau2 LCI"
+				char define `_tsqlci'[Desc] "`tsqlevel'% lower confidence limit for tau-squared"
+				format %6.3f `_tsqlci'
+			}
+			if `"`_tsquci'"'!=`""' {
+				label variable `_tsquci' "tau2 UCI"
+				char define `_tsquci'[Desc] "`tsqlevel'% upper confidence limit for tau-squared"
+				format %6.3f `_tsquci'
+			}
 		}
 
-		label variable `_LCI'  "`level'% lower confidence limit"
-		label variable `_UCI'  "`level'% upper confidence limit"
+		label variable `_LCI' "LCI"
+		label variable `_UCI' "UCI"
 		char define `_LCI'[Level] `level'
 		char define `_UCI'[Level] `level'
+		char define `_LCI'[Desc] "`level'% lower confidence limit"
+		char define `_UCI'[Desc] "`level'% upper confidence limit"
+		format %6.3f `_LCI' `_UCI'
 		
 		if `"`rfdlist'"'!=`""' {
-			label variable `_rfLCI'  "`rflevel'% lower limit of predictive distribution"
-			label variable `_rfUCI'  "`rflevel'% upper limit of predictive distribution"
+			label variable `_rfLCI' "rfLCI"
+			label variable `_rfUCI' "rfUCI"
 			char define `_rfLCI'[RFLevel] `rflevel'
 			char define `_rfUCI'[RFLevel] `rflevel'
+			char define `_rfLCI'[Desc] "`rflevel'% lower limit of predictive distribution"
+			char define `_rfUCI'[Desc] "`rflevel'% upper limit of predictive distribution"
 		}
 	}		// end if `"`saving'"' != `""'
 	
 	// variable name (title) and format for "_NN" (if appropriate)
-	tempvar strlen
 	if `"`_NN'"'!=`""' {
 		if `"`: variable label `_NN''"'==`""' label variable `_NN' "No. pts"
 		qui gen `strlen' = length(string(`_NN'))
@@ -4424,12 +4546,9 @@ program define BuildResultsSet, rclass sortpreserve
 	else label variable `_LABELS'		// no title if `stacklabel'
 
 
-	// If `npts', `counts' or `oev' requested for display on forest plot (and are *not* "switched" to RHS; see earlier),
-	//   or if `stats', `ve' or `weight' *are* "switched" to LHS (see earlier),
+	// If `npts', `counts' or `oev' requested for display on forest plot
 	//   then heterogeneity stats will need to be on a new line (unless manually overruled with `noextraline')
-	// [Modifed 17th May 2018 and 24th May 2018]
-	
-	// OCT 2018: See if we can do without `switch' for now (v3.0)
+	// [Modifed 17th May 2018, 24th May 2018, Nov 2018]
 	if `"`het'`extraline'"'==`""' & `"`npts'`counts'`oev'`efficacy'"'!=`""' local extraline yes
 	
 	// June 2018:
@@ -4711,31 +4830,11 @@ program define BuildResultsSet, rclass sortpreserve
 			assert !missing(`_ES'[_n-1]) if `touse' & inlist(`_USE', 3, 5) & float(`_rfLCI')==float(`_LCI') & float(`_rfUCI')==float(`_UCI')
 		}
 		if _rc {
-			nois disp as err "Error in prediction interval data"
+			nois disp as err _n "Error in prediction interval data"
 			exit _rc
 		}
 	}
-	
-	// Insert vaccine efficacy
-	if `"`efficacy'"'!=`""' {
-		if `"`saving'"' != `""' {
-			cap drop _VE
-			local _VE _VE
-		}
-		else tempvar _VE
-		qui gen `_VE' = string(100*(1 - exp(`_ES')), "%4.0f") + " (" ///
-			+ string(100*(1 - exp(`_LCI')), "%4.0f") + ", " ///
-			+ string(100*(1 - exp(`_UCI')), "%4.0f") + ")" if inlist(`_USE', 1, 3, 5)
-		
-		label variable `_VE' "Vaccine efficacy (%)"
-		
-		qui gen `strlen' = length(`_VE')
-		summ `strlen', meanonly
-		format %`r(max)'s `_VE'
-		qui compress `_VE'
-		drop `strlen'
-	}
-	
+
 	// Having added "overall", het. info etc., re-format _LABELS using study names only
 	// (otherwise the "adjust" routine in forestplot.ProcessColumns can't have any effect)
 	// [added Sep 2017 for v2.2 beta]
@@ -4846,8 +4945,8 @@ program define BuildResultsSet, rclass sortpreserve
 		
 		if _rc {
 			if `"`err'"'==`""' {
-				if _rc==1 nois disp as err `"User break in {bf:forestplot}"'
-				else nois disp as err `"Error in {bf:forestplot}"'
+				if _rc==1 nois disp as err _n `"User break in {bf:forestplot}"'
+				else nois disp as err _n `"Error in {bf:forestplot}"'
 			}
 			c_local err noerr		// tell admetan not to also report an "error in MainRoutine"
 			exit _rc
@@ -6185,7 +6284,7 @@ program define GenConfInts, rclass
 		sort `obs'													// so this sorting should not affect the original data
 		summ `obs' if `touse', meanonly
 		forvalues j = 1/`r(max)' {
-			qui cci `=`a'[`j']' `=`b'[`j']' `=`c'[`j']' `=`d'[`j']', `citype' level(`level')
+			`version' qui cci `=`a'[`j']' `=`b'[`j']' `=`c'[`j']' `=`d'[`j']', `citype' level(`level')
 			qui replace `_LCI' = log(`r(lb_or)') in `j'
 			qui replace `_UCI' = log(`r(ub_or)') in `j'
 		}
