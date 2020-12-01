@@ -35,8 +35,27 @@
 *   Following UK Stata Users Meeting, reworked the plotid() option as recommended by Vince Wiggins
 
 * version 1.0  David Fisher  31jan2014
-*! version 1.01  David Fisher  07feb2014
+
+* version 1.01  David Fisher  07feb2014
 * Reason: fixed bug - Mata main routine contained mm_root, so failed at compile even if mm_root wasn't actually called/needed
+
+* version 1.02  David Fisher  10feb2014
+* Reason:
+* - fixed bug with _rsample
+* - fixed bug causing syntax errors with "ipdmetan : svy : command" syntax
+
+* version 1.03  David Fisher  02apr2014
+* Reason:
+* - return F statistic for subgroups
+* - correct error in `touse' when passed from admetan
+* - correct error in behaviour of stacklabel under certain conditions (line 2016)
+
+*! version 1.04  David Fisher  09apr2014
+* - fixed bug with DerSimonian & Laird random-effects
+* - fixed bug which failed to drop tempvar containing held estimates
+* - fixed bug in output table title when using ipdover (lines 2700-2705)
+* - _rsample now returned for admetan too
+* - added ovwt/sgwt options
 
 
 program ipdmetan, rclass sortpreserve
@@ -72,6 +91,7 @@ program ipdmetan, rclass sortpreserve
 		LCOLs(string asis) RCOLs(string asis) STRLEN(integer 20)	/// lcols/rcols apply to both ipdmetan coeff matrix or to forestplot
 		noGRaph						/// can be specified either directly to ipdmetan or as a forestplot() option
 		noOVerall noSUbgroup		/// can be specified either directly to ipdmetan or as a forestplot() option
+		OVWT SGWT					/// can be specified either directly to ipdmetan or as a forestplot() option
 		noTABle	noHET noTOTal 		///
 		PLOTID(string)				///
 		SAving(string)				/// specify filename in which to save "resultsset"
@@ -149,31 +169,40 @@ program ipdmetan, rclass sortpreserve
 	* (i.e. not noNAME, OVSTAT, STRLEN or *)
 	* "forestplot options" prioritised over "ipdmetan options" in the event of a clash
 	* ipdmetan will then pass them back through to forestplot as usual.
-	foreach x in graph overall subgroup het eform effect plotid lcols rcols {
+	foreach x in graph overall subgroup het eform effect plotid lcols rcols ovwt sgwt {
 		local `x'2 ``x''
 	}
 	local 0 `", `forestplot'"'
-	syntax [, noGRAPH noOVERALL noSUBGroup noHET EFORM EFFECT(string) PLOTID(string asis) LCOLS(string asis) RCOLS(string asis) noNAME OVSTAT(string) STRLEN(integer 20) *]
+	syntax [, noGRAPH noOVERALL noSUBGroup noHET EFORM EFFECT(string) PLOTID(string asis) ///
+		LCOLS(string asis) RCOLS(string asis) noNAME OVSTAT(string) OVWT SGWT STRLEN(integer 20) *]
 	local fplotopts `"`options'"'
-	foreach x in graph overall subgroup het eform effect plotid lcols rcols {
+	foreach x in graph overall subgroup het eform effect plotid lcols rcols ovwt sgwt {
 		if `"``x''"'==`""' local `x' ``x'2'
 	}
 	if `"`het'"'!=`""' local ovstat "none"
-
-	* Parse the estimation command
-	cap `version' _prefix_command ipdmetan, `level' `eform' : `command'
-	
-	if _rc {
-		cap _on_colon_parse `command'	// if error, test for `command' itself being a prefix command, e.g. svy
-		if !_rc {
-			`version' _prefix_command ipdmetan, `level' `eform' : `s(before)'
-			local pcommand `"`s(command)' : "'
-			local pcmdname `"`s(cmdname)'"'
-		}
-		else `version' _prefix_command ipdmetan, `level' `eform' : `command'		// if still can't sort it out, exit with error
+	if `: word count `ovwt' `sgwt''==2 {
+		disp as err "cannot specify both ovwt and sgwt"
+		exit 198
 	}
-	local cmdname	`"`s(cmdname)'"'
+
+	* Initial parse of estimation command (with "capture")
+	cap `version' _prefix_command ipdmetan, `level' `eform' : `command'
+	local cmdname `"`s(cmdname)'"'
 	
+	* Test for `command' itself being a prefix command, e.g. svy
+	cap _on_colon_parse `command'
+	if !_rc {
+		local after `"`s(after)'"'
+		local before `"`s(before)'"' 
+		`version' _prefix_command ipdmetan, `level' `eform' : `after'	// if a prefix command, `after' should be a valid command
+		local command `"`s(command)'"'
+		local cmdname `"`s(cmdname)'"'
+		`version' _prefix_command ipdmetan, `level' `eform' : `before'	// ... as should `before'
+		local pcommand `"`s(command)' : "'
+		local pcmdname `"`s(cmdname)'"'
+	}
+	
+	* Test for `command' having a mixed-model structure
 	if inlist("`cmdname'", "xtmixed", "xtmelogit", "xtmepoisson") ///
 		| inlist("`cmdname'", "mixed", "meglm", "melogit", "meqrlogit", "meprobit", "mecloglog") ///
 		| inlist("`cmdname'", "meologit", "meoprobit", "mepoisson", "meqrpoisson", "menbreg") {			// if a mixed-effect model
@@ -184,13 +213,15 @@ program ipdmetan, rclass sortpreserve
 			local cmdrest `"`cmdrest' (`stub1_`i'')"'
 		}
 		local cmdrest `"|| `cmdrest'"'
-	}
-	
+	}	
+		
+	* Final parse of estimation command (without "capture")
+	`version' _prefix_command ipdmetan, `level' `eform' : `command'
 	local cmdname	`"`s(cmdname)'"'
-	if `"`cmdname'"'=="admetan" & "`adonly'"!=`""' {
-		local cmdname								// _admetan was just dummy to satisfy _prefix_command
-		local ADonly "ADonly"						// identifies that "admetan" was used
-		if `"`efopt'"'!=`""' local efopt "eform"	// no command to which to pass other eforms (e.g. HR, OR)
+	local ADonly : copy local adonly					// use capitalised version for clarity (still contains "adonly")
+	if `"`cmdname'"'=="admetan" & `"`ADonly'"'!=`""' {
+		local cmdname									// admetan was just dummy to satisfy _prefix_command
+		if `"`efopt'"'!=`""' local efopt "eform"		// no command to which to pass other eforms (e.g. HR, OR)
 	}
 	local cmdargs	`"`s(anything)'"'
 	local cmdif		`"`s(if)'"'
@@ -293,38 +324,41 @@ program ipdmetan, rclass sortpreserve
 			exit 198
 		}
 		if `"`ad'"'!=`""' {
-			local 0 `"`ad'"'
-			syntax [anything(name=ADfile id="filename")] [if] [in], [BYAD NPTS(name local) VARS(namelist local)]
+			_parse comma lhs rhs : ad
 			
-			* check valid "using" filename, if supplied
-			if `"`ADfile'"'!=`""' {
-				confirm file `"`ADfile'"'
-				local ADif `"`if'"'
-				local ADgin `"`in'"'
+			* check for "using" filename
+			* can't use -syntax- here, as [if] [in] refer to data not (necessarily) in memory
+			if `"`lhs'"'!=`""' {
+			
+				assert `"`ADonly'"'==`""'
+				
+				gettoken ADfile : lhs
+				cap confirm file `"`ADfile'"'
+				if _rc local ADfile		// if not valid filename, clear macro
 				
 				* If filename supplied, must also have IPD command (AD alone should use -admetan-)
-				if `"`cmdname'"'==`""' {
+				if !_rc & `"`cmdname'"'==`""' {
 					disp as err `"Cannot specify an aggregate-data filename without IPD estimation command"'
 					disp as err `"For analysis of aggregate data alone, please use admetan instead"'
 					exit 198
 				}
-			}
-			else {
-				foreach x in if in {		// test for presence of "if"/"in" in absence of external file
-					if `"``x''"'!=`""' {
-						disp as err `"``x'' cannot be supplied to the ad() option without a filename"'
-						local `x'
-					}
-					local AD`x' `cmd`x''
-				}
-				if `"`cmdname'"'!=`""' {	// if filename not supplied, assume using data in memory, therefore no IPD
+				
+				* If filename not supplied, assume using data in memory, therefore no IPD
+				if _rc & `"`cmdname'"'!=`""' {
 					disp as err `"Aggregate data assumed to be in memory, therefore cannot have IPD data too"'
-					disp as err `"Either supply a filename to the ad() option, or remove IPD command"'
+					disp as err `"Either supply a valid filename to the ad() option, or remove IPD command"'
 					exit 198
 				}
 			}
 			
-			* byad conflicts
+			* if admetan, pass `cmdif' `cmdin' (i.e. `touse') to ProcessAD
+			else if `"`ADonly'"'!=`""' {
+				local lhs `"`cmdif' `cmdin'"'
+			}
+			
+			* test for byad, and check for conflicts
+			local 0 `rhs'
+			syntax, [BYAD NPTS(name local) VARS(namelist local)]
 			if `"`byad'"'!=`""' {
 				if `"`by'"'!=`""' {				// byad + by
 					disp as err `"Cannot specify both byad and by() options.  Option byad will be ignored"'
@@ -399,6 +433,9 @@ program ipdmetan, rclass sortpreserve
 			local byIPD `"`by'"'		// marker of `by' present in memory
 			local bystr=_rc				// var exists but is string, not numeric
 			
+			local byvarlab : variable label `by'
+			if `"`byvarlab'"'==`""' local byvarlab `"`by'"'
+			
 			if `"`bymissing'"'==`""' {
 				markout `touse' `by', strok		// ignore observations with missing "by" if appropriate
 				qui count if `touse'
@@ -412,6 +449,7 @@ program ipdmetan, rclass sortpreserve
 				tempname bymat
 				local matrowopt `"matrow(`bymat')"'
 			}
+			
 			cap tab `by' if `touse', m `matrowopt'
 			if _rc {
 				disp as err "variable in option by() has too many levels"
@@ -460,7 +498,10 @@ program ipdmetan, rclass sortpreserve
 		local _by "_BY"
 		local bylist 1
 		tempname bylab
-		if `"`byad'"'!=`"temp"' tempvar by
+		if `"`byad'"'!=`"temp"' {
+			tempvar by
+			local byvarlab "Data source"
+		}
 	}
 	
 	* Parse `plotid' -- but keep original contents to pass to forestplot for later re-parsing
@@ -520,8 +561,9 @@ program ipdmetan, rclass sortpreserve
 	* Sort out study ID (or 'over' vars)
 	* If IPD meta-analysis (i.e. not ipdover), create subgroup ID based on order of first occurrence
 	* (overh will be a single var, =study, so keep sgroup and stouse for later)
-	local study2 : copy local study			// create copy in case of string variable
-	local overtype "int"	// default
+	local study2 : copy local study		// create copy in case of string variable
+	local overtype "int"				// default
+	local studystr = 0					// default
 	tempvar stouse sgroup
 	forvalues h=1/`overlen' {
 		local overh : word `h' of `study'
@@ -590,6 +632,7 @@ program ipdmetan, rclass sortpreserve
 			qui encode `overh' if `stouse', gen(`overtemp') label(``overtemp'lab')
 			local study2 : subinstr local study2 `"`overh'"' `"`overtemp'"', all word
 			local overh `overtemp'
+			local studystr = 1			// marker that original var was string; only needed in particular circumstances
 		}
 		else {
 			cap assert `overh'==round(`overh')
@@ -714,10 +757,10 @@ program ipdmetan, rclass sortpreserve
 	
 		// Save any existing estimation results, and clear return & ereturn
 		tempname est_hold
-		cap estimates store `est_hold'
-		if _rc local est_hold
+		_estimates hold `est_hold', restore nullok
 		_prefix_clear, e r
 
+		local eclass=0
 		if `"`total'"'==`""' {		// run the command using the entire dataset
 			cap `version' `pcommand' `cmdname' `cmdargs' if `touse', `cmdopts' `cmdrest'
 			local rc = _rc
@@ -734,6 +777,7 @@ program ipdmetan, rclass sortpreserve
 					exit 198
 				}
 				if `"`poolvar'"'!=`""' local exp_list `"(_b[`poolvar']) (_se[`poolvar'])"'		// N.B. e(N) will be added later
+				local eclass=1
 			}
 			else if `"`poolvar'"'!=`""' {
 				disp as err "cannot specify 'poolvar' with a non e-class command; please specify 'exp_list' instead"
@@ -917,7 +961,7 @@ program ipdmetan, rclass sortpreserve
 				local postexp `"(1) (.) (3) `postreps'"'						// "all data in memory" ==> "subgroup" (_USE==3) if byad
 			}
 			
-			if `nr' {
+			if `nr' /* ADDED MAR 2014 - don't return stats if AD+IPD and no byad */ & `"`byad'"'==`""' & `"`ad'"'==`""' {
 				if `"`total'"'==`""' {
 					forvalues j=1/`nr' {			// returned statistics
 						local postexp `"`postexp' (`us_`j'')"'
@@ -992,7 +1036,7 @@ program ipdmetan, rclass sortpreserve
 				local poststudy `"(`val')"'
 				local trlabi : label (`overh') `val'
 				if `"`messages'"'!=`""' disp as text  "Fitting model for `overh' = `trlabi' ... " _c				
-				cap `version' `pcommand' `cmdname' `cmdargs' if `touse' & `sgroup'==`i', `cmdopts' `cmdrest'
+				cap `version' `pcommand' `cmdname' `cmdargs' if `touse' & `sgroup'==`i', `cmdopts' `cmdrest'	//MAR2014 - think about how to deal with a user-defined cmd which does not use sortpreserve
 				local rc = c(rc)
 				if `rc'==1 error 1		// user break
 				
@@ -1007,7 +1051,7 @@ program ipdmetan, rclass sortpreserve
 				}
 				else {
 					* If fitting successful but coefficient was not estimated
-					if `sebeta'==0 | abs(`beta'/`sebeta')<`ztol' {
+					if `sebeta'==0 | missing(`sebeta') | abs(`beta'/`sebeta')<`ztol' | missing(`beta'/`sebeta') {
 						if `"`messages'"'!=`""' {
 							disp as err "Coefficent cannot be estimated"
 						}
@@ -1016,9 +1060,13 @@ program ipdmetan, rclass sortpreserve
 					else {
 						local postcoeffs `"(1) (`beta') (`sebeta') (`nbeta')"'
 						if `"`messages'"'!=`""' disp as res "Done"
+						if !`eclass' & `"`total'"'!=`""' {
+							cap mat list e(b)
+							local eclass = (!_rc)
+						}
+						if `eclass' qui replace _rsample=1 if e(sample)				// if e-class
+						else qui replace _rsample=1 if `touse' & `sgroup'==`i'		// if non e-class
 					}
-					qui replace _rsample=1 if e(sample)			// won't do anything if e(sample) not set
-					
 					if `nr' {
 						forvalues j=1/`nr' {
 							local postcoeffs `"`postcoeffs' (`us_`j'')"'
@@ -1045,7 +1093,7 @@ program ipdmetan, rclass sortpreserve
 					cap `version' `pcommand' `cmdname' `cmdargs' if `byIPD'==`byi' & `touse', `cmdopts' `cmdrest'
 					if !_rc {
 						local postexp `"(.) (3) (`beta') (`sebeta') (`nbeta')"'
-						if `nr' {
+						if `nr' /* ADDED MAR 2014 - don't return stats if AD+IPD (byIPD ==> byad here) */ & `"`ad'"'==`""' {{
 							forvalues j=1/`nr' {
 								local postexp `"`postexp' (`us_`j'')"'
 							}
@@ -1079,13 +1127,13 @@ program ipdmetan, rclass sortpreserve
 				qui save `extra1_`h''
 				restore, preserve
 			}
-			if `"`byIPD'"'!=`""' & "`subgroup'"==`""' {
+			if `"`byIPD'"'!=`""' & "`subgroup'"==`""' /* ADDED MAR 2014 - don't return stats if AD+IPD (byIPD ==> byad here) */ & `"`ad'"'==`""' {
 				tempfile extra1_by
 				qui collapse `cclist' if `touse', fast by(`byIPD') 			// by-level
 				qui save `extra1_by'
 				restore, preserve
 			}
-			if `"`overall'"'==`""' | (`"`byad'"'!=`""' & "`subgroup'"==`""') {
+			if (`"`overall'"'==`""' /* ADDED MAR 2014 - don't return stats if AD+IPD and no byad */ & `"`byad'"'==`""' & `"`ad'"'==`""') | (`"`byad'"'!=`""' & "`subgroup'"==`""') {
 				tempfile extra1_tot
 				qui collapse `cclist' if `touse', fast 						// overall
 				qui save `extra1_tot'										// (or "subgroup" level for byad)
@@ -1146,10 +1194,10 @@ program ipdmetan, rclass sortpreserve
 				}
 			}
 			if `"`cclist'"'!=`""' {			// 'by' and 'overall' sections don't apply if only svars
-				if `"`byIPD'"'!=`""' & "`subgroup'"==`""' {
+				if `"`byIPD'"'!=`""' & "`subgroup'"==`""' /* ADDED MAR 2014 - don't return stats if AD+IPD (byIPD ==> byad here) */ & `"`ad'"'==`""' {
 					qui append using `extra1_by'
 				}
-				if `"`overall'"'==`""' | (`"`byad'"'!=`""' & "`subgroup'"==`""') {
+				if (`"`overall'"'==`""' /* ADDED MAR 2014 - don't return stats if AD+IPD and no byad */ & `"`byad'"'==`""' & `"`ad'"'==`""') | (`"`byad'"'!=`""' & "`subgroup'"==`""') {
 					qui append using `extra1_tot'
 				}
 			}
@@ -1176,21 +1224,23 @@ program ipdmetan, rclass sortpreserve
 		}	// end if `"`cclist'"'!=`""' | `"`svars'"'!=`""'
 	}		// end if `"`cmdname'"'!=`""'
 	
-	cap preserve		// original data not needed from now on
-
-
+	
 	*** Analysis of AD (whether in memory or in external dataset)
 	if `"`ad'"'!=`""' {
 	
+		assert (`"`ADfile'"'!=`""') == (`"`ADonly'"'==`""')
+	
 		* Data setup
-		local external=0
-		if `"`ADfile'"'!=`""' {
-		
-			* Load external data and apply IPD value labels
-			qui use `"`ADfile'"', clear
-			cap do `labfile'		// re-load "study" value label
-			cap do `bylabfile'		// re-load "by" value label
-			local external=1		// marker that data is now from `ADfile' rather than that in original memory
+		if `"`ADfile'"'==`""' {
+			cap drop _rsample
+			gen long _rsample = `sgroup'	// store `sgroup' values so that _rsample may be formed later
+			cap preserve
+		}
+		else {
+			cap preserve
+			qui use `"`ADfile'"', clear		// load external data
+			cap do `labfile'				// apply "study" value label
+			cap do `bylabfile'				// apply "by" value label
 			
 			if `"`byad'"'=="temp" {
 				cap confirm var `by'
@@ -1215,18 +1265,22 @@ program ipdmetan, rclass sortpreserve
 			}
 		}
 		
-		cap ProcessAD `ADif' `ADin', external(`external') vars(`vars') npts(`npts') keep(`lrcols' `sgroup') ztol(`ztol') level(`level') ///
+		* Now the AD is in memory, we can process [if] and [in]
+		local 0 `lhs'
+		syntax [anything] [if] [in]
+		cap ProcessAD `if' `in', `ADonly' vars(`vars') npts(`npts') keep(`lrcols' `sgroup') ztol(`ztol') level(`level') ///
 			study(`study') sortby(`sortby') `smaxopt' studylab(``study'lab') by(`by') `bymaxopt' byad(`byad') bylab(`bylab') bylist(`bylist') ///
 			`subgroup' `overall' `smissing' `bymissing'
 		* (N.B. `sgroup' in keep() is needed for admetan)
+		local notsample `"`r(notsample)'"'		// also for admetan
 		
 		local ADfail = (_rc==2000)
-		if !`ADfail' & `external' {
-			local bylistAD `"`r(bylistAD)'"'		// only relevant if external
-			
+		if !`ADfail' & `"`ADonly'"'==`""' {		// "if IPD + AD, and AD data is valid"
+			local bylistAD `"`r(bylistAD)'"'
+
 			qui gen `sgroup' = _n		// ProcessAD has already put the data into the correct order
 			qui merge 1:1 `_by' _STUDY _USE using `pfile', nolabel assert(master using)
-					
+			
 			if `"`byad'"'!=`"byad"' {
 				qui recode _merge (1=2 "Aggregate data") (2=1 "IPD"), gen(_SOURCE) label(_SOURCE)
 				local _source "_SOURCE"
@@ -1254,8 +1308,8 @@ program ipdmetan, rclass sortpreserve
 				local nby : word count `bylist'
 			}
 		}
-		else if `ADfail' {
-			use `pfile', clear
+		else if `ADfail' {			// N.B. `ADfail' implies external data used (`"`ADonly'"'==`""')
+			use `pfile', clear		//  ...else error 2000 would have been trapped earlier (line 365)
 			cap do `labfile'
 			cap do `bylabfile'
 			gen _SOURCE=1
@@ -1281,7 +1335,7 @@ program ipdmetan, rclass sortpreserve
 				}
 			}
 		}
-		if !`external' & `"`overall'"'==`""' {		// should only be necessary if "AD only" (in memory)
+		if `"`ADonly'"'!=`""' & `"`overall'"'==`""' {		// should only be necessary if AD only
 			local newN = `=_N + 1'
 			qui set obs `newN'
 			qui replace _USE = 5 in `newN'
@@ -1289,11 +1343,12 @@ program ipdmetan, rclass sortpreserve
 	}		// end if `"`ad'"'!=`""'
 	
 	else {
+		cap preserve
 		qui use `pfile', clear
 		cap do `labfile'		// re-load "study"/"over" value labels
 		cap do `bylabfile'		// re-load "by" value label
 	}
-
+	
 	qui count if _USE == 5
 	assert `r(N)' == (`"`overall'"'==`""')
 
@@ -1324,11 +1379,11 @@ program ipdmetan, rclass sortpreserve
 	if `"`ipdover'"'!=`""' label values _LEVEL		// if "ipdover", remove labels
 	else {
 		cap label copy ``study'lab' _STUDY			// ... otherwise, standardise value label name
-		cap label values _STUDY _STUDY				// ("capture" just in case label name is already "_study", which is fine)
+		cap label values _STUDY _STUDY				// ("capture" in case label name is already "_STUDY", which is fine)
 	}
 	if `"`_by'"'!=`""' {
-		label copy `bylab' _BY
-		label values _BY _BY			// standardise "by" value label name and apply it
+		cap label copy `bylab' _BY			// standardise "by" value label name
+		cap label values _BY _BY			// ("capture" in case label name is already "_BY", which is fine)
 	}
 	
 	* Remove excluded studies if appropriate, and check that at least one valid estimate exists
@@ -1377,7 +1432,7 @@ program ipdmetan, rclass sortpreserve
 				qui replace `touse' = `touse'*(_OVER==`j')
 			}
 		
-			nois mata: GetEstimates("`touse'", "sgwt", "`reModel'", `maxtausq', `itol', `maxiter', `quadpts', `level')
+			cap mata: GetEstimates("`touse'", "sgwt", "`reModel'", `maxtausq', `itol', `maxiter', `quadpts', `level')
 			if _rc>=3000 {
 				disp as err "Mata error"
 				exit _rc
@@ -1460,7 +1515,7 @@ program ipdmetan, rclass sortpreserve
 	}
 	else {
 		qui gen `touse' = (_USE==1)
-		nois mata: GetEstimates("`touse'", "ovwt", "`reModel'", `maxtausq', `itol', `maxiter', `quadpts', `level')
+		cap mata: GetEstimates("`touse'", "ovwt", "`reModel'", `maxtausq', `itol', `maxiter', `quadpts', `level')
 		if _rc>=3000 {
 			disp as err "Mata error"
 			exit _rc
@@ -1516,6 +1571,14 @@ program ipdmetan, rclass sortpreserve
 				return scalar tausq=`tausq'
 				return scalar Isq=`Isq'
 				return scalar HsqM=`HsqM'
+				
+				* Subgroup statistics
+				if `"`_by'"'!=`""' & `"`subgroup'"'==`""' {
+					tempname Fstat
+					scalar `Fstat' = (`Qdiff'/(`nby'-1)) / (`Q'/(`K'-1))
+					return scalar F=`Fstat'
+					return scalar nby=`nby'
+				}
 			}
 			
 			if inlist(`"`reModel'"', "gq", "bs", "ml", "pl", "reml") {		// confidence limits for tausq, Isq and Hsq
@@ -1571,8 +1634,7 @@ program ipdmetan, rclass sortpreserve
 		}
 	}
 	
-	* Finalise weights
-	* and keep just one weight variable (drop the other)
+	* Finalise weights...
 	qui replace ovwt = 1 if _USE==5									// "overall weight" total (100%)
 	if `"`_by'"'!=`""' {
 		forvalues i=1/`nby' {
@@ -1582,8 +1644,19 @@ program ipdmetan, rclass sortpreserve
 			qui replace ovwt = r(sum) if _USE==3 & _BY==`byi'		// subgroup-specific "overall weight" totals
 		}
 	}
-	drop `=cond(`"`_by'"'!=`""' & `"`overall'"'!=`""' & `"`subgroup'"'==`""', "ovwt", "sgwt")'
-	rename `=cond(`"`_by'"'!=`""' & `"`overall'"'!=`""' & `"`subgroup'"'==`""', "sgwt", "ovwt")' _WT
+	
+	* ...and keep just one weight variable, dropping the other
+	* cap drop _WT
+	if `"`sgwt'`ovwt'"'!=`""' {								// if sgwt/ovwt specified, do as requested
+		drop `=cond(`"`sgwt'"'!=`""', "ovwt", "sgwt")'
+		rename `sgwt'`ovwt' _WT
+	}
+	else {													// otherwise, follow default behaviour
+		drop `=cond(`"`_by'"'!=`""' & `"`overall'"'!=`""' & `"`subgroup'"'==`""', "ovwt", "sgwt")'
+		rename `=cond(`"`_by'"'!=`""' & `"`overall'"'!=`""' & `"`subgroup'"'==`""', "sgwt", "ovwt")' _WT
+	}
+	* April 2014 -- think about adding options "sgwt" and "ovwt" to override this
+	* (e.g. if using admetan to get ipdover-like results for summary data, see emails from Marie Dam Lauridsen)
 	
 	
 	*** Return other statistics
@@ -1705,7 +1778,7 @@ program ipdmetan, rclass sortpreserve
 		disp as err _n "caution: initial model fitting in full sample was suppressed"
 	}
 	if `"`pcmdname'"'!=`""' {
-		disp as err _n "caution: prefix command supplied to ipdmetan. validity of estimates may be affected"
+		disp as err _n "caution: prefix command supplied to ipdmetan. please check estimates carefully"
 	}
 	
 	
@@ -1757,11 +1830,10 @@ program ipdmetan, rclass sortpreserve
 				local tstatlist `"`tstatlist' `tstat`i''"'		// test statistics for effect size
 			}
 		}
-		if `"`ipdover'"'==`""' {
-			local stitle `"`varlab1'"'
-			if `"`stitle'"'==`""' local stitle "Study"
-		}
+		
+		if `"`ipdover'"'==`""' local stitle `"`varlab1'"'
 		else local stitle "Subgroup"
+		if `"`_by'"'!=`""' local stitle `"`byvarlab' and `stitle'"'
 
 		sort `use5' `_by' `_over' _USE `_source' `sgroup'
 		qui gen long `obs'=_n
@@ -1838,13 +1910,8 @@ program ipdmetan, rclass sortpreserve
 			}
 			
 			* Variable name (title) for "_LABELS"
-			if `"`ipdover'"'==`""' {
-				if `"`varlab1'"'!=`""' & `"`stacklabel'"'==`""' {
-					label var _LABELS `"`varlab1'"'
-				}
-				else label var _LABELS "Study ID"
-			}
-			else label var _LABELS "Subgroup"
+			label var _LABELS `"`stitle'"'
+			if `"`stacklabel'"'!=`""' label var _LABELS "Study ID"
 			
 			* Apply variable labels and formats to lcols/rcols only present in aggregate data
 			forvalues i=1/`na' {
@@ -1946,7 +2013,7 @@ program ipdmetan, rclass sortpreserve
 				local nobs1 = _N+1
 				set obs `nobs1'
 				replace _USE = -1 in `nobs1'
-				replace `use5' = 0 in `nobs1'
+				replace `use5' = -1 in `nobs1'
 				replace _LABELS = `"`varlab1'"' in `nobs1'
 			}
 			
@@ -2026,7 +2093,7 @@ program ipdmetan, rclass sortpreserve
 
 		* Save dataset 
 		if `"`saving'"'!=`""' {
-			qui save `filename', `replace'
+			qui save `"`filename'"', `replace'
 		}		
 		
 		* Pass to forestplot
@@ -2034,8 +2101,10 @@ program ipdmetan, rclass sortpreserve
 
 			if `"`ipdover'"'!=`""' {
 				local fplotopts `"nowt `fplotopts'"'
-				label var _NN "No. pts"
-				local rcols `"_NN `rcols'"'		// Automatically add "_NN" to rcols if ipdover
+				if `"`_NN'"'!=`""' {
+					label var _NN "No. pts"
+					local rcols `"_NN `rcols'"'		// Automatically add "_NN" to rcols if ipdover (and _NN exists)
+				}
 			}
 			if "`reModel'"=="fe" local reDesc		// no random-effects note if fixed-effects
 			
@@ -2048,9 +2117,13 @@ program ipdmetan, rclass sortpreserve
 
 	}	// end if `"`saving'"'!=`""' | `"`graph'"'==`""'
 	
-	// restore held estimates
-	if `:length local est_hold' {
-		quietly estimates restore `est_hold' , drop
+	* If ADonly, form _rsample
+	if `"`ADonly'"'!=`""' {
+		restore
+		foreach x of local notsample {
+			qui replace _rsample=0 if _rsample==`x'
+		}
+		qui replace _rsample=1 if _rsample>0
 	}
 	
 end
@@ -2389,9 +2462,9 @@ end
 * Routine to process aggregate data
 prog define ProcessAD, rclass
 	
-	syntax [if] [in], VARS(varlist min=2 max=3 numeric) EXTERNAL(integer) ZTOL(real) LEVEL(real) ///
+	syntax [if] [in], VARS(varlist min=2 max=3 numeric) ZTOL(real) LEVEL(real) ///
 		STUDY(name) SORTBY(name) [SMAX(integer 0) STUDYLAB(name) ///
-		BY(name) BYAD(string) BYLIST(numlist integer miss) BYMAX(integer 1) BYLAB(name) ///
+		ADONLY BY(name) BYAD(string) BYLIST(numlist integer miss) BYMAX(integer 1) BYLAB(name) ///
 		KEEP(namelist) NPTS(name) noSUBGROUP noOVERALL SMISSING BYMISSING]
 
 	marksample touse
@@ -2400,12 +2473,13 @@ prog define ProcessAD, rclass
 	cap confirm var `by'
 	if !_rc & `"`bymissing'"'==`""' markout `touse' `by', strok
 	
-	qui keep if `touse'
-	qui count
+	qui count if `touse'
 	if !r(N) {
 		disp as err "no valid observations in aggregate dataset"
 		exit 2000
 	}
+	local ni=r(N)
+	qui keep if `touse'
 	
 	tempvar obsAD
 	cap sort `sortby'			// if sort fails, defaults to current ordering ("_n")
@@ -2415,13 +2489,14 @@ prog define ProcessAD, rclass
 	local nby : word count `bylist'
 	
 	** External aggregate data (to combine with IPD)
-	if `external' {
+	if `"`adonly'"'==`""' {
 		tempvar studyAD
-		qui bysort `touse' (`obsAD') : gen int `studyAD' = _n + `smax'		// Generate sequential trial ID nos.
+		* qui bysort `touse' (`obsAD') : gen int `studyAD' = _n + `smax'		// Generate sequential trial ID nos.
 																			// following on from those of IPD trial
-		qui count
-		local ni=r(N)
-		sort `obsAD'
+		gen int `studyAD' = _n + `smax'
+		* qui count
+		* local ni=r(N)
+		* sort `obsAD'
 		
 		* Add aggregate data studies to value label
 		cap confirm numeric var `study'
@@ -2449,7 +2524,7 @@ prog define ProcessAD, rclass
 		cap confirm numeric var `by'
 		if !_rc {						// `by' is numeric in AD dataset
 			tempvar bygroup
-			qui bysort `by' : gen long `bygroup' = (_n==1)
+			qui bysort /*`touse'*/ `by' : gen long `bygroup' = (_n==1) /*if `touse'*/
 			qui replace `bygroup' = sum(`bygroup')
 			local nbyAD = `bygroup'[_N]
 			
@@ -2478,7 +2553,7 @@ prog define ProcessAD, rclass
 			encode `by', gen(`by2') label(`bylab')
 			drop `by'
 			rename `by2' `by'
-			qui levelsof `by', local(bylistAD) miss
+			qui levelsof `by' /*if `touse'*/, local(bylistAD) miss
 			local nbyAD : word count `bylistAD'
 		}	// end if !_rc (cap confirm numeric var `by')
 
@@ -2493,7 +2568,7 @@ prog define ProcessAD, rclass
 		assert (`"`bylistAD'"'!=`""')==(`"`by'"'!=`""' | `"`byad'"'!=`""')	// check for if-and-only-if
 		return local bylistAD `bylistAD'
 		
-	}	// end if `external'
+	}	// end if `"`adonly'"'==`""'
 
 	else local studyAD `study'		// if AD in memory, just point studyAD to existing study var
 
@@ -2513,12 +2588,12 @@ prog define ProcessAD, rclass
 	* Derive standard error from confidence limits if appropriate
 	cap confirm var `_seES'
 	if _rc {
-		cap assert `_LCI'<=`_ES' if !missing(`_LCI')
+		cap assert `_LCI'<=`_ES' if !missing(`_LCI') /*& `touse'*/
 		if _rc {
 			disp as err "Second variable assumed to contain lower confidence limit; error"
 			exit 198
 		}
-		cap assert `_UCI'>=`_ES' if !missing(`_UCI')
+		cap assert `_UCI'>=`_ES' if !missing(`_UCI') /*& `touse'*/
 		if _rc {
 			disp as err "Third variable assumed to contain upper confidence limit; error"
 			exit 198
@@ -2536,15 +2611,22 @@ prog define ProcessAD, rclass
 	local allvars `"`r(varlist)'"'
 	local allvars : list allvars & keep		// vars passed from main routine
 	
+	/*keep if `touse'*/
 	sort `obsAD'
 	keep `by' `studyAD' `_ES' `_seES' `npts' `allvars'
-	cap rename `studyAD' _STUDY					// use "capture" in case variable already has that name (or doesn't exist, if appropriate)
+	cap rename `studyAD' _STUDY					// use "capture" in case variable already has that name
+	cap rename `npts' _NN						// (or doesn't exist, if appropriate)
 	if `"`by'"'!=`""' cap rename `by' _BY
 	cap rename `_ES' _ES
 	cap rename `_seES' _seES
-	cap rename `npts' _NN
 	qui gen _USE = missing(_ES) + 1
 
+	* if ADonly, return list of study numbers (according to `sgroup') with "bad" estimates
+	if `"`adonly'"'!=`""' {
+		qui levelsof `sgroup' if _USE==2
+		return local notsample `"`r(levels)'"'
+	}
+	
 	* `byad' ==> no subgroups in IPD ==> `pfile' has _BY=1.  Check that this doesn't conflict if `"`byad'"'==`"temp"'
 	if `"`byad'"' == `"temp"' {
 		qui count if _BY == 1
@@ -2602,7 +2684,7 @@ program DrawTable
 	else {
 		forvalues i=`eline'(-1)1 {					// run backwards, otherwise macros are deleted by the time they're needed
 			local etitle`i' `"`r(title`i')'"'
-			local stitle`i' `"`stitle`=`i'-`diff'''"'		// etitle uses most lines: line up stitle with etitle
+			local stitle`i' = cond(`i'>=`diff', `"`stitle`=`i'-`diff'''"', `""')	// etitle uses most lines: line up stitle with etitle
 		}
 	}
 	
@@ -2614,11 +2696,15 @@ program DrawTable
 			di as text "`stitle`i''{col `=`uselen'+1'}{c |} " %~10s `"`etitle`i''"'
 		}
 	}
-	if `"`ipdover'"'==`""' local final "% Weight"
-	else local final "No. pts"
-	di as text "`stitle`line''{col `=`uselen'+1'}{c |} " %~10s `"`etitle`line''"' "{col `=`uselen'+14'}[`c(level)'% Conf. Interval]{col `=`uselen'+37'}`final'"
 
-		
+	cap confirm var _NN
+	if !_rc local _NN "_NN"
+	if `"`ipdover'"'==`""' local final "{col `=`uselen'+37'}% Weight"
+	else if `"`_NN'"'!=`""' local final "{col `=`uselen'+37'}No. pts"
+	di as text "`stitle`line''{col `=`uselen'+1'}{c |} " %~10s `"`etitle`line''"' "{col `=`uselen'+14'}[`c(level)'% Conf. Interval]`final'"
+	local final
+
+
 	*** Loop over trials, and subgroups if appropriate
 	local nby=1
 	cap confirm var _BY
@@ -2628,8 +2714,6 @@ program DrawTable
 	}
 	cap confirm var _OVER
 	if !_rc local _over "_OVER"
-	cap confirm var _NN
-	if !_rc local _NN "_NN"
 	
 	sort `sortby'
 	tempvar touse
@@ -2978,6 +3062,10 @@ void GetEstimates(string scalar touse, string scalar wtvec, string scalar model,
 	/* Run models */
 	if (model=="fe" | model=="dl") {
 		st_numscalar("r(tausq)", tausq_dl)
+
+		if (model=="dl") {
+			wi = 1:/(vi:+tausq_dl)
+		}
 	}
 	
 	else if (model=="vc" | model=="sj") {		// "variance component" aka Cochran ANOVA-type estimator

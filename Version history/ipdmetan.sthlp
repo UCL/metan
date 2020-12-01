@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 1.0  David Fisher  31jan2014}{...}
+{* *! version 1.01  David Fisher  15apr2014}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "admetan" "help admetan"}{...}
@@ -38,11 +38,12 @@
 {synopt :{opt nosu:bgroup}}suppress pooling within subgroups{p_end}
 {synopt :{opt notab:le}}suppress printing the table of effect sizes to screen{p_end}
 {synopt :{opt notot:al}}suppress fitting of {it:command} to the entire dataset{p_end}
+{synopt :{opt ovwt sgwt}}over-ride default choice of whether to display overall weights or subgroup weights{p_end}
 {synopt :{opt pool:var(model_coefficient)}}specify explicitly the coefficient to pool{p_end}
 {synopt :{opt re}}specify the DerSimonian & Laird random-effects model{p_end}
 {synopt :{cmd:re(}{help ipdmetan##re_model:{it:re_model}}{cmd:)}}specify alternative random-effects models{p_end}
 {synopt :{cmd:sortby(}{it:varname}|{cmd:_n)}}specify ordering of studies in table and forestplot{p_end}
-{synopt :{opt t z}}specify the distribution for calculating confidence limits{p_end}
+{synopt :{opt t z}}specify the distribution for calculating confidence limits around the pooled estimate{p_end}
 
 {syntab :Combined IPD/aggregate data analysis}
 {synopt :{cmd:ad(}{it:{help filename}} {ifin}{cmd:,} {help ipdmetan##aggregate_data_options:{it:aggregate_data_options}}{cmd:)}}
@@ -78,7 +79,7 @@ or a variable currently in memory; {it:%fmt} is an optional {help format}; and {
 {marker re_model}{...}
 {synopthdr :re_model}
 {synoptline}
-{synopt :{opt vb}, {opt q} or {opt genq}}Generalised Q random-effects{p_end}
+{synopt :{opt vb}, {opt q}, {opt genq} or {opt eb}}Generalised Q random-effects (a.k.a. "empirical Bayes"){p_end}
 {synopt :{opt bs}, {opt bt} or {opt gamma}}Approximate Gamma random-effects{p_end}
 {synopt :{opt vc} or {opt ca}}Variance-component aka Cochran ANOVA-type random-effects{p_end}
 {synopt :{opt sj}}(improved) Sidik-Jonkman random-effects (implies {cmd:t}){p_end}
@@ -192,6 +193,11 @@ returned expressions. If {opt nototal} is specified, either {opt poolvar()} or {
 and a message appears above the table of results warning that estimates should be double-checked by the user.
 
 {phang}
+{opt ovwt}, {opt sgwt} over-ride the default choice of whether to display overall weights or within-subgroup weights
+in the screen output and forest plot. Note that this makes no difference to the calculations,
+as weights are normalised anyway.
+
+{phang}
 {opt poolvar(model_coefficient)} allows the coefficient to be pooled to be explicitly stated in situations where it may not be obvious,
 or where {cmd:ipdmetan} has made a previous incorrect assumption. {it:model_coefficient} should be a variable name,
 a level indicator, an interaction indicator, or an interaction involving continuous variables (c.f. syntax of {help test}).
@@ -216,8 +222,14 @@ The default ordering is by {it:study_ID}. Note that {opt sortby} does not alter 
 To order the studies by their first appearance in the data (using the current sort order), specify {cmd:sortby(_n)}.
 
 {phang}
-{opt t}, {opt z} specify the distribution (Student's t or Normal) to use when calculating confidence limits for the pooled estimate(s).
+{opt t}, {opt z} specify the distribution (Student's {it:t} on {it:k}-1 degrees of freedom, or Normal) to use when calculating confidence limits around the pooled estimate(s).
 {opt z} is the default unless {cmd:re(sj)} is specified.
+
+{pmore}
+Note that {opt t}, {opt z} do not affect the reported confidence limits around the individual study estimates,
+which are always calculated using a Normal distribution. This behaviour has no impact on the pooled estimate, since the
+standard error is the same in any case.
+
 
 {dlgtab:Combined IPD/aggregate data analysis}
 
@@ -229,6 +241,7 @@ If {cmd:ad()} is specified, {it:filename} and {opt vars(varlist)} are required.
 {pmore}
 {opt vars(varlist)} contains the names of variables (within {it:filename})
 containing the effect size and either a standard error or lower and upper 95% confidence limits, on the linear scale.
+If confidence limits are supplied, they must be derived from a Normal distribution or the pooled result will not be accurate (see {help admetan}).
 
 {pmore}
 {opt npts(varname)} allows participant numbers (stored in {it:varname} within {it:filename}) to be displayed in tables and forestplots.
@@ -342,10 +355,11 @@ In the meantime, please contact the author.
 
 {title:Author}
 
-{p}
-David Fisher, MRC Clinical Trials Unit at UCL, London, UK.
+{pstd}
+David Fisher, MRC Clinical Trials Unit at UCL, London, UK.{p_end}
 
-Email {browse "mailto:d.fisher@ucl.ac.uk":d.fisher@ucl.ac.uk}
+{pstd}
+Email {browse "mailto:d.fisher@ucl.ac.uk":d.fisher@ucl.ac.uk}{p_end}
 
 
 {title:Acknowledgments}
@@ -353,3 +367,25 @@ Email {browse "mailto:d.fisher@ucl.ac.uk":d.fisher@ucl.ac.uk}
 {pstd}
 Thanks to the authors of {help metan}, upon which this code is based;
 paticularly Ross Harris for his comments and good wishes.
+
+
+{title:References} for random-effects models
+
+{phang}Biggerstaff B., R. Tweedie. 1997. Incorporating variability in estimates of heterogeneity
+in the random effects model in meta-analysis. Statistics in Medicine 16: 753-68{p_end}
+
+{phang}DerSimonian R., N. Laird. 1986. Meta-analysis in clinical trials. Controlled Clinical Trials 7: 177-88{p_end}
+
+{phang}DerSimonian R., R. Kacker. 2007. Random-effects models for meta-analysis of clinical trials:
+An update. Contemporary Clinical Trials 28: 105-14{p_end}
+
+{phang}Hardy R. J., S. G. Thompson. 1996. A likelihood approach to meta-analysis with random effects.
+Statistics in Medicine 15: 619-29{p_end}
+
+{phang}Sidik K., J. N. Jonkman. 2007. A comparison of heterogeneity variance estimators in combining
+results of studies. Statistics in Medicine 26: 1964-81{p_end}
+
+{phang}Viechtbauer W. 2007. Confidence intervals for the amount of heterogeneity in meta-analysis.
+Statistics in Medicine 26: 37-52{p_end}
+
+
