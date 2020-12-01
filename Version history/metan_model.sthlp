@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.5 (beta)  David Fisher  21jan2020}{...}
+{* *! version 3.6 (beta)  David Fisher  22may2020}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
 {vieweralsosee "metan_continuous" "help metan_continuous"}{...}
@@ -32,7 +32,7 @@
 {it:{help metan_model##options_test:options_test}} {it:{help metan_model##options_het:options_het}} ]
 
 {pmore}
-where {it:model_name} is {opt mh:aenszel} | {opt peto} | {opt common} | {opt random}
+where {it:model_name} is {opt mh:aenszel} | {opt peto} | {opt fixed} | {opt iv:common} | {opt random}
 
 {pstd}
 or {it:model_spec} can be:
@@ -54,11 +54,11 @@ where {it:model} is
 {pstd}
 {it:model_spec} specifies method(s) for meta-analytic pooling with {bf:{help metan}}.
 If no {it:model_spec} is supplied, the default for two-group comparison of binary outcomes is {opt mh:aenszel};
-otherwise the default is {opt common}.
+otherwise the default is {opt iv:common}.
 
 {pstd}
 The first syntax for {it:model_spec} directly maintains the previous syntax of {cmd:metan} {help metan##diffs_metan:v3.04 for Stata v9}.
-In particular, note that the synonyms {opt fixed}, {opt fixedi} and {opt randomi} (for {opt mhaenszel}, {opt common} and {opt random}, respectively) still work.
+In particular, note that the synonyms {opt fixed}, {opt fixedi} and {opt randomi} (for {opt mhaenszel}, {opt ivcommon} and {opt random}, respectively) still work.
 Previous options for user-supplied estimates, such as {opt first()} and {opt second()}, also continue to be supported; see {it:{help metan_model##options_user:options_user}}.
 
 {pstd}
@@ -85,7 +85,7 @@ if not specifically referenced below.{p_end}
 {synopt :{opt peto}}common-effect pooling of Peto odds ratios{p_end}
 
 {syntab :Tau-squared estimators for standard inverse-variance random-effects model}
-{synopt :{opt common} | {opt fe} | {opt iv}}Common (aka "fixed") effects inverse-variance (default unless two-group comparison of binary outcomes){p_end}
+{synopt :{opt iv:common} | {opt fe} | {opt fixed}}Common (aka "fixed") effect inverse-variance (default unless two-group comparison of binary outcomes){p_end}
 {synopt :{opt random} | {opt re} | {opt dl:aird}}DerSimonian-Laird estimator{p_end}
 {synopt :{opt bdl} | {opt dlb}}Bootstrap DerSimonian-Laird estimator{p_end}
 {synopt :{opt he:dges}}Hedges estimator aka "Cochran ANOVA-like" aka "variance component" estimator{p_end}
@@ -94,19 +94,19 @@ if not specifically referenced below.{p_end}
 {synopt :{opt reml}}Restricted maximum likelihood (REML) estimator{p_end}
 {synopt :{opt hm:akambi}}Hartung-Makambi estimator ({help metan_model##refs:Hartung and Makambi 2003}){p_end}
 {synopt :{opt b0} {opt bp}}Rukhin B0 and BP estimators{p_end}
-{synopt :{opt sj2s}}Sidik-Jonkman two-step estimator{p_end}
-{synopt :{opt dk2s}}DerSimonian-Kacker two-step estimator ({help metan_model##refs:DerSimonian and Kacker 2007}){p_end}
-{synopt :{opt sa}}Sensitivity analysis with user-defined I-squared or tau-squared{p_end}
+{synopt :{opt sj2s} [, {help metan_model##options_model:{bf:init(}{it:model_name}{bf:)}}]}Sidik-Jonkman two-step estimator{p_end}
+{synopt :{opt dk2s} [, {help metan_model##options_model:{bf:init(}{it:model_name}{bf:)}}]}DerSimonian-Kacker two-step estimator ({help metan_model##refs:DerSimonian and Kacker 2007}){p_end}
+{synopt :{opt sa} [, {help metan_model##options_model:{bf:isq(}{it:real}{bf:) tausq(}{it:real}{bf:)}}]}Sensitivity analysis with user-defined I-squared or tau-squared{p_end}
 
 {syntab :Non-standard models, or modifications to standard models}
-{synopt :{opt hk:sj}}Hartung-Knapp-Sidik-Jonkman (HKSJ) variance correction to DerSimonian-Laird estimator{p_end}
-{synopt :{opt pl}}Estimation using profile likelihood{p_end}
-{synopt :{opt kr:oger}}Kenward-Roger variance-corrected REML model ({help metan_model##refs:Morris et al 2018}){p_end}
+{synopt :{opt hk:sj} [, {help metan_model##options_model:{bf:{ul:tru}ncate(one} | {bf:zovert)}}]}Hartung-Knapp-Sidik-Jonkman (HKSJ) variance correction to DerSimonian-Laird estimator{p_end}
+{synopt :{opt pl} [, {help metan_model##options_model:{bf:{ul:ba}rtlett {ul:sk}ovgaard}}]}Estimation using profile likelihood{p_end}
+{synopt :{opt kr:oger} [, {help metan_model##options_model:{bf:eim oim}}]}Kenward-Roger variance-corrected REML model ({help metan_model##refs:Morris et al 2018}){p_end}
 {synopt :{opt bt:weedie}}Biggerstaff-Tweedie approximate Gamma model{p_end}
 {synopt :{opt hc:opas}}Henmi-Copas approximate Gamma model ({help metan_model##refs:Henmi and Copas 2010}){p_end}
 {synopt :{opt mu:lt}}Multiplicative heterogeneity model ({help metan_model##refs:Thompson and Sharp 1999}){p_end}
 {synopt :{opt ivh:et}}"Inverse-variance heterogeneity" (IVHet) model ({help metan_model##refs:Doi et al 2015a}){p_end}
-{synopt :{opt qe}}Quality Effects model ({help metan_model##refs:Doi et al 2015b}){p_end}
+{synopt :{opt qe} [, {help metan_model##options_model:{bf:qwt(}{it:varname}{bf:)}}]}Quality Effects model ({help metan_model##refs:Doi et al 2015b}){p_end}
 {synoptline}
 
 
@@ -117,16 +117,19 @@ if not specifically referenced below.{p_end}
 (for more details see {it:{help metan##options_main:options_main}}){p_end}
 {synopt :{opt hk:sj}}Hartung-Knapp-Sidik-Jonkman (HKSJ) variance correction, applicable to any standard tau-squared estimator{p_end}
 {synopt :{opt ro:bust}}Sidik-Jonkman robust (sandwich-like) variance estimator ({help metan_model##refs:Sidik and Jonkman 2006}){p_end}
-
-{syntab :model-specific options}
 {synopt :{opt tsqlevel(#)}}set confidence level for reporting confidence intervals for tau-squared; default is {cmd:tsqlevel(95)}{p_end}
-{synopt :{opt init(model_name)}}initial estimate of tau-squared for two-step estimators {opt sj2s} and {opt dk2s}, with default {it:{help metan_model##model_name:model_name}} {opt hedges}.
-For Sidik-Jonkman, any standard tau-squared estimator may instead be used; for DerSimonian-Kacker the only alternative is {opt dlaird}.{p_end}
+
+{syntab :model-specific options (see {it:{help metan_model##model_name:model_name}})}
+{synopt :{opt init(model_name)}}initial estimate of tau-squared for two-step estimators {opt sj2s} and {opt dk2s}.
+For Sidik-Jonkman, the default is the mean dispersion of effect sizes from their unweighted mean ({help metan_model##refs:Sidik and Jonkman 2005});
+any standard tau-squared estimator may instead be used.
+For DerSimonian-Kacker, the default {it:{help metan_model##model_name:model_name}} is {opt hedges}, with the single alternative of {opt dlaird}.{p_end}
 {synopt :{opt isq(real)} {opt tausq(real)}}user-defined I-squared (taking values between 0 and 100; default is 80%) or tau-squared (>=0)
 values for sensitivity analysis{p_end}
-{synopt :{opt tru:ncate}{cmd:(one}|{cmd:zovert)}}optional truncation of the Hartung-Knapp-Sidik-Jonkman correction factor either at 1
+{synopt :{opt tru:ncate}{cmd:(one} | {cmd:zovert)}}optional truncation of the Hartung-Knapp-Sidik-Jonkman correction factor either at 1
 ({help metan_model##refs:Jackson et al 2017}) or at the ratio of the {it:z}-based to the {it:t}-based critical values
-({help metan_model##refs:van Aert et al 2019}){p_end}
+({help metan_model##refs:van Aert et al 2019}).
+By default, the correction factor is untruncated{p_end}
 {synopt :{opt ba:rtlett} {opt sk:ovgaard}}Bartlett's ({help metan_model##refs:Huizenga et al 2011})
 or Skovgaard's ({help metan_model##refs:Guolo 2012}) corrections to the likelihood, for use with the profile likelihood model{p_end}
 {synopt: {opt eim} {opt oim}}use expected (default) or observed information matrix to compute degrees of freedom for Kenward-Roger model
@@ -290,6 +293,11 @@ Schwarzer G, Chemaitelly H, Abu-Raddad LJ, R{c u:}cker G. 2019.
 Seriously misleading results using inverse of Freeman-Tukey double arcsine transformation
 in meta-analysis of single proportions.
 Research Synthesis Methods 10: 476–483. doi: 10.1002/jrsm.1348
+
+{phang}
+Sidik K, Jonkman JN. 2005.
+Simple heterogeneity variance estimation for meta-analysis.
+Journal of the Royal Statistical Society, Series C 54: 367-384
 
 {phang}
 Sidik K, Jonkman JN. 2006.

@@ -82,11 +82,16 @@
 * version 3.4 (beta)  David Fisher  12dec2019
 // no changes; upversioned to match with -metan-
 
-*! version 3.5 (beta)  David Fisher  21jan2020
+* version 3.5 (beta)  David Fisher  21jan2020
 // changes to `xlabopts'
 // major changes to `influence' plot:
 //   default behaviour is now to "hide" pooled effects, and instead display vertical lines for the confidence limits
 //   can also be represented by a shaded area rather than a pair of vertical lines
+// upversioned to match with -metan-
+
+*! version 3.6 (beta)  David Fisher  22may2020
+// changes to fp() option
+// -double- option added back in; "height" etc. now calculated using values of `id' rather than by counting observations
 // upversioned to match with -metan-
 
 
@@ -134,8 +139,8 @@ program define forestplot, sortpreserve rclass
 		INTERaction LCols(namelist) RCols(namelist) LEFTJustify COLSONLY RFDIST(varlist numeric min=2 max=2) ///
 		NULLOFF noNAmes noNULL NULL2(string) noKEEPVars noOVerall noSUbgroup noSTATs noWT noHET LEVEL(real 95) ///
 		XTItle(passthru) FAVours(passthru) /// /* N.B. -xtitle- is parsed here so that a blank title can be inserted if necessary */
-		CUmulative INFluence /// /* undocumented; passed through from -admetan-; only needed in order to switch _USE==3 back to _USE==1
-		///
+		CUmulative INFluence PRoportion /// /* undocumented; passed through from -metan-; needed in order to implement "hide" option... */
+		/// /* ...and to control default null line/x-axis (e.g. for proportion/influence)
 		/// /* Sub-plot identifier for applying different appearance options, and dataset identifier to separate plots */
 		PLOTID(string) DATAID(string) ///
 		///
@@ -197,9 +202,9 @@ program define forestplot, sortpreserve rclass
 	qui replace `touse' = 0 if `_USE' == 3 & `"`subgroup'"'!=`""'
 	qui replace `touse' = 0 if inlist(`_USE', 4, 5) & `"`overall'"'!=`""'	
 	qui replace `touse' = 0 if `_USE' == 4 & `"`het'"'!=`""'
-	qui replace `touse' = 0 if inlist(`_USE', 3, 5) & missing(`_ES') & `"`stats'"'!=`""' & `"`rfdist'"'!=`""'	
-	if "`keepall'"=="" qui replace `touse' = 0 if `_USE'==2		// "keepall" option (see -ipdmetan-)
-
+	qui replace `touse' = 0 if inlist(`_USE', 3, 5) & missing(`_ES') & `"`stats'"'!=`""' & `"`rfdist'"'!=`""'
+	
+	if `"`keepall'"'==`""' qui replace `touse' = 0 if `_USE'==2		// "keepall" option (see -metan-)
 	qui count if `touse'
 	if !r(N) {
 		nois disp as err "no observations"
@@ -300,7 +305,6 @@ program define forestplot, sortpreserve rclass
 			qui bysort `touse' `varlist' (`obs') : gen long `dtobs' = `obs'[1] if `touse'
 			qui bysort `touse' `dtobs' : gen long `dataid' = (_n==1) if `touse'
 			qui replace `dataid' = sum(`dataid')
-			// local nd = `dataid'[_N]					// number of `dataid' levels
 			label var `dataid' "dataid"
 		}
 	}
@@ -308,7 +312,6 @@ program define forestplot, sortpreserve rclass
 	if `"`plotid'"'==`""' {
 		tempvar plotid
 		qui gen byte `plotid' = 1 if `touse'	// create plotid as constant if not specified; this makes BuildPlotCmds much easier
-		// local np = 1
 	}
 	else {
 		disp _n _c								// spacing, in case following on from ipdmetan (etc.)
@@ -376,7 +379,7 @@ program define forestplot, sortpreserve rclass
 		}
 		qui drop `touse2' `plobs' `smiss'
 	}
-	// qui drop `obs'
+	// qui drop `obs'	// don't drop yet; use again later
 	
 	// Parse eform option and finalise "effect" text
 	cap nois CheckOpts, soptions opts(`graphopts' `eform')
@@ -416,7 +419,9 @@ program define forestplot, sortpreserve rclass
 		qui replace `_EFFECT' = `_EFFECT' + " " if !missing(`_EFFECT')
 		qui replace `_EFFECT' = `_EFFECT' + "(" + string(`xexp'(`_LCI'), `"%`fmtx'.`dp'f"') + ", " + string(`xexp'(`_UCI'), `"%`fmtx'.`dp'f"') + ")"
 		qui replace `_EFFECT' = `""' if !(`touse' & inlist(`_USE', 1, 3, 5))
-		qui replace `_EFFECT' = "(Insufficient data)" if `touse' & `_USE' == 2
+		qui replace `_EFFECT' = "(Insufficient data)" if `touse' & `_USE'==2
+		qui replace `_EFFECT' = "(Insufficient data)" if `touse' & inlist(`_USE', 3, 5) & missing(`_LCI')	// added March 2020, in case of "empty" subgroups
+		qui replace `_EFFECT' = "(Insufficient data)" if `touse' & `_USE'==1 & `"`influence'"'!=`""'		// added March 2020, in case of single-study subgroups with `influence'
 
 		local f = abs(fmtwidth("`: format _EFFECT'"))
 		format _EFFECT %-`f's		// left-justify
@@ -500,10 +505,10 @@ program define forestplot, sortpreserve rclass
 			if "`null'"!="nonull" local null
 		}
 	}
-	if `"`influence'"'!=`""' & inlist(trim("`null2'"), "", "none", "off") local null nonull
+	if `"`influence'`proportion'"'!=`""' & inlist(trim("`null2'"), "", "none", "off") local null nonull
 	// N.B. `null' now either contains nothing, or "nonull"
 	//  and `h0' contains a number (defaulting to 0), denoting where the null-line will be placed if "`null'"==""
-	// If `influence', "nonull" is the default unless null2(#) is supplied.
+	// If `influence' or `proportion', "nonull" is the default unless null2(#) is supplied.
 	
 	// Now find DXmin, DXmax; xticklist, xlablist, xlablim1
 	summ `_LCI' if `touse', meanonly
@@ -549,7 +554,7 @@ program define forestplot, sortpreserve rclass
 		}
 	}
 	
-	cap nois ProcessXLabs `DXmin' `DXmax', `eform' h0(`h0') `null' `graphopts'
+	cap nois ProcessXLabs `DXmin' `DXmax', `eform' h0(`h0') `null' `graphopts' `proportion'
 	if _rc {
 		if _rc==1 nois disp as err `"User break in {bf:forestplot.ProcessXLabs}"'
 		nois disp as err `"Error in {bf:forestplot.ProcessXLabs}"'
@@ -612,52 +617,6 @@ program define forestplot, sortpreserve rclass
 	qui replace `wgt' = . if `touse' & inlist(`_USE', 2, 6) & `"`wt'"'==`""'
 	
 		
-	************************
-	* LEFT & RIGHT COLUMNS * -- begin measuring/generating text columns from namelists given in `lcols'/`rcols'
-	************************
-	
-	// Setup: generate tempvars to send to ProcessColumns
-	foreach xx in left right {
-		local x = substr("`xx'", 1, 1)		// extract "l" from "left" and "r" from "right"
-
-		forvalues i=1/``x'colsN' {		// N.B. if `lcolsN' or `rcolsN'==0, this loop will be skipped
-			tempvar `xx'`i'
-			local `x'vallist ``x'vallist' ``xx'`i''			// store x-axis positions of columns
-				
-			local `x'coli : word `i' of ``x'cols'
-			local f : format ``x'coli'
-			tokenize `"`f'"', parse("%s.,")
-			confirm number `2'
-			local flen = `2'
-			
-			capture confirm string var ``x'coli'
-			if !_rc local `xx'LB`i' : copy local `x'coli	// if string
-			else {											// if numeric
-				tempvar `xx'LB`i'
-				if `"`: value label ``x'coli''"'!=`""' {	// if labelled (10th July 2017)
-					qui decode ``x'coli', gen(``xx'LB`i'')
-				}
-				else qui gen str ``xx'LB`i'' = string(``x'coli', "`f'")
-				qui replace ``xx'LB`i'' = "" if ``xx'LB`i'' == "."
-				
-				local colName : variable label ``x'coli'
-				// Removed v3.0.1 for consistency with string variables
-				// Now -forestplot- consistently honours *blank* varlabels
-				// if `"`colName'"' == "" & `"``x'coli'"' !=`"`labels'"' local colName = `"``x'coli'"'
-				label var ``xx'LB`i'' `"`colName'"'
-			}
-			
-			if `"`leftjustify'"'!=`""' local flen = -abs(`flen')
-			local `x'lablist ``x'lablist' ``xx'LB`i''	// store contents (text/numbers) of columns
-			local `x'fmtlist ``x'fmtlist' `flen'		// desired max no. of characters based on format
-		}
-		
-		if !`lcolsN' {
-			tempvar left1
-			local lvallist `left1'
-		}
-	}
-
 	// find `lcimin' = left-most confidence limit among the "diamonds" (including prediction intervals)
 	tempvar lci2
 	qui gen `lci2' = cond(`"`null'"'==`""', cond(`_LCI'>`h0', `h0', ///
@@ -702,8 +661,60 @@ program define forestplot, sortpreserve rclass
 
 	** Generate ordering variable (reverse sequential, since y axis runs bottom to top)
 	// Need to do this *before* extra obs are added by ProcessColumns to hold title text
-	tempvar id
-	qui bysort `touse' (`obs') : gen long `id' = _N - _n + 1 if `touse'		
+	// Apr 2020: furthermore, sort such that `touse' obs come *first* ... so need to sort on "negated" `touse'
+	tempvar touse_neg id
+	qui gen byte `touse_neg' = 1 - `touse'
+	qui bysort `touse_neg' (`obs') : gen long `id' = _N - _n + 1 if `touse'
+	drop `touse_neg'
+	
+	
+	
+	************************
+	* LEFT & RIGHT COLUMNS *
+	************************
+	
+	// Setup: generate tempvars to send to ProcessColumns
+	foreach xx in left right {
+		local x = substr("`xx'", 1, 1)		// extract "l" from "left" and "r" from "right"
+
+		forvalues i=1/``x'colsN' {		// N.B. if `lcolsN' or `rcolsN'==0, this loop will be skipped
+			tempvar `xx'`i'
+			local `x'vallist ``x'vallist' ``xx'`i''			// store x-axis positions of columns
+				
+			local `x'coli : word `i' of ``x'cols'
+			local f : format ``x'coli'
+			tokenize `"`f'"', parse("%s.,")
+			confirm number `2'
+			local flen = `2'
+			
+			capture confirm string var ``x'coli'
+			if !_rc local `xx'LB`i' : copy local `x'coli	// if string
+			else {											// if numeric
+				tempvar `xx'LB`i'
+				if `"`: value label ``x'coli''"'!=`""' {	// if labelled (10th July 2017)
+					qui decode ``x'coli', gen(``xx'LB`i'')
+				}
+				else qui gen str ``xx'LB`i'' = string(``x'coli', "`f'")
+				qui replace ``xx'LB`i'' = "" if ``xx'LB`i'' == "."
+				
+				local colName : variable label ``x'coli'
+				// Removed v3.0.1 for consistency with string variables
+				// Now -forestplot- consistently honours *blank* varlabels
+				// if `"`colName'"' == "" & `"``x'coli'"' !=`"`labels'"' local colName = `"``x'coli'"'
+				label var ``xx'LB`i'' `"`colName'"'
+			}
+			
+			if `"`leftjustify'"'!=`""' local flen = -abs(`flen')
+			local `x'lablist ``x'lablist' ``xx'LB`i''	// store contents (text/numbers) of columns
+			local `x'fmtlist ``x'fmtlist' `flen'		// desired max no. of characters based on format
+		}
+		
+		if !`lcolsN' {
+			tempvar left1
+			local lvallist `left1'
+		}
+	}
+		
 	
 	// niche case:  possible that user-specified `_USE' already contains values of 9 for some reason
 	// if so, change them to 99 (doesn't matter what value they are as long as not 0 to 6, or 9)
@@ -711,7 +722,8 @@ program define forestplot, sortpreserve rclass
 	qui replace `_USE' = 99 if `touse' & `_USE'==9	
 	
 	local oldN = _N
-	cap nois ProcessColumns `_USE' if `touse', lrcolsn(`lcolsN' `rcolsN') lcimin(`lcimin') dx(`DXmin' `DXmax') ///
+	cap nois ProcessColumns `_USE' if `touse', id(`id') ///
+		lrcolsn(`lcolsN' `rcolsN') lcimin(`lcimin') dx(`DXmin' `DXmax') ///
 		lvallist(`lvallist') llablist(`llablist') lfmtlist(`lfmtlist') ///
 		rvallist(`rvallist') rlablist(`rlablist') rfmtlist(`rfmtlist') `rfopts' ///
 		`astextopt' `adjust' `graphopts'
@@ -731,6 +743,10 @@ program define forestplot, sortpreserve rclass
 
 	local graphopts `"`r(graphopts)'"'
 
+	// Amended Apr 2020
+	// New observations, added by ProcessColumns
+	qui replace `touse' = 1 if missing(`touse') & !missing(`id')
+	/*
 	// Observations containing column headings
 	// (added to the end of the dataset by ProcessColumns)
 	qui count if _n > `oldN'
@@ -740,13 +756,20 @@ program define forestplot, sortpreserve rclass
 		qui replace `obs' = _n if _n > `oldN'
 		qui replace `id' = _n + 1 if _n > `oldN'		// "+1" leaves a one-line gap between titles & main data
 	}
-
+	*/
+	
 	
 	*** FIND OPTIMAL TEXT SIZE AND ASPECT RATIOS (given user input)
 	// We already have an estimate of the height taken up by x-axis labelling (this is `rowsxlab' from ProcessXLabs)
-	// Next, find basic height (in terms of number of observations) to send to GetAspectRatio
-	qui count if `touse'
-	local height = r(N)
+	// Next, find basic height to send to GetAspectRatio
+	// Apr 2020: Note that this was previously derived in terms of number of observations
+	// but now we use `id' instead due to `double' option
+	// qui count if `touse'
+	// local height = r(N)
+	summ `id' if `touse', meanonly
+	if r(N) local height = r(max)
+	else local height = 0
+	
 
 	// Jan 2020
 	// need to account for observations which will ultimately *not* be displayed
@@ -770,24 +793,40 @@ program define forestplot, sortpreserve rclass
 	else {			// user-specified "hide"
 		local hide
 		local 0 `", `graphopts'"'
-		syntax [, OCILINEOPts(string asis) * ]
+		syntax [, OCILINEOPts(string asis) RFCILINEOPts(string asis) * ]
 		local 0 `", `ocilineopts'"'
-		syntax [, HIDE * ]		
+		syntax [, HIDE * ]
 		if `"`hide'"'!=`""' {
 			qui count if `touse' & inlist(`_USE', 3, 5)
 			local reduceHeight = r(N)
 		}
 		else {
-			summ `plotid' if `touse', meanonly
-			forvalues p = 1/`r(max)' {
-				local hide
-				local 0 `", `graphopts'"'
-				syntax [, OCILINE`p'opts(string asis) * ]
-				local 0 `", `ociline`p'opts'"'
-				syntax [, HIDE * ]		
-				if `"`hide'"'!=`""' {
-					qui count if `touse' & `plotid'==`p' & inlist(`_USE', 3, 5)
-					local reduceHeight = `reduceHeight' + r(N)
+			local 0 `", `rfcilineopts'"'
+			syntax [, HIDE * ]
+			if `"`hide'"'!=`""' {
+				qui count if `touse' & inlist(`_USE', 3, 5)
+				local reduceHeight = r(N)
+			}
+			else {
+				summ `plotid' if `touse', meanonly
+				forvalues p = 1/`r(max)' {
+					local hide
+					local 0 `", `graphopts'"'
+					syntax [, OCILINE`p'opts(string asis) RFCILINE`p'opts(string asis) * ]
+					local 0 `", `ociline`p'opts'"'
+					syntax [, HIDE * ]
+					if `"`hide'"'!=`""' {
+						qui count if `touse' & `plotid'==`p' & inlist(`_USE', 3, 5)
+						local reduceHeight = `reduceHeight' + r(N)
+					}
+					else {
+						local 0 `", `rfciline`p'opts'"'
+						syntax [, HIDE * ]
+						if `"`hide'"'!=`""' {
+							qui count if `touse' & `plotid'==`p' & inlist(`_USE', 3, 5)
+							local reduceHeight = `reduceHeight' + r(N)
+						}
+					}
 				}
 			}
 		}
@@ -929,7 +968,6 @@ program define forestplot, sortpreserve rclass
 			nois disp as err `"inappropriate suboptions found in {bf:favours()}"'
 			exit 198
 		}
-		local fp = cond(`"`fp'"'==`""' & `"`oldfp'"'!=`""', `"`oldfp'"', `"`fp'"')
 
 		local labsizeopt = cond(`"`labsize'"'!=`""', `"labsize(`labsize')"', `"labsize(`textSize')"')
 		local labgapopt  = cond(`"`labgap'"'!=`""',  `"labgap(`labgap')"',   `"labgap(5)"')
@@ -939,19 +977,13 @@ program define forestplot, sortpreserve rclass
 		}
 		
 		// modified Jan 30th 2018, and again May 21st 2018
-		if `"`fp'"'==`""' local fp = .
-		numlist `"`fp'"', miss max(1)
-		local fp = cond(`"`eform'"'!=`""', ln(`fp'), `fp')		// fp() should be given on same scale as xlabels
-		local fpmin = min(`DXmin', `XLmin')
-		local fpmax = max(`DXmax', `XLmax')
-		
-		if !missing(`fp') {
-			local leftfp  = cond(`fpmin' <= -abs(`fp') & `"`leftfav'"'!=`""', `"`=-abs(`fp')' `"`leftfav'"'"',  `""')
-			local rightfp = cond(abs(`fp') <= `fpmax'  & `"`rightfav'"'!=`""', `"`=abs(`fp')' `"`rightfav'"'"', `""')
-		}
-		else {
+		local fp = cond(`"`fp'"'==`""' & `"`oldfp'"'!=`""', `"`oldfp'"', `"`fp'"')
+		if `"`fp'"'==`""' {
 			// August 2018: default is...
 			// May 2018: use smaller of distances from h0 to min(DXmin, XLmin) or max(DXmax, XLmax)
+			local fpmin = min(`DXmin', `XLmin')
+			local fpmax = max(`DXmax', `XLmax')
+			
 			if `"`symmetric'"'==`""' {
 				local fp =  min(cond(`fpmin' <= `h0' & `"`leftfav'"'!=`""',  (`h0' - `fpmin')/2, .), ///
 								cond(`fpmax' >= `h0' & `"`rightfav'"'!=`""', (`fpmax' - `h0')/2, .))
@@ -965,6 +997,36 @@ program define forestplot, sortpreserve rclass
 				local rightfp = cond(`fpmax' >= `h0' & `"`rightfav'"'!=`""', `"`=(`h0' + `fpmax')/2' `"`rightfav'"'"', `""')
 			}
 		}
+		
+		// modified Jan 2020
+		// User-specified fp()
+		else {
+			numlist `"`fp'"', miss max(2)
+			tokenize `fp'
+			args fpleft fpright
+			if `"`eform'"'!=`""' local fpleft = ln(`fpleft')			// fp() should be given on same scale as xlabels
+
+			if `"`fpright'"'==`""' {		// only one value given
+				local fpleft  = cond(`fpleft' <= `h0', `fpleft', 2*`h0' - `fpleft')
+				local fpright = 2*`h0' - `fpleft'
+			}
+			else {		// two values given: should be one either side of null line)
+				cap assert `fpleft' <= `h0'
+				if _rc {
+					if `h0' != 0 local extra `" (`h0')"'
+					nois disp as err `"Error in {bf:fp()}: left-hand value should lie to the left of the null value`extra'"'
+					exit 198
+				}
+				cap assert `fpright' >= `h0'
+				if _rc {
+					if `h0' != 0 local extra `" (`h0')"'
+					nois disp as err `"Error in {bf:fp()}: right-hand value should lie to the right of the null value`extra'"'
+					exit 198
+				}
+			}
+			local leftfp  `fpleft' `"`leftfav'"'
+			local rightfp `fpright' `"`rightfav'"'
+		}
 
 		// Nov 2017 [modified Feb 2018]
 		// local favopt = cond(trim(`"`leftfp'`rightfp'"')=="", "", `"xmlabel(`leftfp' `rightfp', noticks labels norescale `favopts')"')
@@ -975,8 +1037,8 @@ program define forestplot, sortpreserve rclass
 		}
 	}		// end if trim(`"`leftfav'`rightfav'"') != `""'
 	
-	
 
+	
 	************************************
 	* Build plot commands from options *
 	************************************
@@ -990,7 +1052,7 @@ program define forestplot, sortpreserve rclass
 	}	
 	
 
-	** Prepare tempvars...		
+	** Prepare tempvars...
 	// ...for diamonds
 	tempvar DiamX DiamY1 DiamY2
 	local diamlist `DiamX' `DiamY1' `DiamY2'
@@ -1005,16 +1067,15 @@ program define forestplot, sortpreserve rclass
 	local offsclist `offscaleL' `offscaleR'
 
 	// ...for predictive intervals
+	// Jan 2020: now including confidence limit lines
 	if `"`rfdist'"'!=`""' {
-		tempvar rfLoffscaleL rfLoffscaleR rfRoffscaleL rfRoffscaleR
-		local rfoffsclist `rfLoffscaleL' `rfLoffscaleR' `rfRoffscaleL' `rfRoffscaleR'
+		tempvar rfLoffscaleL rfLoffscaleR rfRoffscaleL rfRoffscaleR rfLineLCI rfLineUCI rfLineX
+		local rflist `rfLoffscaleL' `rfLoffscaleR' `rfRoffscaleL' `rfRoffscaleR' `rfLineLCI' `rfLineUCI' `rfLineX'
 	}
 		
-	// ...for multiple plotids
-	tempvar toused
-		
-	local tvopts `"diamlist(`diamlist') ovlist(`ovlist') offsclist(`offsclist') rfoffsclist(`rfoffsclist') toused(`toused')"'
-
+	// ...for multiple plotids and/or for area plots
+	tempvar tousePlotID touseDiam touseOCI touseRFCI
+	local tvopts `"diamlist(`diamlist') ovlist(`ovlist') offsclist(`offsclist') rflist(`rflist') touseextra(`tousePlotID' `touseDiam' `touseOCI' `touseRFCI')"'
 	
 	// August 2018: N.B. unusually, have to pass `touse' as an option here (rather than using marksample)
 	// since we need to have the same tempname appearing in the created plot commands
@@ -1049,7 +1110,7 @@ program define forestplot, sortpreserve rclass
 	}
 	return scalar obs = r(N)
 	
-	
+
 	
 	***************************
 	***     DRAW GRAPH      ***
@@ -1086,10 +1147,18 @@ program define forestplot, sortpreserve rclass
 	local xtitleopt = cond(`"`xtitle'"'==`""', `"xtitle("")"', `"`xtitle'"')		// to prevent tempvar name being printed as xtitle
 	
 	summ `id', meanonly
-	local DYmin = r(min) - 1
+	// local DYmin = r(min) - 1
+	local DYmin = 0						// amended Apr 2020
 	local DYmax = r(max) + 1
-	summ `id' if `_USE' < 9, meanonly
-	local borderline = r(max) + 1 - 0.25	
+
+	
+	// Amended Apr 2020
+	summ `id' if `touse' & `_USE'==9, meanonly
+	if r(N) local borderline = r(min) - 1 - 0.25
+	else {
+		summ `id' if `touse' & `_USE'!=9, meanonly
+		local borderline = r(max) + 1 - 0.25
+	}
 
 	
 	// Re-ordered 28th June 2017 so that all twoway options are given together at the end	
@@ -1345,7 +1414,7 @@ end
 program define ProcessXLabs, rclass
 
 	syntax anything [, XLabel(string asis) XMLabel(string asis) XTICk(string) XMTick(string) ///
-		RAnge(string) CIRAnge(string) EFORM H0(real 0) noNULL * ]
+		RAnge(string) CIRAnge(string) EFORM H0(real 0) noNULL PRoportion * ]
 	local graphopts `"`options'"'
 	tokenize `anything'
 	args DXmin DXmax
@@ -1644,8 +1713,13 @@ program define ProcessXLabs, rclass
 	}
 	return local null `null'
 
+
+
+	**********************************
+	* If xlabel not supplied by user *
+	**********************************
 	
-	* If xlabel not supplied by user, need to choose sensible values
+	// Need to choose sensible values:
 	// Default is for symmetrical limits, with 3 labelled values including null
 	// N.B. First modified from original -metan- code by DF, March 2013
 	//  with further improvements by DF, January 2015
@@ -1654,110 +1728,119 @@ program define ProcessXLabs, rclass
 	local xlablim1=0		// init
 	if `"`xlablist'"' == `""' {
 	
-		// If null line, choose values based around `h0'
-		// (i.e. `xlabinit1' = `h0'... but `h0' is automatically selected anyway so no need to explicitly define `xlabinit1')
-		if "`null'" == "" | `h0' != 0 {		// [N.B. "h0 != 0" added Jan 2020]
-			local xlabinit2 = max(abs(`DXmin' - `h0'), abs(`DXmax' - `h0'))
-			local xlabinit "`xlabinit2'"
+		// Mar 2020:
+		// If `proportion', simply choose 0, .5 and 1
+		if `"`proportion'"'!=`""' {
+			local xlablist `"0 .5 1"'
+			local xlabcmd `"`xlablist'"'
 		}
-		
-		// if `nulloff', choose values in two stages: firstly based on the midpoint between CXmin and CXmax (`xlab[init|lim]1')
-		//  and then based on the difference between CXmin/CXmax and the midpoint (`xlab[init|lim]2')
 		else {
-			local xlabinit1 = (`DXmax' + `DXmin')/2
-			local xlabinit2 = abs(`DXmax' - `xlabinit1')		// N.B. same as abs(`CXmin' - `xlabinit1')
-			if float(`xlabinit1') != 0 {
-				local xlabinit "`=abs(`xlabinit1')' `xlabinit2'"
+
+			// If null line, choose values based around `h0'
+			// (i.e. `xlabinit1' = `h0'... but `h0' is automatically selected anyway so no need to explicitly define `xlabinit1')
+			if "`null'" == "" | `h0' != 0 {		// [N.B. "h0 != 0" added Jan 2020]
+				local xlabinit2 = max(abs(`DXmin' - `h0'), abs(`DXmax' - `h0'))
+				local xlabinit "`xlabinit2'"
 			}
-			else local xlabinit `xlabinit2'
-		}
-		assert "`xlabinit'"!=""
-		assert "`xlabinit2'"!=""
-		assert `: word count `xlabinit'' == ("`null'"!="" & `h0'==0)*(float(`DXmax')!=-float(`DXmin')) + 1		// should be >= 1
-		
-		local counter=1
-		foreach xval of numlist `xlabinit' {
-		
-			if `"`eform'"'==`""' {						// linear scale
-				local mag = floor(log10(`xval'))
-				local xdiff = abs(`xval'-`mag')
-				foreach i of numlist 1 2 5 10 {
-					local ii = `i' * 10^`mag'
-					if missing(`ii') {
-						local ii = `=`i'-1' * 10^`mag'
-						local xdiff = abs(float(`xval' - `ii'))
-						local xlablim = `ii'
-						continue, break
-					}
-					else if abs(float(`xval' - `ii')) <= float(`xdiff') {
-						local xdiff = abs(float(`xval' - `ii'))
-						local xlablim = `ii'
+			
+			// if `nulloff', choose values in two stages: firstly based on the midpoint between CXmin and CXmax (`xlab[init|lim]1')
+			//  and then based on the difference between CXmin/CXmax and the midpoint (`xlab[init|lim]2')
+			else {
+				local xlabinit1 = (`DXmax' + `DXmin')/2
+				local xlabinit2 = abs(`DXmax' - `xlabinit1')		// N.B. same as abs(`CXmin' - `xlabinit1')
+				if float(`xlabinit1') != 0 {
+					local xlabinit "`=abs(`xlabinit1')' `xlabinit2'"
+				}
+				else local xlabinit `xlabinit2'
+			}
+			assert "`xlabinit'"!=""
+			assert "`xlabinit2'"!=""
+			assert `: word count `xlabinit'' == ("`null'"!="" & `h0'==0)*(float(`DXmax')!=-float(`DXmin')) + 1		// should be >= 1
+			
+			local counter=1
+			foreach xval of numlist `xlabinit' {
+			
+				if `"`eform'"'==`""' {						// linear scale
+					local mag = floor(log10(`xval'))
+					local xdiff = abs(`xval'-`mag')
+					foreach i of numlist 1 2 5 10 {
+						local ii = `i' * 10^`mag'
+						if missing(`ii') {
+							local ii = `=`i'-1' * 10^`mag'
+							local xdiff = abs(float(`xval' - `ii'))
+							local xlablim = `ii'
+							continue, break
+						}
+						else if abs(float(`xval' - `ii')) <= float(`xdiff') {
+							local xdiff = abs(float(`xval' - `ii'))
+							local xlablim = `ii'
+						}
 					}
 				}
-			}
-			else {										// log scale
-				local mag = round(`xval'/ln(2))
-				local xdiff = abs(`xval' - ln(2))
-				forvalues i=1/`mag' {
-					local ii = ln(2^`i')
-					if missing(`ii') {
-						local ii = ln(2^`=`i'-1')
-						local xdiff = abs(float(`xval' - `ii'))
-						local xlablim = `ii'
-						continue, break
+				else {										// log scale
+					local mag = round(`xval'/ln(2))
+					local xdiff = abs(`xval' - ln(2))
+					forvalues i=1/`mag' {
+						local ii = ln(2^`i')
+						if missing(`ii') {
+							local ii = ln(2^`=`i'-1')
+							local xdiff = abs(float(`xval' - `ii'))
+							local xlablim = `ii'
+							continue, break
+						}
+						else if abs(float(`xval' - `ii')) <= float(`xdiff') {
+							local xdiff = abs(float(`xval' - `ii'))
+							local xlablim = `ii'
+						}
 					}
-					else if abs(float(`xval' - `ii')) <= float(`xdiff') {
-						local xdiff = abs(float(`xval' - `ii'))
-						local xlablim = `ii'
-					}
+					
+					// if effect is small, use 1.5, 1.33, 1.25 or 1.11 instead, as appropriate
+					foreach i of numlist 1.5 `=1/0.75' 1.25 `=1/0.9' {
+						local ii = ln(`i')
+						if abs(float(`xval' - `ii')) <= float(`xdiff') {
+							local xdiff = abs(float(`xval' - `ii'))
+							local xlablim = `ii'
+						}
+					}	
 				}
 				
-				// if effect is small, use 1.5, 1.33, 1.25 or 1.11 instead, as appropriate
-				foreach i of numlist 1.5 `=1/0.75' 1.25 `=1/0.9' {
-					local ii = ln(`i')
-					if abs(float(`xval' - `ii')) <= float(`xdiff') {
-						local xdiff = abs(float(`xval' - `ii'))
-						local xlablim = `ii'
+				// if nonull, center limits around `xlablim1', which should have been optimized by the above code
+				if "`null'" != "" & `h0'==0 {		// nonull
+					if `counter'==1 {
+						local xlablim1 = `xlablim'*sign(`xlabinit1')
 					}
-				}	
-			}
-			
-			// if nonull, center limits around `xlablim1', which should have been optimized by the above code
-			if "`null'" != "" & `h0'==0 {		// nonull
-				if `counter'==1 {
-					local xlablim1 = `xlablim'*sign(`xlabinit1')
+					if `counter'>1 | `: word count `xlabinit''==1 {
+						local xlablim2 = `xlablim'
+						local xlablims `"`=`xlablim1'+`xlablim2'' `=`xlablim1'-`xlablim2''"'
+					}
 				}
-				if `counter'>1 | `: word count `xlabinit''==1 {
-					local xlablim2 = `xlablim'
-					local xlablims `"`=`xlablim1'+`xlablim2'' `=`xlablim1'-`xlablim2''"'
+				else local xlablims `"`xlablims' `xlablim'"'
+				local ++counter
+
+			}	// end foreach xval of numlist `xlabinit'
+				
+			// if nulloff, don't recalculate CXmin/CXmax
+			if "`null'" != "" & `h0'==0 numlist `"`xlablim1' `xlablims'"'
+			else {
+				numlist `"`=`h0' - `xlablims'' `h0' `=`h0' + `xlablims''"', sort	// default: limits symmetrical about `h0'
+				tokenize `"`r(numlist)'"'
+
+				// if data are "too far" from null (`h0'), take one limit (but not the other) plus null
+				//   where "too far" ==> abs(`CXmin' - `h0') > `CXmax' - `CXmin'
+				//   (this works whether data are "too far" to the left OR right, since our limits are symmetrical about `h0')
+				if abs(`DXmin' - `h0') > `DXmax' - `DXmin' {
+					if `3' > `DXmax'      numlist `"`1' `h0'"'
+					else if `1' < `DXmin' numlist `"`h0' `3'"'
+				}
+				else if trim("`range'`cirange'`forceopt'")=="" {		// "standard" situation
+					numlist `"`1' `h0' `3'"'
+					local DXmin = `h0' - `xlabinit2'
+					local DXmax = `h0' + `xlabinit2'
 				}
 			}
-			else local xlablims `"`xlablims' `xlablim'"'
-			local ++counter
-
-		}	// end foreach xval of numlist `xlabinit'
-			
-		// if nulloff, don't recalculate CXmin/CXmax
-		if "`null'" != "" & `h0'==0 numlist `"`xlablim1' `xlablims'"'
-		else {
-			numlist `"`=`h0' - `xlablims'' `h0' `=`h0' + `xlablims''"', sort	// default: limits symmetrical about `h0'
-			tokenize `"`r(numlist)'"'
-
-			// if data are "too far" from null (`h0'), take one limit (but not the other) plus null
-			//   where "too far" ==> abs(`CXmin' - `h0') > `CXmax' - `CXmin'
-			//   (this works whether data are "too far" to the left OR right, since our limits are symmetrical about `h0')
-			if abs(`DXmin' - `h0') > `DXmax' - `DXmin' {
-				if `3' > `DXmax'      numlist `"`1' `h0'"'
-				else if `1' < `DXmin' numlist `"`h0' `3'"'
-			}
-			else if trim("`range'`cirange'`forceopt'")=="" {		// "standard" situation
-				numlist `"`1' `h0' `3'"'
-				local DXmin = `h0' - `xlabinit2'
-				local DXmax = `h0' + `xlabinit2'
-			}
+			local xlablist=r(numlist)
 		}
-		local xlablist=r(numlist)
-		
+			
 		// if log scale, label with exponentiated values
 		if `"`eform'"'!=`""' {
 			local xlabcmd
@@ -2022,13 +2105,13 @@ end
 * Process left and right columns -- obtain co-ordinates etc.
 program define ProcessColumns, rclass
 
-	syntax varname [if] [in], LRCOLSN(numlist integer >=0) LCIMIN(real) DX(numlist) ///
+	syntax varname [if] [in], ID(varname numeric) LRCOLSN(numlist integer >=0) LCIMIN(real) DX(numlist) ///
 		[LVALlist(namelist) LLABlist(varlist) LFMTLIST(numlist integer) ///
 		 RVALlist(namelist) RLABlist(varlist) RFMTLIST(numlist integer) RFINDENT(varname) RFCOL(integer 1) ///
 		 DXWIDTHChars(real -9) ASText(integer -9) LBUFfer(real 0) RBUFfer(real 1) ///
-		 noADJust noLCOLSCHeck TArget(integer 0) MAXWidth(integer 0) MAXLines(integer 0) noTRUNCate * ]
+		 noADJust noLCOLSCHeck TArget(integer 0) MAXWidth(integer 0) MAXLines(integer 0) noTRUNCate DOUBLE * ]
 	
-	local graphopts `"`options'"'
+	local graphopts `"`options' `double'"'
 	
 	marksample touse
 	
@@ -2048,12 +2131,31 @@ program define ProcessColumns, rclass
 	local digitwid : _length 0		// width of a digit (e.g. "0") in current graphics font = roughly average non-space character width
 	local spacewid : _length " "	// width of a space in current graphics font
 
+	summ `id' if `touse', meanonly
+	assert r(min)==1
+	local maxid = r(max)
+	local multip = 1
+	local add = 0
+
 	quietly {
-	
+		// Apr 2020
+		// DOUBLE LINE OPTION
+		if `"`double'"'!=`""' & (`lcolsN' + `rcolsN') {			
+			tempvar expand
+			expand 2 if `touse' & inlist(`_USE', 1, 2), gen(`expand')
+			replace `_USE' = 6 if `touse' & `expand'
+			
+			// TITLES CLOSER TOGETHER, GAP BENEATH
+			local multip = 0.45
+			local add = 0.5
+		}
+		local maxN = _N
+		
+		
 		** Left columns
 		local leftWDtot = 0
 		local nlines = 0
-		forvalues i=1/`lcolsN' {
+		forvalues i = 1 / `lcolsN' {
 			local leftLB`i' : word `i' of `llablist'
 			
 			gen long `strlen' = length(`leftLB`i'')
@@ -2069,6 +2171,20 @@ program define ProcessColumns, rclass
 				abs(`fmtlen')*`digitwid')										// approx. max width (based on `digitwid')
 
 
+			// Apr 2020
+			** DOUBLE LINE OPTION
+			if `"`double'"'!=`""' {
+			    forvalues j = 1 / `maxid' {
+					summ `id' in `j', meanonly
+					local idj = r(min)
+				    local leftLBj = `leftLB`i''[`j']
+					SpreadTitle `"`leftLBj'"', target(`=round(`maxlen'/2)') maxlines(2) notruncate
+					replace `leftLB`i'' = `"`r(title1)'"' if `touse' & `id'==`idj' & !`expand'
+					replace `leftLB`i'' = `"`r(title2)'"' if `touse' & `id'==`idj' & `expand'
+				}
+			}
+
+			
 			** Check whether title string is longer than the data itself
 			// If so, potentially allow spread over a suitable number of lines
 			// [DF JAN 2015: Future work might be to re-write (incl. SpreadTitle) to use width rather than length??]
@@ -2076,15 +2192,14 @@ program define ProcessColumns, rclass
 			// If more than one lcol, restrict to width of "data only" (i.e. _USE==1, 2).
 			// Otherwise, title may be as long as the max string length in the column.
 			// [Note that, as the title isn't stored as data (yet), the max string length does NOT account for the title string itself.]
-			if `lcolsN'>1 local anduse `"& inlist(`_USE', 1, 2)"'
+			if `lcolsN' > 1 local anduse `"& inlist(`_USE', 1, 2)"'
 			summ `strlen' if `touse' `anduse', meanonly
 			local maxlen = r(max)
 	
 			local colName : variable label `leftLB`i''
 			if `"`colName'"'!=`""' {
-				
-				if `target' local target_opt = `target'
-				else {
+
+				if `target' <= 0 | missing(`target') {
 					if `maxwidth' local target_opt = `maxwidth'
 					else local target_opt = max(abs(`fmtlen'), `maxlen')
 				}
@@ -2094,14 +2209,18 @@ program define ProcessColumns, rclass
 				if `r(nlines)' > `nlines' {
 					local oldN = _N
 					set obs `=`oldN' + `r(nlines)' - `nlines''
-					local nlines = r(nlines) 
+					local nlines = r(nlines)
+					
+					replace `_USE' = 9 if _n > `oldN'
+					replace `touse' = 1 if _n > `oldN'
+					replace `id' = `maxid' + (_n - `maxN')*`multip' + `add' + 1 if _n > `oldN'
+					// "+1" leaves a one-line gap between titles & main data
 				}
+				
 				local l = `nlines' - `r(nlines)'
 				forvalues j = `r(nlines)'(-1)1 {
 					local k = _N - (`j' + `l') + 1
 					replace `leftLB`i'' = `"`r(title`j')'"' in `k'
-					replace `_USE' = 9 in `k'
-					replace `touse' = 1 in `k'
 				}
 				
 				getWidth `leftLB`i'' `strwid', replace			// re-calculate `strwid' to include titles
@@ -2139,14 +2258,27 @@ program define ProcessColumns, rclass
 				abs(`fmtlen')*`digitwid')										// approx. max width (based on `digitwid')
 
 
+			// Apr 2020
+			** DOUBLE LINE OPTION
+			if `"`double'"'!=`""' {
+			    forvalues j = 1 / `maxid' {
+					summ `id' in `j', meanonly
+					local idj = r(min)
+				    local rightLBj = `rightLB`i''[`j']
+					SpreadTitle `"`rightLBj'"', target(`=round(`maxlen'/2)') maxlines(2) notruncate
+					replace `rightLB`i'' = `"`r(title1)'"' if `id'==`idj' & !`expand'
+					replace `rightLB`i'' = `"`r(title2)'"' if `id'==`idj' & `expand'
+				}
+			}
+
+			
 			** Check whether title string is longer than the data itself
 			// If so, spread it over a suitable number of lines
 			// [DF JAN 2015: Future work might be to re-write (incl. SpreadTitle) to use width rather than length??]
 			local colName : variable label `rightLB`i''
 			if `"`colName'"'!=`""' {
 				
-				if `target' local target_opt = `target'
-				else {
+				if `target' <= 0 | missing(`target') {
 					if `maxwidth' local target_opt = `maxwidth'
 					else local target_opt = max(abs(`fmtlen'), `maxlen')
 				}
@@ -2156,17 +2288,22 @@ program define ProcessColumns, rclass
 				if `r(nlines)' > `nlines' {
 					local oldN = _N
 					set obs `=`oldN' + `r(nlines)' - `nlines''
-					local nlines = r(nlines) 
+					local nlines = r(nlines)
+					
+					replace `_USE' = 9 if _n > `oldN'
+					replace `touse' = 1 if _n > `oldN'
+					replace `id' = `maxid' + (_n - `maxN')*`multip' + `add' + 1 if _n > `oldN'
+					// "+1" leaves a one-line gap between titles & main data
 				}
+				
 				local l = `nlines' - `r(nlines)'
 				forvalues j = `r(nlines)'(-1)1 {
 					local k = _N - (`j' + `l') + 1
 					replace `rightLB`i'' = `"`r(title`j')'"' in `k'
-					replace `_USE' = 9 in `k'
-					replace `touse' = 1 in `k'
 				}
+				
 				getWidth `rightLB`i'' `strwid', replace			// re-calculate `strwid' to include titles
-					
+				
 				summ `strwid' if `touse', meanonly
 				local maxwid = r(max)
 				local rightWD`i' = max(`rightWD`i'', `maxwid')		// in case title is necessarily longer than the variable, even after SpreadTitle
@@ -2362,8 +2499,16 @@ program define ProcessColumns, rclass
 			gen double `right`i'' = `DXmax' + (`rightWDruntot' + `rindent`i'')*`textWD'
 			local rightWDruntot = `rightWDruntot' + `rightWD`i''
 		}		
-	}		// end quietly
 
+		// Finish off `double'
+		if `"`double'"'!=`""' {
+			recast float `id' 
+			replace `id' = `id' - 0.45 if `expand'==1
+		}
+	
+	}		// end quietly
+	
+	
 	// AXmin AXmax ARE THE OVERALL LEFT AND RIGHT COORDS
 	summ `left1' if `touse', meanonly
 	local AXmin = r(min)
@@ -2591,7 +2736,7 @@ program define GetAspectRatio, rclass
 		ASPECT(real -9) SPacing(real -9) XSIZe(real -9) YSIZe(real -9) FXSIZe(real -9) FYSIZe(real -9) ///
 		TItle(string asis) SUBtitle(string asis) CAPTION(string asis) NOTE2(string asis) noNOTE noWARNing ///
 		XTItle(string asis) FAVours(string asis) ADDHeight(real 0) /*(undocumented)*/ ///
-		ROWSXLAB(real 0) DXWIDTHChars(real -9) COLSONLY * ]
+		ROWSXLAB(real 0) DXWIDTHChars(real -9) DOUBLE COLSONLY * ]
 	
 	local graphopts `"`options'"'
 	
@@ -2686,13 +2831,15 @@ program define GetAspectRatio, rclass
 		local approxChars = 100*`colwdtot'/`astext'
 		
 		if `aspect' != -9 {					// user-specified aspect of plotregion
-			local spacing = cond(`spacing' == -9, `aspect' * `approxChars' / `height', `spacing')	// [modified 2nd Nov 2017 for v2.2]
+			if `spacing' == -9 local spacing = `aspect' * `approxChars' / `height'		// [modified 2nd Nov 2017 for v2.2]
 			local plotAspect = `aspect'
 		}
 		else {								// if not user-specified
-			local spacing = cond(`spacing' == -9, cond(`height'/`approxChars' <= .5, 2, 1.5), `spacing')
 			// if "natural aspect" (`height'/`approxChars') is 2x1 or wider, use double spacing; else use 1.5-spacing
+			// Apr 2020: if -double- option, increase the spacing again... 4/3 seems to work (N.B. this is 2/1.5, i.e. ratio of usual options)
 			// (unless user-specified, in which case use that)
+			if `spacing' == -9 local spacing = cond(`height'/`approxChars' <= .5, 2, 1.5)
+			if `"`double'"'!=`""' local spacing = (4/3) * `spacing'
 			local plotAspect = `spacing' * `height' / `approxChars'
 		}
 	}
@@ -2702,7 +2849,7 @@ program define GetAspectRatio, rclass
 		// `spacing' here is from `usedims' unless over-ridden by user
 	}
 	numlist "`plotAspect' `spacing'", range(>=0)
-		
+
 	
 	* Derive graphAspect = Y/X (defaults to 4/5.5  = 0.727 unless specified)
 	// [modified 2nd Nov 2017 for v2.2 beta]
@@ -2935,14 +3082,14 @@ program define BuildPlotCmds, sclass
 		[PLOTID(varname numeric) DATAID(varname numeric) NEWwt H0(real 0) noNULL ///
 		CLASSIC noDIAmonds INTERaction COLSONLY CUmulative INFluence noOVerall noSUbgroup ///
 		WGT(varname numeric) RFDIST(varlist numeric) BOXscale(real 100.0) noBOX ///
-		DIAMLIST(namelist) OVLIST(namelist) OFFSCLIST(namelist) RFOFFSCLIST(namelist) TOUSED(name) * ]
+		DIAMLIST(namelist) OVLIST(namelist) OFFSCLIST(namelist) RFLIST(namelist) TOUSEEXTRA(namelist) * ]
 
 	
 	// JAN 2020:  This subroutine has been rearranged.
 	// GENERAL IDEA:  we don't *need* the actual variables in order to build the plot commands; we just to know the variable *names*.
-	// Therefore, we can build the commands *first*, and then mess about with the variables themselves afterwards.
+	// Therefore, we can build the plot commands *first*, and then mess about with the variables themselves afterwards.
 	// This means e.g. we can first identify whether, and where, -expand- is needed for area plots (e.g. diamonds or CI area plots)
-	//   and then do this work, whilst accounting for "hidden" pooled observations (needed e.g. for `cumulative' or `influence').
+	//   and then do this work *later*, whilst accounting for "hidden" pooled observations (needed e.g. for `cumulative' or `influence').
 	
 	tokenize `varlist'
 	args _USE _ES _LCI _UCI
@@ -2968,86 +3115,6 @@ program define BuildPlotCmds, sclass
 	}	
 		
 
-	** "OVERALL EFFECT" LINES
-	tokenize `ovlist'
-	args ovLine ovMin ovMax ovLineLCI ovLineUCI ovLineX		// `ovLineLCI' `ovLineUCI' `ovLineX' added Jan 2020
-		
-	qui gen float `ovLine' = .
-	qui gen float `ovMin' = .
-	qui gen float `ovMax' = .
-	qui gen float `ovLineLCI' = .	// Added Jan 2020
-	qui gen float `ovLineUCI' = .
-		
-	// Construct groups of observations containing a single obs where _USE==3 or 5
-	// Within each `dataid', such groups ("olinegroup") are identified by _USE==5 if present ("overall"), or _USE==3 otherwise ("subgroup").
-	qui count if `touse' & inlist(`_USE', 3, 5)
-	if r(N) {		
-		tempvar useno
-		qui gen byte `useno' = `_USE' * inlist(`_USE', 3, 5) if `touse'
-	
-		sort `touse' `dataid' `id'
-		qui by `touse' : replace `useno' = `useno'[_n-1] if _n>1 & `useno'<=`useno'[_n-1] `dataidopt'		// find the largest value (from 3 & 5) "so far"
-
-		tempvar olinegroup check
-		qui gen int `olinegroup' = (`_USE'==`useno') * (`useno'>0)
-		qui by `touse' `dataid' : replace `olinegroup' = sum(`olinegroup') if inlist(`_USE', 1, 2, 3, 5)	// study obs & pooled results
-
-		// "check": only draw oline if there are study obs in the same olinegroup
-		qui gen byte `check' = inlist(`_USE', 1, 2) if `touse'
-		qui bysort `touse' `dataid' `olinegroup' (`check') : replace `check' = `check'[_N]
-		sort `touse' `dataid' `olinegroup' `id'
-	
-		* Store values for later plotting
-		// modified Jan 2020	
-		qui by `touse' `dataid' `olinegroup' : replace `ovLine'    =  `_ES'[1] if `touse' & `check' & !( `_ES'[1] > `CXmax' |  `_ES'[1] < `CXmin')
-		qui by `touse' `dataid' `olinegroup' : replace `ovLineLCI' = `_LCI'[1] if `touse' & `check' & !(`_LCI'[1] > `CXmax' | `_LCI'[1] < `CXmin')
-		qui by `touse' `dataid' `olinegroup' : replace `ovLineUCI' = `_UCI'[1] if `touse' & `check' & !(`_UCI'[1] > `CXmax' | `_UCI'[1] < `CXmin')
-	}
-		
-			
-	** IF MULTIPLE PLOTIDs, or if dataid(varname, newwt) specified,
-	// create dummy obs with global min & max weights, to maintain correct weighting throughout
-	if (`np' > 1 | `"`newwt'"'!=`""') {		// Amended June 2015
-
-		// create new `touse', including new dummy obs
-		qui gen byte `toused' = `touse'
-					
-		// find global min & max weights, to maintain consistency across subgroups
-		if `"`newwt'"'==`""' {		// weight consistent across dataid, so just use locals
-			summ `_WT' if `touse' & inlist(`_USE', 1, 2), meanonly	
-			local minwt = r(min)
-			local maxwt = r(max)
-		}
-		else {						// multiple min/max weights required, so use tempvars
-			tempvar minwt maxwt
-			sort `touse' `dataid' `_WT'
-			qui by `touse' `dataid' : gen double `minwt' = `_WT'[1] if `touse'
-			qui by `touse' `dataid' : gen double `maxwt' = `_WT'[_N] if `touse'
-		}
-		local oldN = _N
-		local newN = `oldN' + 2*`nd'*`np'	// N.B. `nd' indexes `dataid'; `np' indexes `plotid'
-		qui set obs `newN'
-		forvalues i=1/`nd' {
-			forvalues j=1/`np' {
-				local k = `oldN' + (`i'-1)*2*`np' + 2*`j'
-				qui replace `plotid' = `j' in `=`k'-1' / `k'
-				qui replace `_WT' = `minwt' in `=`k'-1'
-				qui replace `_WT' = `maxwt' in `k'
-			}
-		}
-		qui replace `_USE'   = 1 in `=`oldN' + 1' / `newN'
-		qui replace `touse'  = 0 in `=`oldN' + 1' / `newN'
-		qui replace `toused' = 1 in `=`oldN' + 1' / `newN'
-	}
-	// these dummy obs are identifiable by "`_USE'==1 & `toused' & !`touse'"
-
-	else {
-		qui count if `touse' & inlist(`_USE', 3, 5)
-		if r(N) qui gen byte `toused' = `touse'
-		else local toused `touse'		// if neither multiple plotids NOR diamonds, no need for separate variable `toused'
-	}
-
-		
 	** SETUP OFF-SCALE ARROWS -- fairly straightforward
 	// (include use==3, 5 in case of pciopts/rfopts)
 	tokenize `offsclist'
@@ -3062,8 +3129,8 @@ program define BuildPlotCmds, sclass
 		tokenize `rfdist'
 		args _rfLCI _rfUCI
 	
-		tokenize `rfoffsclist'
-		args tv1 tv2 tv3 tv4		// don't name them yet, as they may not all be needed
+		tokenize `rflist'
+		args tv1 tv2 tv3 tv4 rfLineLCI rfLineUCI rfLineX		// don't name tv1-tv4 yet, as they may not all be needed (see following code)
 
 		local touse3 `"`touse' & inlist(`_USE', 3, 5)"'
 		qui count if `touse3'
@@ -3094,17 +3161,88 @@ program define BuildPlotCmds, sclass
 			local rfLoffscaleR `"(`touse3' & float(`_UCI') < float(`CXmin'))"'
 		}
 	}
-		
-	
-	** "Global" options (includes null line)
-	local 0 `", `options'"'
-	syntax [, ///
-		/// /* standard options */
-		BOXOPts(string asis) DIAMOPts(string asis) POINTOPts(string asis) CIOPts(string asis) OLINEOPts(string asis) OCILINEOPts(string asis) NLINEOPts(string asis) ///
-		/// /* non-diamond and prediction interval options */
-		PPOINTOPts(string asis) PCIOPts(string asis) RFOPts(string asis) * ]
 
-	local rest `"`options'"'
+	
+	** "OVERALL EFFECT" LINES
+	tokenize `ovlist'
+	args ovLine ovMin ovMax ovLineLCI ovLineUCI ovLineX		// `ovLineLCI' `ovLineUCI' `ovLineX' added Jan 2020
+		
+	qui gen float `ovLine' = .
+		
+	// Construct groups of observations containing a single obs where _USE==3 or 5
+	// Within each `dataid', such groups ("olinegroup") are identified by _USE==5 if present ("overall"), or _USE==3 otherwise ("subgroup").
+	qui count if `touse' & inlist(`_USE', 3, 5)
+	if r(N) {		
+		tempvar useno
+		qui gen byte `useno' = `_USE' * inlist(`_USE', 3, 5) if `touse'
+	
+		sort `touse' `dataid' `id'
+		qui by `touse' : replace `useno' = `useno'[_n-1] if _n>1 & `useno'<=`useno'[_n-1] `dataidopt'		// find the largest value (from 3 & 5) "so far"
+
+		tempvar olinegroup check
+		qui gen int `olinegroup' = (`_USE'==`useno') * (`useno'>0)
+		qui by `touse' `dataid' : replace `olinegroup' = sum(`olinegroup') if inlist(`_USE', 1, 2, 3, 5)	// study obs & pooled results
+
+		// "check": only draw oline if there are study obs in the same olinegroup
+		qui gen byte `check' = inlist(`_USE', 1, 2) if `touse'
+		qui bysort `touse' `dataid' `olinegroup' (`check') : replace `check' = `check'[_N]
+		sort `touse' `dataid' `olinegroup' `id'
+	
+		// Store values for later plotting
+		// [modified Jan 2020]
+		qui by `touse' `dataid' `olinegroup' : replace `ovLine' = `_ES'[1] if `touse' & `check' & !( `_ES'[1] > `CXmax' |  `_ES'[1] < `CXmin')
+	}
+		
+	// "flags" to identify dummy variables for multiple plotids,
+	// and/or where area plots are needed, for later -expand- [added Jan 2020]
+	tokenize `touseextra'
+	args tv0 touseDiam touseOCI touseRFCI
+	qui gen byte `touseDiam' = 2 * `touse' * (1 - (`"`cumulative'`influence'"'!=`""'))
+	// 0 = hide (+ ociline); 1 = pci/ppoint (line); 2 = diamonds (area + no lines; default)
+	qui gen byte `touseOCI' = 0		// 0 = no lines or area (default); 1 = lines; 2 = area (+ lines)
+	if `"`rfdist'"'!=`""' qui gen byte `touseRFCI' = 0		// same
+		
+		
+		
+	** IF MULTIPLE PLOTIDs, or if dataid(varname, newwt) specified,
+	// create dummy obs with global min & max weights, to maintain correct weighting throughout
+	if (`np' > 1 | `"`newwt'"'!=`""') {		// Amended June 2015
+
+		// create new `touse', including new dummy obs
+		qui gen byte `tv0' = `touse'
+		local tousePlotID `tv0'
+					
+		// find global min & max weights, to maintain consistency across subgroups
+		if `"`newwt'"'==`""' {		// weight consistent across dataid, so just use locals
+			summ `_WT' if `touse' & inlist(`_USE', 1, 2), meanonly	
+			local minwt = r(min)
+			local maxwt = r(max)
+		}
+		else {						// multiple min/max weights required, so use tempvars
+			tempvar minwt maxwt
+			sort `touse' `dataid' `_WT'
+			qui by `touse' `dataid' : gen double `minwt' = `_WT'[1] if `touse'
+			qui by `touse' `dataid' : gen double `maxwt' = `_WT'[_N] if `touse'
+		}
+		local oldN = _N
+		local newN = `oldN' + 2*`nd'*`np'	// N.B. `nd' indexes `dataid'; `np' indexes `plotid'
+		qui set obs `newN'
+		forvalues i=1/`nd' {
+			forvalues j=1/`np' {
+				local k = `oldN' + (`i'-1)*2*`np' + 2*`j'
+				qui replace `plotid' = `j' in `=`k'-1' / `k'
+				qui replace `_WT' = `minwt' in `=`k'-1'
+				qui replace `_WT' = `maxwt' in `k'
+			}
+		}
+		qui replace `_USE'   = 1 in `=`oldN' + 1' / `newN'
+		qui replace `touse'  = 0 in `=`oldN' + 1' / `newN'
+		qui replace `tousePlotID' = 1 in `=`oldN' + 1' / `newN'
+	}
+	// these dummy obs are identifiable by "`tousePlotID' & !`touse'"
+
+	else local tousePlotID `touse'		// else, no need for separate variable `tousePlotID'
+	
 	
 	
 	** DEFAULTS
@@ -3128,7 +3266,8 @@ program define BuildPlotCmds, sclass
 	local defCIOpts `"lcolor(black) mcolor(black)"'				// includes "mcolor" for arrows (doesn't affect rspike/rcap)
 	local defPointOpts `"msymbol(diamond) mcolor(black) msize(vsmall)"'
 	local defOlineOpts `"lwidth(thin) lcolor(maroon) lpattern(shortdash)"'
-	local defOCIlineOpts `"`defOlineOpts'"'						// CI of overall effect
+	local defOCIlineOpts  `"`defOlineOpts'"'					// CI of overall effect
+	local defRFCIlineOpts `"`defOlineOpts'"'					// CI of predictive interval
 	local defNlineOpts `"lwidth(thin) lcolor(black)"'
 	
 	// ...and for "pooled" estimates
@@ -3144,8 +3283,17 @@ program define BuildPlotCmds, sclass
 	local defRFOpts `"`defPCIOpts'"'													// prediction interval options (includes "mcolor" for arrows)
 
 	
-	*** Default options for graph elements that may be plotted in more than one way
+	** Default options for graph elements that may be plotted in more than one way
 	// (plus, may as well parse some other options too, including disallowed ones)
+	local 0 `", `options'"'
+	syntax [, ///
+		/// /* standard options */
+		BOXOPts(string asis) DIAMOPts(string asis) POINTOPts(string asis) CIOPts(string asis) NLINEOPts(string asis) ///
+		OLINEOPts(string asis) OCILINEOPts(string asis) RFCILINEOPts(string asis) ///
+		/// /* non-diamond and prediction interval options */
+		PPOINTOPts(string asis) PCIOPts(string asis) RFOPts(string asis) * ]
+
+	local rest `"`options'"'
 	
 	* Confidence intervals
 	// since capped lines require a different -twoway- command (-rcap- vs -rspike-)
@@ -3157,7 +3305,7 @@ program define BuildPlotCmds, sclass
 	// Same routine applies to study CIs, "pooled" CIs (alternative to diamond), and to prediction intervals:
 	foreach plot in ci pci rf {
 		local 0 `", ``plot'opts'"'
-		syntax [, LColor(string) MColor(string) LWidth(string) MLWidth(string) ///
+		syntax [, LColor(passthru) MColor(passthru) LWidth(passthru) MLWidth(passthru) ///
 			RCAP OVerlay HORizontal VERTical * ]
 		
 		// disallowed options
@@ -3171,15 +3319,9 @@ program define BuildPlotCmds, sclass
 		}
 
 		// rebuild the option list
-		if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""'  local mcolor  `lcolor'		// for pc(b)arrow
-		if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' local mlwidth `lwidth'		// for pc(b)arrow
-		local `plot'opts
-		foreach opt in mcolor lcolor mlwidth lwidth {
-			if `"``opt''"'!=`""' {
-				local `plot'opts `"``plot'opts' `opt'(``opt'')"'
-			}
-		}
-		local `plot'opts `"``plot'opts' `options'"'
+		if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""'  local mcolor = subinstr(`"`lcolor'"', "l", "m", 1)		// for pc(b)arrow
+		if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' local mlwidth m`lwidth'									// for pc(b)arrow
+		local `plot'opts `"`mcolor' `lcolor' `mlwidth' `lwidth' `options'"'
 		local g_overlay "`overlay'"		// "global" overlay option
 		
 		local uplot = upper("`plot'")
@@ -3189,8 +3331,8 @@ program define BuildPlotCmds, sclass
 	* Diamonds
 	// since if truncated (offscale), line options are removed from -rarea- and drawn separately
 	local 0 `", `diamopts'"'
-	syntax [, Color(string) LColor(string) ///
-		HORizontal VERTical CMISsing(string) SORT * ]
+	syntax [, Color(passthru) LColor(passthru) ///
+		HORizontal VERTical CMISsing(passthru) SORT * ]
 
 	// disallowed options
 	if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
@@ -3207,25 +3349,12 @@ program define BuildPlotCmds, sclass
 	}
 	
 	// rebuild the option list
-	if `"`color'"'!=`""' & `"`lcolor'"'==`""' local lcolor `color'			// convert `color' -rarea- option to `lcolor' -line- option
-	local diamopts
-	foreach opt in color lcolor {
-		if `"``opt''"'!=`""' {
-			local diamopts `"`diamopts' `opt'(``opt'')"'
-		}
-	}
-	local diamopts `"`diamopts' `options'"'	
+	if `"`color'"'!=`""' & `"`lcolor'"'==`""' local lcolor l`color'		// convert `color' -rarea- option to `lcolor' -line- option
+	local diamopts `"`color' `lcolor' `options'"'
 	
 	tokenize `diamlist'
 	args DiamX DiamY1 DiamY2
 	
-	
-	// flags to identify where area plots are needed, for later -expand- [added Jan 2020]
-	tempvar diamFlag ovFlag
-	qui gen byte `diamFlag' = 1 - (`"`cumulative'`influence'"'!=`""')
-	// 0 = hide (+ ociline); 1 = diamonds (area; default); 2 = pci/ppoint (line)
-	qui gen byte `ovFlag' = 0		// 0 = no area; 1 = area	
-		
 
 	** PARSE PLOT#OPTS
 	
@@ -3239,47 +3368,19 @@ program define BuildPlotCmds, sclass
 		local 0 `", `rest'"'
 		syntax [, ///
 			/// /* standard options */
-			BOX`p'opts(string asis) DIAM`p'opts(string asis) POINT`p'opts(string asis) CI`p'opts(string asis) OLINE`p'opts(string asis) OCILINE`p'opts(string asis) ///
+			BOX`p'opts(string asis) DIAM`p'opts(string asis) POINT`p'opts(string asis) CI`p'opts(string asis) ///
+			OLINE`p'opts(string asis) OCILINE`p'opts(string asis) RFCILINE`p'opts(string asis) ///
 			/// /* non-diamond and prediction interval options */
 			PPOINT`p'opts(string asis) PCI`p'opts(string asis) RF`p'opts(string asis) * ]
 
 		local rest `"`options'"'
 
 		* Check if any options were found specifically for this value of `p'
-		if trim(`"`box`p'opts'`diam`p'opts'`point`p'opts'`ci`p'opts'`oline`p'opts'`ociline`p'opts'`ppoint`p'opts'`pci`p'opts'`rf`p'opts'"') != `""' {
+		if trim(`"`box`p'opts'`diam`p'opts'`point`p'opts'`ci`p'opts'"') != `""' ///
+			| trim(`"`oline`p'opts'`ociline`p'opts'`rfciline`p'opts'"') != `""' ///
+			| trim(`"`ppoint`p'opts'`pci`p'opts'`rf`p'opts'"') != `""' {
 			
 			local pplvals : list pplvals - p			// remove from list of "default" plotids
-			
-			
-			* OVERALL LINE(S) (if appropriate)
-			summ `ovLine' if `plotid'==`p', meanonly
-			if r(N) {
-				local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `ovLine' if `touse' & `plotid'==`p', `defOlineOpts' `olineopts' `oline`p'opts' ||"'
-
-				// Added Jan 2020
-				if `"`ociline`p'opts'`influence'"'!=`""' {
-					local 0 `", `ociline`p'opts'"'
-					syntax [, Yes HIDE HORizontal VERTical Color(passthru) FColor(passthru) FIntensity(passthru) * ]
-
-					// disallowed options
-					if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
-						nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:ociline`p'opts()}"'
-						exit 198
-					}
-					
-					if `"`hide'"'!=`""' qui replace `diamFlag' = 0 if `plotid'==`p'
-
-					local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `ovLineLCI' if `touse' & `plotid'==`p', `defOCIlineOpts' `ocilineopts' `options' ||"'
-					local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `ovLineUCI' if `touse' & `plotid'==`p', `defOCIlineOpts' `ocilineopts' `options' ||"'
-					
-					// area plot
-					if "`color'`fcolor'`fintensity'"!=`""' {
-						local ociline`p'opts `"`macval(ociline`p'Opts)' `color' `fcolor' `fintensity' `options'"'
-						local olineAreaPlot `"`macval(olineAreaPlot)' rarea `ovMin' `ovMax' `ovLineX' if `toused' & `plotid'==`p', `macval(ociline`p'opts)' lwidth(none) cmissing(n) ||"'
-						qui replace `ovFlag' = 1 if `plotid'==`p'
-					}
-				}
-			}
 			
 			
 			* INDIVIDUAL STUDY MARKERS
@@ -3289,7 +3390,7 @@ program define BuildPlotCmds, sclass
 			
 				* WEIGHTED SCATTER PLOT
 				local 0 `", `box`p'opts'"'
-				syntax [, MLABEL(string) MSIZe(string) * ]			// check for disallowed options
+				syntax [, MLABEL(passthru) MSIZe(passthru) * ]			// check for disallowed options
 				if `"`mlabel'"' != `""' {
 					nois disp as err `"suboption {bf:mlabel()} not allowed in option {bf:box`p'opts()}"'
 					exit 198
@@ -3301,16 +3402,16 @@ program define BuildPlotCmds, sclass
 				local scPlotOpts `"`defBoxOpts' `boxopts' `box`p'opts'"'
 				summ `_WT' if `touse2', meanonly
 				if !r(N) nois disp as err `"No weights found for {bf:plotid}==`p'"'
-				else if `nd'==1 local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & `plotid'==`p', `macval(scPlotOpts)' ||"'
+				else if `nd'==1 local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `tousePlotID' & `_USE'==1 & `plotid'==`p', `macval(scPlotOpts)' ||"'
 				else {
 					forvalues d=1/`nd' {
-						local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & `plotid'==`p' & `dataid'==`d', `macval(scPlotOpts)' ||"'
+						local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `tousePlotID' & `_USE'==1 & `plotid'==`p' & `dataid'==`d', `macval(scPlotOpts)' ||"'
 					}
-				}		// N.B. scatter if `toused' <-- "dummy obs" for consistent weighting
+				}		// N.B. scatter if `tousePlotID' <-- "dummy obs" for consistent weighting
 				
 				* CONFIDENCE INTERVAL PLOT
 				local 0 `", `ci`p'opts'"'
-				syntax [, LColor(string) MColor(string) LWidth(string) MLWidth(string) ///
+				syntax [, LColor(passthru) MColor(passthru) LWidth(passthru) MLWidth(passthru) ///
 					RCAP HORizontal VERTical /*Connect(string)*/ * ]								// check for disallowed options + rcap
 				
 				// disallowed options
@@ -3326,15 +3427,9 @@ program define BuildPlotCmds, sclass
 				*/
 				
 				// rebuild option list
-				if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""'  local mcolor  `lcolor'		// for pc(b)arrow
-				if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' local mlwidth `lwidth'		// for pc(b)arrow
-				local CIPlot`p'Opts
-				foreach opt in mcolor lcolor mlwidth lwidth {
-					if `"``opt''"'!=`""' {
-						local CIPlot`p'Opts `"`CIPlot`p'Opts' `opt'(``opt'')"'
-					}
-				}
-				local CIPlot`p'Opts `"`defCIOpts' `ciopts' `CIPlot`p'Opts' `options'"'		// main options first, then options specific to plot `p'
+				if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""'  local local mcolor = subinstr(`"`lcolor'"', "l", "m", 1)	// for pc(b)arrow
+				if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' local mlwidth m`lwidth'										// for pc(b)arrow
+				local CIPlot`p'Opts `"`defCIOpts' `ciopts' `mcolor' `lcolor' `mlwidth' `lwidth' `options'"'		// main options first, then options specific to plot `p'
 				local CIPlot`p'Type = cond("`rcap'"=="", "`CIPlotType'", "rcap")
 				
 				// default: both ends within scale (i.e. no arrows)
@@ -3367,9 +3462,76 @@ program define BuildPlotCmds, sclass
 			}			// end if r(N) [i.e. if any obs with _USE==1 & plotid==`p']
 
 			
+			* OVERALL LINE(S) (if appropriate)
+			summ `ovLine' if `plotid'==`p', meanonly
+			if r(N) {
+				local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `ovLine' if `touse' & `plotid'==`p', `defOlineOpts' `olineopts' `oline`p'opts' ||"'
+
+			
+				* PREDICTIVE INTERVAL CI LINES (and/or areas)
+				// Do these before standard overall lines, in case of area plots
+				//  want pred. int. area plot to be underneath the "standard" CI area plot
+				// Added Jan 2020
+				if trim(`"`rfciline`p'opts'"') != `""' {
+					if `"`rfdist'"'==`""' {
+						nois disp as err `"prediction interval not specified; relevant suboptions for {bf:plotid==`p'} will be ignored"'
+					}
+					else {
+						local 0 `", `rfciline`p'opts'"'
+						syntax [, Yes HIDE HORizontal VERTical Color(passthru) FColor(passthru) FIntensity(passthru) * ]
+				
+						// disallowed options
+						if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
+							nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:rfciline`p'opts()}"'
+							exit 198
+						}
+						
+						if `"`hide'"'!=`""' qui replace `touseDiam' = 0 if `plotid'==`p'
+
+						local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `rfLineLCI' if `touse' & `plotid'==`p', `defRFCIlineOpts' `rfcilineopts' `options' ||"'
+						local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `rfLineUCI' if `touse' & `plotid'==`p', `defRFCIlineOpts' `rfcilineopts' `options' ||"'
+						
+						// area plot -- use `touseRFCI'
+						if "`color'`fcolor'`fintensity'"!=`""' {
+							local rfciline`p'opts `"`macval(rfciline`p'Opts)' `color' `fcolor' `fintensity' `options'"'
+							local olineAreaPlot `"`macval(olineAreaPlot)' rarea `ovMin' `ovMax' `rfLineX' if `touseRFCI' & `plotid'==`p', `macval(rfciline`p'opts)' lwidth(none) cmissing(n) ||"'
+							qui replace `touseRFCI' = 2 if `plotid'==`p'
+						}
+						else qui replace `touseRFCI' = 1 if `plotid'==`p'
+					}
+				}
+			
+				* OVERALL LINE(S) (and/or areas)
+				// Added Jan 2020
+				if `"`ociline`p'opts'`influence'"'!=`""' {
+					local 0 `", `ociline`p'opts'"'
+					syntax [, Yes HIDE HORizontal VERTical Color(passthru) FColor(passthru) FIntensity(passthru) * ]
+
+					// disallowed options
+					if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
+						nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:ociline`p'opts()}"'
+						exit 198
+					}
+					
+					if `"`hide'"'!=`""' qui replace `touseDiam' = 0 if `plotid'==`p'
+
+					local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `ovLineLCI' if `touse' & `plotid'==`p', `defOCIlineOpts' `ocilineopts' `options' ||"'
+					local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `ovLineUCI' if `touse' & `plotid'==`p', `defOCIlineOpts' `ocilineopts' `options' ||"'
+					
+					// area plot -- use `touseOCI'
+					if "`color'`fcolor'`fintensity'"!=`""' {
+						local ociline`p'opts `"`ocilineopts' `color' `fcolor' `fintensity' `options'"'
+						local olineAreaPlot `"`macval(olineAreaPlot)' rarea `ovMin' `ovMax' `ovLineX' if `touseOCI' & `plotid'==`p', `macval(ociline`p'opts)' lwidth(none) cmissing(n) ||"'
+						qui replace `touseOCI' = 2 if `plotid'==`p'
+					}
+					else qui replace `touseOCI' = 1 if `plotid'==`p'
+				}
+			}			// end if r(N) [i.e. if any obs with `ovline' & plotid==`p']
+				
+			
 			* POOLED EFFECT MARKERS
-			local touse2 `"`toused' & inlist(`_USE', 3, 5) & `plotid'==`p'"'		// use local, not tempvar, so conditions are copied into plot commands
-			qui count if `touse2' & `diamFlag'
+			local touse2 `"`touseDiam' & inlist(`_USE', 3, 5) & `plotid'==`p'"'		// use local, not tempvar, so conditions are copied into plot commands
+			qui count if `touse2'
 			if r(N) {
 			
 				* DIAMONDS:  DRAW POLYGONS WITH -twoway rarea-
@@ -3377,8 +3539,8 @@ program define BuildPlotCmds, sclass
 				if trim(`"`ppointopts'`ppoint`p'opts'`pciopts'`pci`p'opts'`interaction'`diamonds'"') == `""' {
 				
 					local 0 `", `diam`p'opts'"'
-					syntax [, Color(string) LColor(string) ///
-						HORizontal VERTical CMISsing(string) SORT * ]
+					syntax [, Color(passthru) LColor(passthru) ///
+						HORizontal VERTical CMISsing(passthru) SORT * ]
 
 					// disallowed options
 					if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
@@ -3395,14 +3557,8 @@ program define BuildPlotCmds, sclass
 					}
 					
 					// rebuild option list
-					if `"`color'"'!=`""' & `"`lcolor'"'==`""' local lcolor `color'			// convert `color' -rarea- option to `lcolor' -line- option
-					local diamPlot`p'Opts
-					foreach opt in color lcolor {
-						if `"``opt''"'!=`""' {
-							local diamPlot`p'Opts `"`diamPlot`p'Opts' `opt'(``opt'')"'
-						}
-					}
-					local diamPlot`p'Opts `"`defDiamOpts' `diamopts' `diamPlot`p'Opts' `options'"'		// main options first, then options specific to plot `p'
+					if `"`color'"'!=`""' & `"`lcolor'"'==`""' local lcolor l`color'						// convert `color' -rarea- option to `lcolor' -line- option
+					local diamPlot`p'Opts `"`defDiamOpts' `diamopts' `color' `lcolor' `options'"'		// main options first, then options specific to plot `p'
 					
 					// Now check whether any diamonds are offscale (niche case -- see also comments on ppoint below)
 					// If so, will need to draw round the edges of the polygon, excepting the "offscale edges"
@@ -3427,7 +3583,7 @@ program define BuildPlotCmds, sclass
 					// shouldn't need to bother with arrows etc. here, as pooled effect should always be narrower than individual estimates
 					// but do it anyway, just in case of non-obvious use case
 					local 0 `", `pci`p'opts'"'
-					syntax [, LColor(string) MColor(string) LWidth(string) MLWidth(string) ///
+					syntax [, LColor(passthru) MColor(passthru) LWidth(passthru) MLWidth(passthru) ///
 						RCAP HORizontal VERTical /*Connect(string)*/ * ]											// check for disallowed options + rcap
 					
 					// disallowed options
@@ -3443,15 +3599,9 @@ program define BuildPlotCmds, sclass
 					*/
 					
 					// rebuild option list
-					if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""'  local mcolor  `lcolor'			// for pc(b)arrow
-					if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' local mlwidth `lwidth'			// for pc(b)arrow
-					local PCIPlot`p'Opts
-					foreach opt in mcolor lcolor mlwidth lwidth {
-						if `"``opt''"'!=`""' {
-							local PCIPlot`p'Opts `"`PCIPlot`p'Opts' `opt'(``opt'')"'
-						}
-					}
-					local PCIPlot`p'Opts `"`defPCIOpts' `pciopts' `PCIPlot`p'Opts' `options'"'		// main options first, then options specific to plot `p'
+					if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""'  local mcolor = subinstr(`"`lcolor'"', "l", "m", 1)		// for pc(b)arrow
+					if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' local mlwidth m`lwidth'									// for pc(b)arrow
+					local PCIPlot`p'Opts `"`defPCIOpts' `pciopts' `mcolor' `lcolor' `mlwidth' `lwidth' `options'"'		// main options first, then options specific to plot `p'
 					local PCIPlot`p'Type = cond("`rcap'"=="", "`PCIPlotType'", "rcap")
 					
 					// default: both ends within scale (i.e. no arrows)
@@ -3478,132 +3628,126 @@ program define BuildPlotCmds, sclass
 					}				
 					local ppointPlot `"`macval(ppointPlot)' scatter `id' `_ES' if `touse2', `defPPointOpts' `ppointopts' `ppoint`p'opts' ||"'
 					
-					qui replace `diamFlag' = 2 if `plotid'==`p'
+					qui replace `touseDiam' = 1 if `plotid'==`p'	// line, not area
 				}
 				
 				* PREDICTION INTERVAL
-				if `"`rfdist'"'==`""' {
-					if trim(`"`rf`p'opts'"') != `""' {
+				if trim(`"`rf`p'opts'"') != `""' {
+					if `"`rfdist'"'==`""' {
 						nois disp as err `"prediction interval not specified; relevant suboptions for {bf:plotid==`p'} will be ignored"'
 					}
-				}
-				else {
-					local 0 `", `rf`p'opts'"'
-					syntax [, LColor(string) MColor(string) LWidth(string) MLWidth(string) ///
-						RCAP OVerlay HORizontal VERTical /*Connect(string)*/ * ]									// check for disallowed options + rcap, plus additional option -overlay-
-					
-					// disallowed options
-					if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
-						nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:rf`p'opts}"'
-						exit 198
-					}
-					/*
-					if `"`connect'"' != `""' {
-						nois disp as err `"suboption {bf:connect()} not allowed in option {bf:rf`p'opts()}"'
-						exit 198
-					}
-					*/
-					
-					// rebuild option list
-					if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""'  local mcolor  `lcolor'			// for pc(b)arrow
-					if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' local mlwidth `lwidth'			// for pc(b)arrow
-					local RFPlot`p'Opts
-					foreach opt in mcolor lcolor mlwidth lwidth {
-						if `"``opt''"'!=`""' {
-							local RFPlot`p'Opts `"`RFPlot`p'Opts' `opt'(``opt'')"'
-						}
-					}
-					local RFPlot`p'Opts `"`defRFOpts' `rfopts' `RFPlot`p'Opts' `options'"'		// main options first, then options specific to plot `p'
-					local RFPlot`p'Type = cond("`rcap'"=="", "`RFPlotType'", "rcap")
-				
-					// if overlay, use same approach as for CI/PCI
-					if trim(`"`overlay'`g_overlay'"') != `""' {
-						local touse_add `"float(`_rfUCI')>=float(`CXmin') & float(`_rfLCI')<=float(`CXmax') & float(`_rfLCI')!=float(`_rfUCI')"'
-				
-						// default: both ends within scale (i.e. no arrows)
-						local touse3 `"`touse2' & !`rfLoffscaleL' & !`rfRoffscaleR' & `touse_add'"'
-						local RFPlot `"`macval(RFPlot)' `RFPlot`p'Type' `_rfLCI' `_rfUCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)' ||"'
-
-						// if arrows required
-						local touse3 `"`touse2' & `rfLoffscaleL' & `rfRoffscaleR' & `touse_add'"'
-						qui count if `touse3'
-						if r(N) {													// both ends off scale
-							local RFPlot `"`macval(RFPlot)' pcbarrow `id' `_rfLCI' `id' `_rfUCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
-						}
-						local touse3 `"`touse2' & `rfLoffscaleL' & !`rfRoffscaleR' & `touse_add'"'
-						qui count if `touse3'
-						if r(N) {													// only left off scale
-							local RFPlot `"`macval(RFPlot)' pcarrow `id' `_rfUCI' `id' `_rfLCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
-							if "`RFPlotType'" == "rcap" {			// add cap to other end if appropriate
-								local RFPlot `"`macval(RFPlot)' rcap `_rfUCI' `_rfUCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)' ||"'
-							}
-						}
-						local touse3 `"`touse2' & !`rfLoffscaleL' & `rfRoffscaleR' & `touse_add'"'
-						qui count if `touse3'
-						if r(N) {													// only right off scale
-							local RFPlot `"`macval(RFPlot)' pcarrow `id' `_rfLCI' `id' `_rfUCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
-							if "`RFPlotType'" == "rcap" {			// add cap to other end if appropriate
-								local RFPlot `"`macval(RFPlot)' rcap `_rfLCI' `_rfLCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)' ||"'
-							}
-						}
-					}
-					
-					// otherwise, need to do it slightly differently, as we are dealing with two separate (left/right) lines
 					else {
+						local 0 `", `rf`p'opts'"'
+						syntax [, LColor(passthru) MColor(passthru) LWidth(passthru) MLWidth(passthru) ///
+							RCAP OVerlay HORizontal VERTical /*Connect(string)*/ * ]									// check for disallowed options + rcap, plus additional option -overlay-
+						
+						// disallowed options
+						if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
+							nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:rf`p'opts}"'
+							exit 198
+						}
+						/*
+						if `"`connect'"' != `""' {
+							nois disp as err `"suboption {bf:connect()} not allowed in option {bf:rf`p'opts()}"'
+							exit 198
+						}
+						*/
+						
+						// rebuild option list
+						if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""'  local mcolor = subinstr(`"`lcolor'"', "l", "m", 1)		// for pc(b)arrow
+						if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' local mlwidth m`lwidth'									// for pc(b)arrow
+						local RFPlot`p'Opts `"`defRFOpts' `rfopts' `mcolor' `lcolor' `mlwidth' `lwidth' `options'"'		// main options first, then options specific to plot `p'
+						local RFPlot`p'Type = cond("`rcap'"=="", "`RFPlotType'", "rcap")
 					
-						// identify special cases where only one line required, with two arrows
-						local touse3 `"`touse2' & (`rfLoffscaleL' & `rfLoffscaleR') | (`rfRoffscaleL' & `rfRoffscaleR')"'
-						qui count if `touse3'
-						if r(N) {
-							local RFPlot `"`macval(RFPlot)' pcbarrow `id' `_rfLCI' `id' `_rfUCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
+						// if overlay, use same approach as for CI/PCI
+						if trim(`"`overlay'`g_overlay'"') != `""' {
+							local touse_add `"float(`_rfUCI')>=float(`CXmin') & float(`_rfLCI')<=float(`CXmax') & float(`_rfLCI')!=float(`_rfUCI')"'
+					
+							// default: both ends within scale (i.e. no arrows)
+							local touse3 `"`touse2' & !`rfLoffscaleL' & !`rfRoffscaleR' & `touse_add'"'
+							local RFPlot `"`macval(RFPlot)' `RFPlot`p'Type' `_rfLCI' `_rfUCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)' ||"'
+
+							// if arrows required
+							local touse3 `"`touse2' & `rfLoffscaleL' & `rfRoffscaleR' & `touse_add'"'
+							qui count if `touse3'
+							if r(N) {													// both ends off scale
+								local RFPlot `"`macval(RFPlot)' pcbarrow `id' `_rfLCI' `id' `_rfUCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
+							}
+							local touse3 `"`touse2' & `rfLoffscaleL' & !`rfRoffscaleR' & `touse_add'"'
+							qui count if `touse3'
+							if r(N) {													// only left off scale
+								local RFPlot `"`macval(RFPlot)' pcarrow `id' `_rfUCI' `id' `_rfLCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
+								if "`RFPlotType'" == "rcap" {			// add cap to other end if appropriate
+									local RFPlot `"`macval(RFPlot)' rcap `_rfUCI' `_rfUCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)' ||"'
+								}
+							}
+							local touse3 `"`touse2' & !`rfLoffscaleL' & `rfRoffscaleR' & `touse_add'"'
+							qui count if `touse3'
+							if r(N) {													// only right off scale
+								local RFPlot `"`macval(RFPlot)' pcarrow `id' `_rfLCI' `id' `_rfUCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
+								if "`RFPlotType'" == "rcap" {			// add cap to other end if appropriate
+									local RFPlot `"`macval(RFPlot)' rcap `_rfLCI' `_rfLCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)' ||"'
+								}
+							}
 						}
 						
-						// left-hand line
-						local touse_add `"float(`_rfLCI')<=float(`CXmax') & float(`_rfLCI')!=float(`_LCI')"'
-
-						local touse3 `"`touse2' & !`rfLoffscaleL' & !`rfLoffscaleR' & !`offscaleL' & `touse_add'"'
-						local RFPlot `"`macval(RFPlot)' `RFPlot`p'Type' `_LCI' `_rfLCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)' ||"'
+						// otherwise, need to do it slightly differently, as we are dealing with two separate (left/right) lines
+						else {
 						
-						local touse3 `"`touse2' & `rfLoffscaleL' & !`rfLoffscaleR' & !`offscaleL' & `touse_add'"'
-						qui count if `touse3'
-						if r(N) {										// left-hand end off scale
-							local RFPlot `"`macval(RFPlot)' pcarrow `id' `_LCI' `id' `_rfLCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
-						}
+							// identify special cases where only one line required, with two arrows
+							local touse3 `"`touse2' & (`rfLoffscaleL' & `rfLoffscaleR') | (`rfRoffscaleL' & `rfRoffscaleR')"'
+							qui count if `touse3'
+							if r(N) {
+								local RFPlot `"`macval(RFPlot)' pcbarrow `id' `_rfLCI' `id' `_rfUCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
+							}
+							
+							// left-hand line
+							local touse_add `"float(`_rfLCI')<=float(`CXmax') & float(`_rfLCI')!=float(`_LCI')"'
 
-						local touse3 `"`touse2' & !`rfLoffscaleL' & `rfLoffscaleR' & !`offscaleL' & `touse_add'"'
-						qui count if `touse3'
-						if r(N) {										// right-hand end off scale
-							local RFPlot `"`macval(RFPlot)' pcarrow `id' `_rfLCI' `id' `_LCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
-						}
+							local touse3 `"`touse2' & !`rfLoffscaleL' & !`rfLoffscaleR' & !`offscaleL' & `touse_add'"'
+							local RFPlot `"`macval(RFPlot)' `RFPlot`p'Type' `_LCI' `_rfLCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)' ||"'
+							
+							local touse3 `"`touse2' & `rfLoffscaleL' & !`rfLoffscaleR' & !`offscaleL' & `touse_add'"'
+							qui count if `touse3'
+							if r(N) {										// left-hand end off scale
+								local RFPlot `"`macval(RFPlot)' pcarrow `id' `_LCI' `id' `_rfLCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
+							}
 
-						// right-hand line
-						local touse_add `"float(`_rfUCI')>=float(`CXmin') & float(`_rfUCI')!=float(`_UCI')"'
-						
-						local touse3 `"`touse2' & !`rfRoffscaleL' & !`rfRoffscaleR' & !`offscaleR' & `touse_add'"'
-						local RFPlot `"`macval(RFPlot)' `RFPlot`p'Type' `_UCI' `_rfUCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)' ||"'
-						
-						local touse3 `"`touse2' & `rfRoffscaleL' & !`rfRoffscaleR' & !`offscaleR' & `touse_add'"'
-						qui count if `touse3'
-						if r(N) {										// left-hand end off scale
-							local RFPlot `"`macval(RFPlot)' pcarrow `id' `_rfUCI' `id' `_UCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
-						}
+							local touse3 `"`touse2' & !`rfLoffscaleL' & `rfLoffscaleR' & !`offscaleL' & `touse_add'"'
+							qui count if `touse3'
+							if r(N) {										// right-hand end off scale
+								local RFPlot `"`macval(RFPlot)' pcarrow `id' `_rfLCI' `id' `_LCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
+							}
 
-						local touse3 `"`touse2' & !`rfRoffscaleL' & `rfRoffscaleR' & !`offscaleR' & `touse_add'"'
-						qui count if `touse3'
-						if r(N) {										// right-hand end off scale
-							local RFPlot `"`macval(RFPlot)' pcarrow `id' `_UCI' `id' `_rfUCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
+							// right-hand line
+							local touse_add `"float(`_rfUCI')>=float(`CXmin') & float(`_rfUCI')!=float(`_UCI')"'
+							
+							local touse3 `"`touse2' & !`rfRoffscaleL' & !`rfRoffscaleR' & !`offscaleR' & `touse_add'"'
+							local RFPlot `"`macval(RFPlot)' `RFPlot`p'Type' `_UCI' `_rfUCI' `id' if `touse3', hor `macval(RFPlot`p'Opts)' ||"'
+							
+							local touse3 `"`touse2' & `rfRoffscaleL' & !`rfRoffscaleR' & !`offscaleR' & `touse_add'"'
+							qui count if `touse3'
+							if r(N) {										// left-hand end off scale
+								local RFPlot `"`macval(RFPlot)' pcarrow `id' `_rfUCI' `id' `_UCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
+							}
+
+							local touse3 `"`touse2' & !`rfRoffscaleL' & `rfRoffscaleR' & !`offscaleR' & `touse_add'"'
+							qui count if `touse3'
+							if r(N) {										// right-hand end off scale
+								local RFPlot `"`macval(RFPlot)' pcarrow `id' `_UCI' `id' `_rfUCI' if `touse3', `macval(RFPlot`p'Opts)' ||"'
+							}
 						}
-					}
-				}			// end else [i.e. if rfdist]
+					}			// end else [i.e. if rfdist]
+				}			// if trim(`"`rf`p'opts'"')!=`""'
 			}			// end if r(N) [i.e. if any obs with _USE==3,5 & plotid==`p']
 		}		// end if trim(`"`box`p'opts'`diam`p'opts'`point`p'opts'`ci`p'opts'`oline`p'opts'`ppoint`p'opts'`pci`p'opts'"') != `""'
 	}		// end forvalues p = 1/`np'
 
-	
+
 	* Find invalid/repeated options
 	// any such options would generate a suitable error message at the plotting stage
 	// so just exit here with error, to save the user's time
-	if regexm(`"`rest'"', "(box|diam|point|ci|oline|ociline|ppoint|pci|rf)([0-9]+)opt") {
+	if regexm(`"`rest'"', "(box|diam|point|ci|oline|ociline|ppoint|pci|rf|rfciline)([0-9]+)opt") {
 		local badopt = regexs(1)
 		local badp = regexs(2)
 		
@@ -3626,36 +3770,6 @@ program define BuildPlotCmds, sclass
 		local hide
 		
 		
-		* OVERALL LINE(S) (if appropriate)
-		summ `ovLine' if inlist(`plotid', `pplvals'), meanonly
-		if r(N) {
-			local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `ovLine' if `touse' & inlist(`plotid', `pplvals'), `defOlineOpts' `olineopts' ||"'
-
-			// Added Jan 2020
-			if `"`ocilineopts'`influence'"'!=`""' {
-				local 0 `", `ocilineopts'"'
-				syntax [, Yes HIDE HORizontal VERTical Color(passthru) FColor(passthru) FIntensity(passthru) * ]
-
-				// disallowed options
-				if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
-					nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:ociline`p'opts()}"'
-					exit 198
-				}
-				
-				if `"`hide'"'!=`""' qui replace `diamFlag' = 0 if inlist(`plotid', `pplvals')
-
-				local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `ovLineLCI' if `touse' & inlist(`plotid', `pplvals'), `defOCIlineOpts' `options' ||"'
-				local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `ovLineUCI' if `touse' & inlist(`plotid', `pplvals'), `defOCIlineOpts' `options' ||"'
-				
-				// area plot
-				if "`color'`fcolor'`fintensity'"!=`""' {
-					local ociline`p'opts `"`macval(ociline`p'Opts)' `color' `fcolor' `fintensity' `options'"'
-					local olineAreaPlot `"`macval(olineAreaPlot)' rarea `ovMin' `ovMax' `ovLineX' if `toused' & inlist(`plotid', `pplvals'), `macval(ociline`p'opts)' lwidth(none) cmissing(n) ||"'
-					qui replace `ovFlag' = 1 if inlist(`plotid', `pplvals')
-				}
-			}
-		}
-			
 		* INDIVIDUAL STUDY MARKERS
 		local touse2 `"`touse' & `_USE'==1 & inlist(`plotid', `pplvals')"'		// use local, not tempvar, so conditions are copied into plot commands
 		qui count if `touse2'
@@ -3663,7 +3777,7 @@ program define BuildPlotCmds, sclass
 		
 			* WEIGHTED SCATTER PLOT
 			local 0 `", `boxopts'"'
-			syntax [, MLABEL(string) MSIZe(string) * ]	// check for disallowed options
+			syntax [, MLABEL(passthru) MSIZe(passthru) * ]	// check for disallowed options
 			if `"`mlabel'"' != `""' {
 				disp as err "boxopts: option mlabel() not allowed"
 				exit 198
@@ -3677,10 +3791,10 @@ program define BuildPlotCmds, sclass
 			if `"`pplvals'"'==`"`plvals'"' {		// if no plot#opts specified, can plot all plotid groups at once
 				summ `_WT' if `touse2', meanonly
 				if r(N) {
-					if `nd'==1 local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & inlist(`plotid', `pplvals'), `macval(scPlotOpts)' ||"'
+					if `nd'==1 local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `tousePlotID' & `_USE'==1 & inlist(`plotid', `pplvals'), `macval(scPlotOpts)' ||"'
 					else {
 						forvalues d=1/`nd' {
-							local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & inlist(`plotid', `pplvals') & `dataid'==`d', `macval(scPlotOpts)' ||"'
+							local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `tousePlotID' & `_USE'==1 & inlist(`plotid', `pplvals') & `dataid'==`d', `macval(scPlotOpts)' ||"'
 						}
 					}
 				}
@@ -3689,15 +3803,15 @@ program define BuildPlotCmds, sclass
 				foreach p of local pplvals2 {
 					summ `_WT' if `touse' & `_USE'==1 & `plotid'==`p', meanonly
 					if r(N) {
-						if `nd'==1 local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & `plotid'==`p', `macval(scPlotOpts)' ||"'
+						if `nd'==1 local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `tousePlotID' & `_USE'==1 & `plotid'==`p', `macval(scPlotOpts)' ||"'
 						else {
 							forvalues d=1/`nd' {
-								local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `toused' & `_USE'==1 & `plotid'==`p' & `dataid'==`d', `macval(scPlotOpts)' ||"'
+								local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `tousePlotID' & `_USE'==1 & `plotid'==`p' & `dataid'==`d', `macval(scPlotOpts)' ||"'
 							}
 						}
 					}
 				}
-			}		// N.B. scatter if `toused' <-- "dummy obs" for consistent weighting
+			}		// N.B. scatter if `tousePlotID' <-- "dummy obs" for consistent weighting
 			
 			
 			* CONFIDENCE INTERVAL PLOT
@@ -3735,9 +3849,76 @@ program define BuildPlotCmds, sclass
 		}			// end if r(N) [i.e. if any obs with _USE==1 & plotid==`ppvals']
 		
 		
+		* OVERALL LINE(S) (if appropriate)
+		summ `ovLine' if inlist(`plotid', `pplvals'), meanonly
+		if r(N) {
+			local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `ovLine' if `touse' & inlist(`plotid', `pplvals'), `defOlineOpts' `olineopts' ||"'
+
+
+			* PREDICTIVE INTERVAL CI LINES (and/or areas)
+			// Do these before standard overall lines, in case of area plots
+			//  want pred. int. area plot to be underneath the "standard" CI area plot
+			// Added Jan 2020
+			if trim(`"`rfcilineopts'"') != `""' {
+				if `"`rfdist'"'==`""' {
+					nois disp as err `"prediction interval not specified; relevant suboptions will be ignored"'
+				}
+				else {
+					local 0 `", `rfcilineopts'"'
+					syntax [, Yes HIDE HORizontal VERTical Color(passthru) FColor(passthru) FIntensity(passthru) * ]
+			
+					// disallowed options
+					if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
+						nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:rfcilineopts()}"'
+						exit 198
+					}
+					
+					if `"`hide'"'!=`""' qui replace `touseDiam' = 0 if inlist(`plotid', `pplvals')
+
+					local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `rfLineLCI' if `touse' & inlist(`plotid', `pplvals'), `defRFCIlineOpts' `options' ||"'
+					local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `rfLineUCI' if `touse' & inlist(`plotid', `pplvals'), `defRFCIlineOpts' `options' ||"'
+					
+					// area plot -- use `touseRFCI'
+					if "`color'`fcolor'`fintensity'"!=`""' {
+						local rfcilineopts `"`color' `fcolor' `fintensity' `options'"'
+						local olineAreaPlot `"`macval(olineAreaPlot)' rarea `ovMin' `ovMax' `rfLineX' if `touseRFCI' & inlist(`plotid', `pplvals'), `rfcilineopts' lwidth(none) cmissing(n) ||"'
+						qui replace `touseRFCI' = 2 if inlist(`plotid', `pplvals')
+					}
+					else qui replace `touseRFCI' = 1 if inlist(`plotid', `pplvals')
+				}
+			}
+						
+			* OVERALL CI LINES (and/or areas)
+			// Added Jan 2020
+			if `"`ocilineopts'`influence'"'!=`""' {
+				local 0 `", `ocilineopts'"'
+				syntax [, Yes HIDE HORizontal VERTical Color(passthru) FColor(passthru) FIntensity(passthru) * ]
+
+				// disallowed options
+				if `"`horizontal'"'!=`""' | `"`vertical'"'!=`""' {
+					nois disp as err `"suboptions {bf:horizontal} and {bf:vertical} not allowed in option {bf:ociline`p'opts()}"'
+					exit 198
+				}
+				
+				if `"`hide'"'!=`""' qui replace `touseDiam' = 0 if inlist(`plotid', `pplvals')
+
+				local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `ovLineLCI' if `touse' & inlist(`plotid', `pplvals'), `defOCIlineOpts' `options' ||"'
+				local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `ovLineUCI' if `touse' & inlist(`plotid', `pplvals'), `defOCIlineOpts' `options' ||"'
+				
+				// area plot -- use `touseOCI'
+				if "`color'`fcolor'`fintensity'"!=`""' {
+					local ocilineopts `"`color' `fcolor' `fintensity' `options'"'
+					local olineAreaPlot `"`macval(olineAreaPlot)' rarea `ovMin' `ovMax' `ovLineX' if `touseOCI' & inlist(`plotid', `pplvals'), `macval(ocilineopts)' lwidth(none) cmissing(n) ||"'
+					qui replace `touseOCI' = 2 if inlist(`plotid', `pplvals')
+				}
+				else qui replace `touseOCI' = 1 if inlist(`plotid', `pplvals')
+			}
+		}			// end if r(N) [i.e. if any obs with `ovline' & inlist(plotid, `pplvals')]
+
+		
 		* POOLED EFFECT MARKERS		
-		local touse2 `"`toused' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals')"'		// use local, not tempvar, so conditions are copied into plot commands
-		qui count if `touse2' & `diamFlag' 
+		local touse2 `"`touseDiam' & inlist(`_USE', 3, 5) & inlist(`plotid', `pplvals')"'		// use local, not tempvar, so conditions are copied into plot commands
+		qui count if `touse2' 
 		if r(N) {
 
 			* DIAMONDS - DRAW POLYGONS WITH -twoway rarea-
@@ -3793,11 +3974,11 @@ program define BuildPlotCmds, sclass
 				}				
 				local ppointPlot `"`macval(ppointPlot)' scatter `id' `_ES' if `touse2', `defPPointOpts' `ppointopts' ||"'
 				
-				qui replace `diamFlag' = 2 if inlist(`plotid', `pplvals')
+				qui replace `touseDiam' = 1 if inlist(`plotid', `pplvals')		// line, not area
 			}
 		
 
-			* PREDICTION INTERVAL		
+			* PREDICTION INTERVAL
 			if `"`rfdist'"'==`""' {
 				if trim(`"`rfopts'"') != `""' {
 					nois disp as err `"prediction interval not specified; relevant suboptions will be ignored"'
@@ -3894,25 +4075,57 @@ program define BuildPlotCmds, sclass
 	// END GRAPH OPTS	
 	
 	
-	// Having completed parsing graph opts, need to reset `touse' and `id' in case of any changes (e.g. "hidden" pooled obs)
-	qui replace `touse' = 0 if inlist(`_USE', 3, 4, 5) & !`diamFlag'		// `hide'
-	qui replace `toused' = 0 if inlist(`_USE', 3, 4, 5) & !`diamFlag'		// `hide'
+	* If necessary, finish off storing values for later plotting
+	// added Jan 2020
+	qui count if `touseOCI'
+	if r(N) {
+		sort `touse' `dataid' `olinegroup' `id'
+		qui by `touse' `dataid' `olinegroup' : gen `ovLineLCI' = `_LCI'[1] if `touse' & `check' & !(`_LCI'[1] > `CXmax' | `_LCI'[1] < `CXmin')
+		qui by `touse' `dataid' `olinegroup' : gen `ovLineUCI' = `_UCI'[1] if `touse' & `check' & !(`_UCI'[1] > `CXmax' | `_UCI'[1] < `CXmin')
+	}
+	if `"`rfdist'"'!=`""' {
+		qui count if `touseRFCI'
+		if r(N) {
+			sort `touse' `dataid' `olinegroup' `id'
+			qui by `touse' `dataid' `olinegroup' : gen `rfLineLCI' = `_rfLCI'[1] if `touse' & `check' & !(`_rfLCI'[1] > `CXmax' | `_rfLCI'[1] < `CXmin')
+			qui by `touse' `dataid' `olinegroup' : gen `rfLineUCI' = `_rfUCI'[1] if `touse' & `check' & !(`_rfUCI'[1] > `CXmax' | `_rfUCI'[1] < `CXmin')
+		}
+	}
 	
-	sort `touse' `id'
-	drop `id'
-	qui gen long `id' = sum(`touse') if `touse'
-	qui replace `id' = `id' + 1 if `_USE'==9		// "+1" leaves a one-line gap between titles & main data
-			
+	
+	// Now, having completed parsing graph opts, reset `touse' and `id' in case of any changes (e.g. "hidden" pooled obs)
+	tempvar touse_id35
+	qui gen byte `touse_id35' = `touse' * inlist(`_USE', 3, 5) * !`touseDiam'		// `hide'
+	
+	// `id' : identify obs with `_USE'==3 or 5, and subtract 1 from obs above
+	qui count if `touse_id35'
+	if r(N) {
+		tempvar id35
+		qui bysort `touse' (`id') : gen long `id35' = sum(`touse_id35')
+		qui replace `id' = `id' - `id35' if `touse'
+		qui replace `touse' = 0 if `touse_id35'
+	}
+	
 	// Having done this, limit the ovline variables to just the first observation within each olinegroup
 	// (to prevent multiple overlapping lines from being drawn)
 	sort `touse' `dataid' `olinegroup' `id'
 	qui by `touse' `dataid' `olinegroup' : replace `ovLine'  = . if _n > 1
-	qui by `touse' `dataid' `olinegroup' : replace `ovLineLCI' = . if _n > 1
-	qui by `touse' `dataid' `olinegroup' : replace `ovLineUCI' = . if _n > 1
-	qui by `touse' `dataid' `olinegroup' : replace `ovMin' = `id'[1]  - 0.5 if `touse' & _n==1 & !missing(`ovLine')
-	qui by `touse' `dataid' `olinegroup' : replace `ovMax' = `id'[_N] + 0.5 if `touse' & _n==1 & !missing(`ovLine')
+	qui by `touse' `dataid' `olinegroup' : gen `ovMin' = `id'[1]  - 0.5 if `touse' & _n==1 & !missing(`ovLine')
+	qui by `touse' `dataid' `olinegroup' : gen `ovMax' = `id'[_N] + 0.5 if `touse' & _n==1 & !missing(`ovLine')
 
-
+	qui count if `touseOCI'
+	if r(N) {
+		qui by `touse' `dataid' `olinegroup' : replace `ovLineLCI' = . if _n > 1
+		qui by `touse' `dataid' `olinegroup' : replace `ovLineUCI' = . if _n > 1
+	}
+	if `"`rfdist'"'!=`""' {
+		qui count if `touseRFCI'
+		if r(N) {
+			qui by `touse' `dataid' `olinegroup' : replace `rfLineLCI' = . if _n > 1
+			qui by `touse' `dataid' `olinegroup' : replace `rfLineLCI' = . if _n > 1
+		}
+	}
+	
 	* Now truncate CIs at CXmin/CXmax
 	qui {
 		local touse2 `"`touse' * inlist(`_USE', 1, 3, 5)"'
@@ -3959,58 +4172,78 @@ program define BuildPlotCmds, sclass
 	}
 
 	
+	*** AREA PLOTS
+	// Jan 2020: consider all these together, so that their sort orders don't cause conflicts
+
 	// August 2018
 	// DRAW DIAMONDS AS POLYGONS USING -twoway rarea-
 	// SO THAT THEY MAY BE FILLED IN (also requires fewer variables)
-	qui count if `touse' & inlist(`_USE', 3, 5) & `diamFlag'==1
-	if r(N) {
-		qui expand 4 if `toused' & inlist(`_USE', 3, 5) & `diamFlag'==1
-		qui bysort `touse' `id' : replace `toused' = `toused' * _n
+	qui count if `touse' & inlist(`_USE', 3, 5) & `touseDiam'==2		// 2 = area (default)
+	if !r(N) qui replace `touseDiam' = 1 if `touseDiam'>1				// to avoid error if no obs with _USE=3 or 5
+	else {
+		qui expand 4 if `touseDiam' & inlist(`_USE', 3, 5) & `touseDiam'==2
+		qui bysort `touse' `id' : replace `touseDiam' = (`touseDiam'>0) * _n
+		qui replace `touseDiam' = 1 if `touseDiam'>1 & !inlist(`_USE', 3, 5)
 		
 		// x-coords
-		qui gen float `DiamX' = cond(`offscaleL', `CXmin', `_LCI') if `toused'==1 & float(`_ES') >= float(`CXmin')
-		qui replace   `DiamX' = `_ES' if `toused'==2
-		qui replace   `DiamX' = `CXmin' if `toused'==2 & float(`_ES') < `CXmin'
-		qui replace   `DiamX' = `CXmax' if `toused'==2 & float(`_ES') > `CXmax'
-		qui replace   `DiamX' = . if `toused'==2 & (float(`_UCI') < `CXmin' | float(`_LCI') > `CXmax')
-		qui replace   `DiamX' = cond(`offscaleR', `CXmax', `_UCI') if `toused'==3 & float(`_ES') <= float(`CXmax')
-		qui replace   `DiamX' = . if `toused'==4
+		qui gen float `DiamX' = cond(`offscaleL', `CXmin', `_LCI') if `touseDiam'==1 & float(`_ES') >= float(`CXmin')
+		qui replace   `DiamX' = `_ES' if `touseDiam'==2
+		qui replace   `DiamX' = `CXmin' if `touseDiam'==2 & float(`_ES') < `CXmin'
+		qui replace   `DiamX' = `CXmax' if `touseDiam'==2 & float(`_ES') > `CXmax'
+		qui replace   `DiamX' = . if `touseDiam'==2 & (float(`_UCI') < `CXmin' | float(`_LCI') > `CXmax')
+		qui replace   `DiamX' = cond(`offscaleR', `CXmax', `_UCI') if `touseDiam'==3 & float(`_ES') <= float(`CXmax')
+		qui replace   `DiamX' = . if `touseDiam'==4
 		
 		// upper y-coords
-		qui gen float `DiamY1' = cond(`offscaleL', `id' + 0.4*( abs((`CXmin'-`_LCI')/(`_ES'-`_LCI')) ), `id') if `toused'==1 & float(`_ES') >= float(`CXmin')
-		qui replace   `DiamY1' = `id' + 0.4 if `toused'==2
-		qui replace   `DiamY1' = `id' + 0.4*( abs((`_UCI'-`CXmin')/(`_UCI'-`_ES')) ) if `toused'==2 & float(`_ES') < float(`CXmin')
-		qui replace   `DiamY1' = `id' + 0.4*( abs((`CXmax'-`_LCI')/(`_ES'-`_LCI')) ) if `toused'==2 & float(`_ES') > float(`CXmax')
-		qui replace   `DiamY1' = cond(`offscaleR', `id' + 0.4*( abs((`_UCI'-`CXmax')/(`_UCI'-`_ES')) ), `id') if `toused'==3 & float(`_ES') <= float(`CXmax')
-		qui replace   `DiamY1' = . if `toused'==4
+		qui gen float `DiamY1' = cond(`offscaleL', `id' + 0.4*( abs((`CXmin'-`_LCI')/(`_ES'-`_LCI')) ), `id') if `touseDiam'==1 & float(`_ES') >= float(`CXmin')
+		qui replace   `DiamY1' = `id' + 0.4 if `touseDiam'==2
+		qui replace   `DiamY1' = `id' + 0.4*( abs((`_UCI'-`CXmin')/(`_UCI'-`_ES')) ) if `touseDiam'==2 & float(`_ES') < float(`CXmin')
+		qui replace   `DiamY1' = `id' + 0.4*( abs((`CXmax'-`_LCI')/(`_ES'-`_LCI')) ) if `touseDiam'==2 & float(`_ES') > float(`CXmax')
+		qui replace   `DiamY1' = cond(`offscaleR', `id' + 0.4*( abs((`_UCI'-`CXmax')/(`_UCI'-`_ES')) ), `id') if `touseDiam'==3 & float(`_ES') <= float(`CXmax')
+		qui replace   `DiamY1' = . if `touseDiam'==4
 		
 		// lower y-coords
-		qui gen float `DiamY2' = cond(`offscaleL', `id' - 0.4*( abs((`CXmin'-`_LCI')/(`_ES'-`_LCI')) ), `id') if `toused'==1 & float(`_ES') >= float(`CXmin')
-		qui replace   `DiamY2' = `id' - 0.4 if `toused'==2
-		qui replace   `DiamY2' = `id' - 0.4*( abs((`_UCI'-`CXmin')/(`_UCI'-`_ES')) ) if `toused'==2 & float(`_ES') < float(`CXmin')
-		qui replace   `DiamY2' = `id' - 0.4*( abs((`CXmax'-`_LCI')/(`_ES'-`_LCI')) ) if `toused'==2 & float(`_ES') > float(`CXmax')
-		qui replace   `DiamY2' = cond(`offscaleR', `id' - 0.4*( abs((`_UCI'-`CXmax')/(`_UCI'-`_ES')) ), `id') if `toused'==3 & float(`_ES') <= float(`CXmax')
-		qui replace   `DiamY2' = . if `toused'==4
-		
-		qui replace `touse'  = 0 if `toused' > 1 & inlist(`_USE', 3, 5) & `diamFlag'==1
-		qui replace `toused' = 1 if `toused' > 1
-		// these dummy obs are identifiable by "inlist(`_USE', 3, 5) & `toused'>1 & !`touse'"
+		qui gen float `DiamY2' = cond(`offscaleL', `id' - 0.4*( abs((`CXmin'-`_LCI')/(`_ES'-`_LCI')) ), `id') if `touseDiam'==1 & float(`_ES') >= float(`CXmin')
+		qui replace   `DiamY2' = `id' - 0.4 if `touseDiam'==2
+		qui replace   `DiamY2' = `id' - 0.4*( abs((`_UCI'-`CXmin')/(`_UCI'-`_ES')) ) if `touseDiam'==2 & float(`_ES') < float(`CXmin')
+		qui replace   `DiamY2' = `id' - 0.4*( abs((`CXmax'-`_LCI')/(`_ES'-`_LCI')) ) if `touseDiam'==2 & float(`_ES') > float(`CXmax')
+		qui replace   `DiamY2' = cond(`offscaleR', `id' - 0.4*( abs((`_UCI'-`CXmax')/(`_UCI'-`_ES')) ), `id') if `touseDiam'==3 & float(`_ES') <= float(`CXmax')
+		qui replace   `DiamY2' = . if `touseDiam'==4
 	}
 	
 	// OCILine area plots
-	qui count if `touse' & `ovFlag'==1 & !missing(`ovLineLCI', `ovLineUCI')
+	qui count if `touse' & `touseOCI'==2		// 2 = area
 	if r(N) {
-		qui expand 3 if `touse' & `ovFlag'==1 & !missing(`ovLineLCI', `ovLineUCI')
-		qui bysort `touse' `id' : replace `toused' = `toused' * _n
-		qui gen float `ovLineX' = cond(`offscaleL', `CXmin', `ovLineLCI') if `toused'==1 & float(`_ES') >= float(`CXmin')
-		qui replace   `ovLineX' = cond(`offscaleR', `CXmax', `ovLineUCI') if `toused'==2 & float(`_ES') <= float(`CXmax')
-		qui replace   `ovLineX' = . if `toused'==3
-	
-		qui replace `touse'  = 0 if `toused' > 1 & `ovFlag'==1
-		qui replace `toused' = 1 if `toused' > 1
-		// these dummy obs are identifiable by "inlist(`_USE', 3, 5) & `toused'>1 & !`touse'"
+		qui count if `touse' & `touseOCI'==2 & !missing(`ovLineLCI', `ovLineUCI')
+		if r(N) {
+			qui expand 3 if `touse' & `touseOCI'==2 & !missing(`ovLineLCI', `ovLineUCI')
+			qui bysort `touse' `id' (`touseDiam') : replace `touseOCI' = (`touseOCI'>0) * _n
+			qui gen float `ovLineX' = cond(`offscaleL', `CXmin', `ovLineLCI') if `touseOCI'==1 & float(`_ES') >= float(`CXmin')
+			qui replace   `ovLineX' = cond(`offscaleR', `CXmax', `ovLineUCI') if `touseOCI'==2 & float(`_ES') <= float(`CXmax')
+			qui replace   `ovLineX' = . if `touseOCI'==3
+		}
 	}
 		
+	// RFCILine area plots
+	if `"`rfdist'"'!=`""' {
+		qui count if `touse' & `touseRFCI'==2		// 2 = area
+		if r(N) {
+			qui count if `touse' & `touseRFCI'==2 & !missing(`rfLineLCI', `rfLineUCI')
+			if r(N) {
+				qui expand 3 if `touse' & `touseRFCI'==2 & !missing(`rfLineLCI', `rfLineUCI')
+				qui bysort `touse' `id' (`touseDiam' `touseOCI') : replace `touseRFCI' = (`touseRFCI'>0) * _n
+				qui gen float `rfLineX' = cond(`rfLoffscaleL', `CXmin', `rfLineLCI') if `touseRFCI'==1 & float(`_ES') >= float(`CXmin')
+				qui replace   `rfLineX' = cond(`rfRoffscaleR', `CXmax', `rfLineUCI') if `touseRFCI'==2 & float(`_ES') <= float(`CXmax')
+				qui replace   `rfLineX' = . if `touseRFCI'==3
+			}
+		}
+	}
+
+	qui replace `touse' = 0 if `touseDiam' > 1 | `touseOCI' > 1
+	if `"`rfdist'"'!=`""' {
+		qui replace `touse' = 0 if `touseRFCI' > 1
+	}
+	
 	// DF: modified to use added line approach instead of pcspike (less complex & poss. more efficient as fewer vars)
 	// null line (unless switched off)
 	if "`null'" == "" {
@@ -4027,11 +4260,18 @@ program define BuildPlotCmds, sclass
 		}
 		*/
 		
-		summ `id', meanonly
-		local DYmin = r(min)-1
+		// Amended Apr 2020
+		// summ `id', meanonly
+		// local DYmin = r(min)-1
+		local DYmin = 0
 		
-		summ `id' if `_USE'!=9, meanonly
-		local borderline = r(max) + 1 - 0.25
+		summ `id' if `_USE'==9, meanonly
+		if r(N) local borderline = r(min) - 1 - 0.25
+		else {
+			summ `id' if `_USE'!=9, meanonly
+			local borderline = r(max) + 1 - 0.25
+		}
+		
 		local nullCommand `" function y=`h0', horiz range(`DYmin' `borderline') n(2) `defNlineOpts' `options' ||"'
 	}
 	

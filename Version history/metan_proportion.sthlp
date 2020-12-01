@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 3.5 (beta)  David Fisher  21jan2020}{...}
+{* *! version 3.6 (beta)  David Fisher  22may2020}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "metan_model" "help metan_model"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
@@ -39,9 +39,10 @@
 
 {synopt :{opt cc(#)}}use continuity correction value other than 0.5 for zero cells{p_end}
 {synopt :{opt nocc}}suppress continuity correction entirely{p_end}
+{synopt :{opt citype(ci_type)}}method of constructing confidence intervals for reporting of individual studies ({ul:not} pooled results){p_end}
+{synopt :{opt denom:inator(#)}}specify a denominator for presentation of proportion data{p_end}
 {synopt :{opt noint:eger}}allow cell counts to be non-integers{p_end}
 {synopt :{opt tr:ansform(tr_method)}}specify a transformation for analysis of proportion data{p_end}
-{synopt :{opt denom:inator(#)}}specify a denominator for presentation of proportion data{p_end}
 
 {syntab :Forest plot and/or saved data}
 {synopt :{opt co:unts}}display data counts ({it:n}/{it:N}){p_end}
@@ -66,31 +67,6 @@ and to find documentation for {it:{help metan_model:model_spec}} and {it:{help m
 {dlgtab:Options}
 
 {phang}
-{opt transform(tr_method)} specifies a method of transforming proportion data to create a distribution closer to normality
-and to stabilise variances.  The following transformations are available using {it:tr_method}:
-
-{pmore}
-{opt logit} specifies the Logit transform. Estimates and variances are undefined if the proportion is zero or one,
-so by default a continuity correction of 0.5 is applied; see {opt cc()}
-
-{pmore}
-{opt ar:csine} specifies the Arcsine transform, for which continuity correction is not required.
-
-{pmore}
-{opt ft:ukey} specifies the Freeman-Tukey double-arcsine transform. Again, continuity correction is not required.
-{help metan##refs:Schwarzer et al (2019)} show that the standard back-transformation using the harmonic mean
-can sometimes give misleading results. Hence, sensitivity analyses may be carried out using the extended syntax
-{cmd:transform(}{opt ft:ukey} [{cmd:, }{opt a:rithmetic}|{opt g:eometric}]{cmd:)} to specify an alternative mean.
-
-{phang}
-{opt citype(ci_type)} specifies how confidence limits for individual studies should be constructed for display purposes.
-This option acts independently of how confidence limits for {ul:pooled} results are constructed
-(which will depend upon {it:{help metan_model##model_spec}}). See also {bf:{help metan##options_main:level(#)}}
-
-{phang2}
-For proportion data, the default {it:ci_type} is {opt exact} but can also be {opt wilson}; see help for {bf:{help ci}}.
-
-{phang}
 {opt cc(#)} controls continuity correction in the case where studies contain zero cells.
 
 {pmore}
@@ -109,7 +85,38 @@ In that case, studies containing zero cells may be excluded from the analysis.
 Studies containing zero cells may be excluded from the analysis.
 
 {phang}
+{opt citype(ci_type)} specifies how confidence limits for individual studies should be constructed for display purposes.
+This option acts independently of how confidence limits for {ul:pooled} results are constructed
+(which will depend upon {it:{help metan_model:model_spec}}). See also {bf:{help metan##options_main:level(#)}}
+
+{phang2}
+For proportion data, the default {it:ci_type} is {opt wilson} but can also be {opt exact}; see help for {bf:{help ci}}.
+
+{phang}
+{opt denominator(#)} specifies a denominator for presenting proportion data, with a default value of 1.
+For example, specifying {cmd:denominator(100)} would present the data as percentages between 0 and 100. 
+Specifying {cmd:denominator(1000)} would present the data as the number of events per 1000 observations.
+Note that this option has no effect upon the analysis; it simply scales the results.
+
+{phang}
 {opt nointeger} allows cell counts or sample sizes to be non-integers.
+
+{phang}
+{opt transform(tr_method)} specifies a method of transforming proportion data to create a distribution closer to normality
+and to stabilise variances.  The following transformations are available using {it:tr_method}:
+
+{pmore}
+{opt logit} specifies the Logit transform. Estimates and variances are undefined if the proportion is zero or one,
+so by default a continuity correction of 0.5 is applied; see {opt cc()}
+
+{pmore}
+{opt ar:csine} specifies the Arcsine transform, for which continuity correction is not required.
+
+{pmore}
+{opt ft:ukey} specifies the Freeman-Tukey double-arcsine transform. Again, continuity correction is not required.
+{help metan##refs:Schwarzer et al (2019)} show that the standard back-transformation using the harmonic mean
+can sometimes give misleading results. Hence, sensitivity analyses may be carried out using the extended syntax
+{cmd:transform(}{opt ft:ukey} [{cmd:, }{opt a:rithmetic}|{opt g:eometric}]{cmd:)} to specify an alternative mean.
 
 
 {dlgtab:Forest plot and/or saved data}
@@ -119,12 +126,6 @@ Studies containing zero cells may be excluded from the analysis.
 
 {pmore}
 {opt group1(string)} specifies a column heading for the {opt counts} column.
-
-{phang}
-{opt denominator(#)} specifies a denominator for presenting proportion data, with a default value of 1.
-For example, specifying {cmd:denominator(100)} would present the data as percentages between 0 and 100. 
-Specifying {cmd:denominator(1000)} would present the data as the number of events per 1000 observations.
-Note that this option has no effect upon the analysis; it simply scales the results.
 
 
 
