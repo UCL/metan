@@ -199,8 +199,8 @@ and a message appears above the table of results warning that estimates should b
 
 {phang}
 {opt ovwt}, {opt sgwt} over-ride the default choice of whether to display overall weights or within-subgroup weights
-in the screen output and forest plot. Note that this makes no difference to the calculations,
-as weights are normalised anyway.
+in the screen output and forest plot. Note that, since weights are normalised, these options do not affect
+estimation of pooled effects or heterogeneity statistics.
 
 {phang}
 {opt poolvar(model_coefficient)} allows the coefficient to be pooled to be explicitly stated in situations where it may not be obvious,
