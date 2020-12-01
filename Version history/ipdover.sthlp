@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 1.01  David Fisher  15apr2014}{...}
+{* *! version 1.02  David Fisher  23jul2014}{...}
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "metan" "help metan"}{...}
@@ -20,7 +20,7 @@
 {p 8 18 2}
 {cmd:ipdover}
 	[{it:{help exp_list}}]
-	{cmd:,} {opt over(varlist)} [{opt over(varname)} {it:options}] {cmd::} {it:command}
+	{cmd:, over(}{it:varlist} [{cmd:, {ul:m}issing}]{cmd:)} [{cmd: over(}{it:varname} [{cmd:, {ul:m}issing}]{cmd:)} {it:options}] {cmd::} {it:command}
 
 
 
@@ -28,9 +28,9 @@
 {title:Description}
 
 {pstd}
-{cmd:ipdover} extends the forest-plot functionality of {help ipdmetan} outside the context of meta-analysis.
-It does not perform any pooling or heterogeneity calculations; rather, its intended use is subgroup analyses
-within a single trial dataset.
+{cmd:ipdover} extends the functionality of {help ipdmetan} outside the context of meta-analysis.
+It does not perform any pooling or heterogeneity calculations;
+rather, its intended use is creating forestplots of subgroup analyses within a single trial dataset.
 Basic syntax is
 
 {phang2}
@@ -44,16 +44,19 @@ with this basic syntax of {cmd:ipdover}; see {help ipdmetan} for help with using
 commands.
 
 {pstd}
-{cmd:ipdover} functions in a similar way to {help ipdmetan}, with the following main differences:
-the {cmd:over()} option replaces {cmd:study()} and {cmd:by()};
+{cmd:ipdover} functions in a similar way to {help ipdmetan}, with the following main differences in syntax:
+the {cmd:over()} option(s) replace(s) {cmd:study()} and {cmd:by()};
 the {cmd:ad()} and {cmd:re()} options are not permitted;
 and the {cmd:plotid()} option has a slightly different syntax (see below).
 
 {pstd}
-Saved datasets include the following identifier variables:{p_end}
+Note that forestplots produced by {cmd:ipdover} are weighted by sample size rather than by the inverse of the variance.
+
+{pstd}
+Saved datasets (see {help ipdmetan}) include the following identifier variables:{p_end}
 {p2colset 8 24 24 8}
 {p2col:{cmd:_BY}}subset of data (c.f. {help by}){p_end}
-{p2col:{cmd:_OVER}}{cmd:over()} variable; must be integer-valued or string{p_end}
+{p2col:{cmd:_OVER}}{cmd:over()} variable{p_end}
 {p2col:{cmd:_LEVEL}}level of {cmd:over()} variable.{p_end}
 
 
@@ -63,15 +66,18 @@ Saved datasets include the following identifier variables:{p_end}
 {dlgtab:Options specific to ipdover}
 
 {phang}
-{opt over(varlist)} [{opt over(varname)}] specifies the variable(s) whose levels {it:command} is to be fitted within.
+{cmd:over(}{it:varlist} [{cmd:, missing}]{cmd:)} [{cmd: over(}{it:varname} [{cmd:, missing}]{cmd:)}] specifies the variable(s) whose levels {it:command} is to be fitted within.
 The option may be repeated at most once, in which case the second option must contain a single {it:varname} defining
 subsets of the data (c.f. {help by}).
 
 {pmore} All variables must be either integer-valued or string.
 Variable and value labels will appear in output where appropriate.
 
+{pmore}
+{opt missing} requests that missing values be treated as potential subgroups or subsets (the default is to exclude them).
+
 {phang}
-{cmd:plotid(_BY|_OVER|_LEVEL|_n} [{cmd:, list nograph}]{cmd:)} functions in basically the same way as in {help ipdmetan},
+{cmd:plotid(_BY | _OVER | _LEVEL | _n} [{cmd:, list nograph}]{cmd:)} functions in basically the same way as in {help ipdmetan},
 but instead of a {it:varname}, it accepts one of the following values, corresponding to variables created in saved
 datasets created by {cmd:ipdover}:{p_end}
 {p2colset 8 24 24 8}
@@ -110,9 +116,34 @@ see {help ipdmetan##options:ipdmetan} or {help forestplot##options:forestplot}.
 {synopt:{cmd:_rsample}}Observations included in the analysis (c.f. {cmd:e(sample)}){p_end}
 
 
+{title:Examples}
+
+{pstd} Example 1: Using the Hosmer & Lemeshow low birthweight data from {help logistic}
+
+{pmore}
+{cmd:. webuse lbw, clear}{p_end}
+{pmore}
+{cmd:. ipdover, over(race smoke ht) or forestplot(favours("Odds of LBW decrease" "as age increases" # "Odds of LBW increase" "as age increases") fp(0.5)): logistic low age}{p_end}
+
+{pstd} Example 2: Treatment effect by covariate subgroup by trial, using the example IPD meta-analysis dataset from {help ipdmetan}:
+
+{pmore}
+{cmd:. use ipdmetan_example.dta, clear}{p_end}
+{pmore}
+{cmd:. stset tcens, fail(fail)}{p_end}
+{pmore}
+{cmd:. ipdover, over(stage) over(trialid) hr nosubgroup nooverall forestplot(favours(Favours treatment # Favours control)) : stcox trt}
+
+
 {title:Author}
 
 {p}
 David Fisher, MRC Clinical Trials Unit at UCL, London, UK.
 
 Email {browse "mailto:d.fisher@ucl.ac.uk":d.fisher@ucl.ac.uk}
+
+
+{title:Acknowledgments}
+
+{pstd}
+Thanks to Phil Jones at UWO, Canada for suggesting improvements in functionality.

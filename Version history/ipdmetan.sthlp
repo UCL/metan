@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 1.02  David Fisher  23may2014}{...}
+{* *! version 1.03  David Fisher  23jul2014}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "admetan" "help admetan"}{...}
@@ -52,7 +52,7 @@ combine IPD with aggregate data stored in {it:filename}{p_end}
 {synopt :{cmdab:lcol:s(}{help ipdmetan##cols_info:{it:cols_info}}{cmd:)} {cmdab:rcol:s(}{help ipdmetan##cols_info:{it:cols_info}}{cmd:)}}
 display (and/or save) columns of additional data{p_end}
 {synopt :{cmd:ovstat(q)}}display Q statistics instead of I-squared{p_end}
-{synopt :{cmd:plotid(}{it:varname}{cmd:|_BYAD} [{cmd:, list nograph}]{cmd:)}}
+{synopt :{cmd:plotid(}{it:varname}{cmd:|_BYAD} [{cmd:, {ul:l}ist {ul:nogr}aph}]{cmd:)}}
 define groups of observations in which to apply specific plot rendition options{p_end}
 {synopt :{cmdab:sa:ving(}{it:{help filename}} [{cmd:, replace} {cmdab:stack:label}]{cmd:)}}save results in the form of a "forestplot dataset" to {it:filename}{p_end}
 {synopt :{cmdab:forest:plot(}{help forestplot##options:{it:forestplot_options}}{cmd:)}}other options to pass to {help forestplot}{p_end}
@@ -275,8 +275,11 @@ To force this behaviour for a numeric variable, it must first be converted to st
 extended syntax when supplied to {cmd:ipdmetan}.  {it:varname} may be replaced with {cmd:_BYAD} if the {opt byad} suboption
 is supplied to {opt ad}, since in this case the subgrouping is not defined by an existing variable.
 
+{pmore}
+For further details of this option and the {opt list} and {opt nograph} suboptions, see {help forestplot}.
+
 {phang}
-{cmd:saving(}{it:{help filename}} [{cmd:, replace} {cmd:stacklabel}]{cmd:)} saves the forestplot "resultsset" created by
+{cmd:saving(}{it:{help filename}} [{cmd:, replace} {cmd:stacklabel}]{cmd:)} saves the forestplot "results set" created by
 {cmd:ipdmetan} in a Stata data file for further use or manipulation. See {help forestplot} for further details.
 
 {pmore}
@@ -339,7 +342,7 @@ Certain iterative random-effects models may save the following additional result
 {synopt:{cmd:r(rc_eff_uci)}}Whether mu_hat upper confidence limit converged successfully{p_end}
 
 
-{title:Examples} (see Stata Journal article for more details)
+{title:Examples}
 
 {pstd}
 Setup
@@ -353,13 +356,20 @@ Setup
 Basic use
 
 {pmore}
-{cmd:. ipdmetan, study(trialid) hr by(region) forest(favours(Favours treatment # Favours control)) : stcox trt, strata(sex)}{p_end}
+{cmd:. ipdmetan, study(trialid) hr by(region) nograph : stcox trt, strata(sex)}{p_end}
+
+{pstd}
+Use of {cmd:plotid()}
+
+{pmore}
+{cmd:. ipdmetan, study(trialid) hr by(region) plotid(region) forest(favours(Favours treatment # Favours control) box1opts(mcolor(red)) ci1opts(lcolor(red) rcap)box2opts(mcolor(blue)) ci2opts(lcolor(blue)))}
+{cmd:: stcox trt, strata(sex)}{p_end}
 
 {pstd}
 Treatment-covariate interactions
 
 {pmore}
-{cmd:. ipdmetan, study(trialid) interaction hr keepall forest(favours("Favours greater treatment effect" "with higher disease stage" # "Favours greater treatment effect" "with lower disease stage") boxsca(200)) : stcox trt##c.stage}
+{cmd:. ipdmetan, study(trialid) interaction hr keepall forest(favours("Favours greater treatment effect" "with higher disease stage" # "Favours greater treatment effect" "with lower disease stage") boxsca(200) fp(1)) : stcox trt##c.stage}
 
 {pstd}
 Random effects
@@ -378,17 +388,18 @@ Aggregate data setup: create aggregate dataset from IPD dataset (for example pur
 {cmd:. clonevar _STUDY = trialid}{p_end}
 
 {pstd}
-Aggregate data analysis
+Including aggregate data in the analysis
 
 {pmore}
-{cmd:. ipdmetan, study(_STUDY) hr ad(region2.dta if _USE==1, vars(_ES _seES) npts(_NN) byad) nooverall : stcox trt if region==1, strata(sex)}
+{cmd:. ipdmetan, study(_STUDY) hr ad(region2.dta if _USE==1, vars(_ES _seES) npts(_NN) byad) nooverall}
+{cmd:: stcox trt if region==1, strata(sex)}
 
 {pstd}
-Further functionality: Peto log-rank analysis and additional forestplot options
+Use of non e-class commands and {cmd:rcols()}: Peto log-rank analysis
 
 {pmore}
-{cmd:. ipdmetan (u[1,1]/V[1,1]) (1/sqrt(V[1,1])), study(trialid) rcols((u[1,1]) %5.2f "o-E(o)" (V[1,1]) %5.1f "V(o)") by(region) plotid(region) hr forest(nooverall nostats nowt box1opts(mcolor(red)) ci1opts(lcolor(red) rcap)}
-{cmd: box2opts(mcolor(blue)) ci2opts(lcolor(blue)) favours(Favours treatment # Favours control) texts(90)) : sts test trt, mat(u V)}
+{cmd:. ipdmetan (u[1,1]/V[1,1]) (1/sqrt(V[1,1])), study(trialid) rcols((u[1,1]) %5.2f "o-E(o)" (V[1,1]) %5.1f "V(o)") by(region) plotid(region) hr forest(nostats nowt favours(Favours treatment # Favours control))}
+{cmd:: sts test trt, mat(u V)}
 
 
 {title:Author}

@@ -49,16 +49,16 @@
 * Reason:
 * - return F statistic for subgroups
 * - correct error in `touse' when passed from admetan
-* - correct error in behaviour of stacklabel under certain conditions (line 2119)
+* - correct error in behaviour of stacklabel under certain conditions (line 2156)
 
 * version 1.04  David Fisher  09apr2014
 * - fixed bug with DerSimonian & Laird random-effects
 * - fixed bug which failed to drop tempvar containing held estimates
-* - fixed bug in output table title when using ipdover (lines 2798-2803)
+* - fixed bug in output table title when using ipdover (lines 2826-2831)
 * - _rsample now returned for admetan too
 * - added ovwt/sgwt options
 
-*! version 1.05 David Fisher 05jun2014
+* version 1.05  David Fisher 05jun2014
 * Submitted to Stata Journal
 * - added Kontopantelis's bootstrap DL method and Isq sensitivity analysis
 *     and Rukhin's Bayesian tausq estimators
@@ -67,6 +67,11 @@
 *     also "study" is preferred to "trial" throughout, except for ipdover
 * - improved parsing of prefix/mixed-effects models (i.e. those containing one or more colons)
 *     also improved management of non-convergence and user breaking
+
+*! version 1.06  David Fisher 23jul2014
+* Corrected AD filename bug (line 420)
+* ipdover now uses subgroup sample size as default weight, rather than inverse-variance
+* (as suggested by Phil Jones, and as seems to be standard practice in literature)
 
 
 program ipdmetan, rclass sortpreserve
@@ -100,13 +105,12 @@ program ipdmetan, rclass sortpreserve
 		BY(string)					///
 		EFFect(string)				///
 		FORESTplot(string asis)		/// options to pass through to forestplot
-		LCOLs(string asis) RCOLs(string asis) STRLEN(integer 20)	/// lcols/rcols apply to both ipdmetan coeff matrix or to forestplot
-		noGRaph						/// can be specified either directly to ipdmetan or as a forestplot() option
-		noOVerall noSUbgroup		/// can be specified either directly to ipdmetan or as a forestplot() option
-		OVWT SGWT					/// can be specified either directly to ipdmetan or as a forestplot() option
+		LCOLs(string asis) RCOLs(string asis)	/// lcols/rcols apply to both ipdmetan coeff matrix or to forestplot
 		noTABle	noHET noTOTal 		///
 		PLOTID(string)				///
-		SAving(string)				/// specify filename in which to save "resultsset"
+		SAving(string)				/// specify filename in which to save results set
+		/// General options, may be specified either directly to ipdmetan or as a forestplot() option (see line 215)
+		noGRaph	noOVerall noSUbgroup noWT OVWT SGWT ///
 		/// Undocumented options
 		ZTOL(real 1e-6)	LEVEL(passthru)	/// ztol = tolerance for z-score (abs(ES/seES)); level = CI (default 95)
 		/// Options for specific random-effects models
@@ -118,11 +122,11 @@ program ipdmetan, rclass sortpreserve
 		*							///
 	]
 	
+	** Sort out eform opts
 	_get_eformopts, soptions eformopts(`options') allowed(__all__)
-	local options `"`s(options)'"'
-	local eform = cond(`"`s(eform)'"'=="", "", "eform")
-	if `"`effect'"'==`""' local effect = cond(`"`s(str)'"'=="", "Effect", `"`s(str)'"')
-	if `"`interaction'"'!=`""' local effect `"Interact. `effect'"'
+	local options `"`s(options)'"'		// can only contain random-effects options
+	local eform_ipdm = cond(`"`s(eform)'"'!="", "eform", "")
+	local effect_ipdm = cond(`"`effect'"'!="", `"`effect'"', cond(`"`s(str)'"'!="", `"`s(str)'"', "Effect"))
 	
 
 	** Parse random-effects option (more than one permitted syntax)
@@ -130,7 +134,7 @@ program ipdmetan, rclass sortpreserve
 	local reModel "fe"					// fixed-effects (default)
 	if `"`options'"'!=`""' {
 		local 0 `", `options'"'
-		syntax [, RE RE(string) RANDOM RANDOM(string)]
+		cap syntax [, RE RE(string) RANDOM RANDOM(string)]
 		if `"`re'"'!=`""' & `"`random'"'!=`""' {
 			disp as err "Cannot specify both re and random; please choose just one"
 			exit 198
@@ -208,27 +212,44 @@ program ipdmetan, rclass sortpreserve
 	}
 	return local re_model "`reModel'"
 	
-	* Parse forest plot options to extract those relevant to ipdmetan
+	
+	** Parse forestplot options to extract those relevant to ipdmetan
 	* But first, temporarily rename options which may be supplied to EITHER ipdmetan OR forestplot.
-	* (i.e. not noNAME, OVSTAT, STRLEN or *)
 	* "forestplot options" prioritised over "ipdmetan options" in the event of a clash
 	* ipdmetan will then pass them back through to forestplot as usual.
-	foreach x in graph overall subgroup het eform effect plotid lcols rcols ovwt sgwt {
-		local `x'2 ``x''
+	foreach x in graph overall subgroup het plotid lcols rcols ovwt sgwt wt {
+		local `x'_ipdm : copy local `x'
 	}
 	local 0 `", `forestplot'"'
 	syntax [, noGRAPH noOVERALL noSUBGroup noHET EFORM EFFECT(string) PLOTID(string asis) ///
-		LCOLS(string asis) RCOLS(string asis) noNAME OVSTAT(string) OVWT SGWT STRLEN(integer 20) *]
-	local fplotopts `"`options'"'
-	foreach x in graph overall subgroup het eform effect plotid lcols rcols ovwt sgwt {
-		if `"``x''"'==`""' local `x' ``x'2'
+		LCOLS(string asis) RCOLS(string asis) OVWT SGWT noWT *]
+
+	* sort out eform options from ipdmetan and forestplot
+	_get_eformopts, soptions eformopts(`options') allowed(__all__)
+	local fplotopts `"`s(options)'"'
+	local eform = cond(`"`s(eform)'"'!="", "eform", `"`eform_ipdm'"')
+	if `"`effect'"'=="" local effect = cond(`"`s(str)'"'!="", `"`s(str)'"', `"`effect_ipdm'"')
+	if `"`interaction'"'!=`""' local effect `"Interact. `effect'"'
+	
+	* sort out other options
+	foreach x in graph overall subgroup het ovwt sgwt wt {
+		if `"``x''"'==`""' & `"``x'_ipdm'"'!=`""' local `x' : copy local `x'_ipdm
+		local fplotopts `"`fplotopts' ``x''"'	// add straight to fplotopts; not needed any more by ipdmetan
 	}
+	foreach x in plotid lcols rcols {
+		if `"``x''"'==`""' & `"``x'_ipdm'"'!=`""' local `x' : copy local `x'_ipdm
+		* don't include these in fplotopts, as contents may need to be manipulated first
+	}
+	syntax [, noNAME OVSTAT(string) *]			// extract noNAME and OVSTAT from `0' == `", `forestplot'"'
+
+	* Error checking
 	if `"`het'"'!=`""' local ovstat "none"
 	if `: word count `ovwt' `sgwt''==2 {
 		disp as err "cannot specify both ovwt and sgwt"
 		exit 198
 	}
 	
+
 	* Main ipdmetan loop needs to add "if `touse' & `sgroup'==`i'" after "`cmdname' `anything'" but before "`options'"
 	* Hence, need to check for, and deal with, complex syntaxes e.g. svy or mixed
 	
@@ -396,20 +417,12 @@ program ipdmetan, rclass sortpreserve
 				assert `"`ADonly'"'==`""'
 				
 				gettoken ADfile : lhs
-				cap confirm file `"`ADfile'"'
-				if _rc local ADfile		// if not valid filename, clear macro
+				confirm file `"`ADfile'"'	// amended July 2014
 				
-				* If filename supplied, must also have IPD command (AD alone should use -admetan-)
-				if !_rc & `"`cmdname'"'==`""' {
+				* If filename is valid, check for presence of IPD command (AD alone should use -admetan-)
+				if `"`cmdname'"'==`""' {
 					disp as err `"Cannot specify an aggregate-data filename without IPD estimation command"'
 					disp as err `"For analysis of aggregate data alone, please use admetan instead"'
-					exit 198
-				}
-				
-				* If filename not supplied, assume using data in memory, therefore no IPD
-				if _rc & `"`cmdname'"'!=`""' {
-					disp as err `"Aggregate data assumed to be in memory, therefore cannot have IPD data too"'
-					disp as err `"Either supply a valid filename to the ad() option, or remove IPD command"'
 					exit 198
 				}
 			}
@@ -459,6 +472,12 @@ program ipdmetan, rclass sortpreserve
 	* parse `by' and `study' if NOT ipdover
 	* (this has already been done in ipdover.ado since varname/varlist must be checked at the time)
 	if `"`ipdover'"'==`""' {
+		foreach x in smissing bymissing {
+			if `"``x''"'!=`""' {
+				disp as err "Option `x' is only for use with ipdover"
+				exit 198
+			}
+		}
 		if `"`by'"'!=`""' {
 			local 0 `"`by'"'
 			syntax name(name=by) [, Missing]		// only a single (var)name is allowed
@@ -621,6 +640,7 @@ program ipdmetan, rclass sortpreserve
 	tempvar obs
 	qui gen long `obs'=_n		// observation ID, sorted by `sortby' if appropriate
 
+
 	* Sort out study ID (or 'over' vars)
 	* If IPD meta-analysis (i.e. not ipdover), create subgroup ID based on order of first occurrence
 	* (overh will be a single var, =study, so keep sgroup and stouse for later)
@@ -635,17 +655,20 @@ program ipdmetan, rclass sortpreserve
 		qui gen byte `stouse' = `touse'
 		if `"`smissing'"'==`""' markout `stouse' `overh', strok
 		
-		if `"`_over'"'==`""' {
+		* if `"`_over'"'==`""' {		// July 2014
+		if `"`ipdover'"'==`""' {
 			tempvar sobs
 			qui bysort `stouse' `overh' (`obs') : gen long `sobs' = `obs'[1]
 			qui bysort `stouse' `byIPD' `sobs' : gen long `sgroup' = (_n==1)*`stouse'
 			qui replace `sgroup' = sum(`sgroup')
 			local ns = `sgroup'[_N]					// number of studies
 			qui drop `sobs'
-		}
-			
+		* }
+		
 		* Test to see if subgroup variable varies within studies; if it does, exit with error
-		if `"`ipdover'"'==`""' & `"`cmdname'"'!=`""' {
+		* if `"`ipdover'"'==`""' & `"`cmdname'"'!=`""' {
+		if `"`cmdname'"'!=`""' {		// July 2014
+
 			qui tab `overh' if `stouse', m
 			if r(r) != `ns' {					// N.B. `ns' is already stratified by `by'
 				disp as err "Data is not suitable for meta-analysis"
@@ -672,6 +695,7 @@ program ipdmetan, rclass sortpreserve
 				}
 			}
 		}
+		}	// July 2014
 		
 		* Store variable label
 		local varlab`h' : variable label `overh'
@@ -708,9 +732,11 @@ program ipdmetan, rclass sortpreserve
 			qui levelsof `overh' if `stouse', missing local(levels)
 			if `"`levels'"'!=`""' {
 				tempname `overh'lab
-				foreach i of local levels {
-					local labname : label (`overh') `i'
-					label define ``overh'lab' `i' `"`labname'"', add				
+				foreach x of local levels {
+					if `x'!=. {
+						local labname : label (`overh') `x'
+						label define ``overh'lab' `x' `"`labname'"', add
+					}
 				}
 			}
 		}
@@ -815,6 +841,8 @@ program ipdmetan, rclass sortpreserve
 	* (to test validity, and also to find default poolvar and/or store overall returned stats if appropriate)
 	tempname totnpts
 	scalar `totnpts' = .
+	local userbreak=0				// JUN 2014: initialise
+	local noconverge=0				// JUN 2014: initialise
 	
 	if `"`cmdname'"'!=`""' {
 	
@@ -978,12 +1006,11 @@ program ipdmetan, rclass sortpreserve
 				if `"`poolvar'"'!=`""' {		// parse `poolvar' -- assume "estvareq:estvar" format
 					local estexp `poolvar'
 					cap _on_colon_parse `estexp'
-					* if _rc local estvar `"`estexp'"'	// no colon found
-					* else {
-					* 	local estvareq `"`s(before)'"'
-					* 	local estvar `"`s(after)'"'
-					* }
-					if !_rc local estvareq `"`s(before)'"'	// June 2014: above code unnecessary since estvar not used
+					if _rc local estvar `"`estexp'"'	// no colon found
+					else {
+						local estvareq `"`s(before)'"'
+						local estvar `"`s(after)'"'
+					}
 				}
 				else {
 					if inlist(`"`estvareq'"', "_", "") local estexp `"`estvar'"'
@@ -1013,7 +1040,7 @@ program ipdmetan, rclass sortpreserve
 				exit 198
 			}
 		}
-		
+
 		return local estvar `"`estexp'"'	// return this asap in case of later problems
 	
 		** Set up postfile
@@ -1022,8 +1049,8 @@ program ipdmetan, rclass sortpreserve
 		if `"`byIPD'"'!=`""' {
 			local byopt `"`: type `byIPD'' _BY"'
 		}
-		else if `"`byad'"'!=`""' local byopt "byte _BY"
-		if `"`_over'"'!=`""' local overopt "byte _OVER"
+		else if `"`byad'"'!=`""' local byopt "long _BY"
+		if `"`_over'"'!=`""' local overopt "int _OVER"
 		postfile `postname' long `sgroup' `byopt' `overopt' `overtype' `_study' byte _USE double(_ES _seES) long _NN `namesr' using `pfile'
 			
 		* Overall (non-pooled): post values or blanks, as appropriate
@@ -1073,9 +1100,7 @@ program ipdmetan, rclass sortpreserve
 
 		
 		*** Analyse IPD
-		local userbreak=0				// JUN 2014: initialise
-		local noconverge=0				// JUN 2014: initialise
-		
+	
 		* Main IPD analysis loop
 		cap drop _rsample
 		qui gen byte _rsample=0			// this will show which observations were used
@@ -1087,9 +1112,9 @@ program ipdmetan, rclass sortpreserve
 										// else, make `sgroup' equal to (`h')th over variable
 			local overh : word `h' of `study'
 
-			* If "over" vars, order them "naturally", i.e. numerically or alphabetically
+			* If ipdover, order them "naturally", i.e. numerically or alphabetically
 			* Otherwise, use existing `sgroup' and `ns' from earlier loop
-			if `"`_over'"'!=`""' {
+			if `"`ipdover'"'!=`""' {
 				cap drop `stouse'
 				qui gen byte `stouse' = `touse'
 				if `"`smissing'"'==`""' markout `stouse' `overh', strok
@@ -1139,6 +1164,7 @@ program ipdmetan, rclass sortpreserve
 					local postcoeffs `"(2) `postreps'"'			// (2) for _USE ==> unsuccessful
 				}
 				else {
+				
 					* If model was fitted successfully but desired coefficient was not estimated
 					if `eclass' {						// ADDED MAY 2014
 						local colna : colnames e(b)
@@ -1153,7 +1179,7 @@ program ipdmetan, rclass sortpreserve
 							disp as err "Coefficent could not be estimated"
 						}
 						local postcoeffs `"(2) (.) (.) (`nbeta')"'
-					}					
+					}
 					else if `sebeta'==0 | missing(`sebeta') | abs(`beta'/`sebeta')<`ztol' | missing(`beta'/`sebeta') {
 						if `"`messages'"'!=`""' {
 							disp as err "Coefficent could not be estimated"
@@ -1222,15 +1248,18 @@ program ipdmetan, rclass sortpreserve
 		}		// end if `"`byIPD'"'!=`""' & `"`subgroup'"'==`""'
 		
 		postclose `postname'
-		
-
+				
+				
 		*** Perform -collapse- if data in memory is being used
+		tempvar touse2
 		if `"`cclist'"'!=`""' {
 			preserve
 			forvalues h=1/`overlen' {
 				local overh : word `h' of `study'
+				clonevar `touse2' = `touse'
+				if `"`smissing'"'==`""' markout `touse2' `overh', strok		// added July 2014
 				tempfile extra1_`h'
-				qui collapse `cclist' if `touse', fast by(`byIPD' `overh')	// study/over-level
+				qui collapse `cclist' if `touse2', fast by(`byIPD' `overh')	// study/over-level
 				qui save `extra1_`h''
 				restore, preserve
 			}
@@ -1257,14 +1286,15 @@ program ipdmetan, rclass sortpreserve
 				cap rename `: word `i' of `oldnames'' `: word `i' of `svars''	// cap because renaming might not be necessary
 			}
 			forvalues h=2/`overlen' {
-				tempvar keepby
 				local overh : word `h' of `study'
-				qui bysort `touse' `overh': keep if _n==_N & `touse'
+				clonevar `touse2' = `touse'
+				if `"`smissing'"'==`""' markout `touse2' `overh', strok
+				qui bysort `touse2' `byIPD' `overh': keep if _n==_N & `touse2'	// `byIPD' and `touse2' added July 2014
 				keep `byIPD' `overh' `svars'
 				if `"`cclist'"'!=`""' {					// file already created above
-					qui merge 1:1 `byIPD' `overh' using `extra1_`h'', nogen
+					qui merge 1:1 `byIPD' `overh' using `extra1_`h'', nogen assert(match)
 					qui save, replace
-				}	
+				}
 				else {									// file not yet created
 					tempfile extra1_`h'
 					qui save `extra1_`h''
@@ -1282,10 +1312,12 @@ program ipdmetan, rclass sortpreserve
 					cap rename `: word `i' of `oldnames'' `: word `i' of `svars''	// cap because renaming might not be necessary
 				}
 				local overh : word 1 of `study'
-				qui bysort `touse' `overh': keep if _n==_N & `touse'
+				clonevar `touse2' = `touse'
+				if `"`smissing'"'==`""' markout `touse2' `overh', strok
+				qui bysort `touse2' `byIPD' `overh': keep if _n==_N & `touse2'	// `byIPD' and `touse2' added July 2014
 				keep `byIPD' `overh' `svars'
 				if `"`cclist'"'!=`""' {					// file already created above
-					qui merge 1:1 `byIPD' `overh' using `extra1_1', nogen
+					qui merge 1:1 `byIPD' `overh' using `extra1_1', nogen assert(match)
 				}
 			}
 			else qui use `extra1_1', clear
@@ -1318,14 +1350,24 @@ program ipdmetan, rclass sortpreserve
 					label var `: word `i' of `svars'' `"`ncslab`i''"'
 				}
 			}
-
 			cap rename `overh' `_study'		// rename to "_STUDY" or "_LEVEL"
-			if `"`byIPD'"'!=`""' & "`subgroup'"==`""' {
-				rename `byIPD' _BY
-			}
-			else if `"`byad'"'!=`""' gen _BY = 1
+
+			cap rename `byIPD' _BY			// July 2014
+			if _rc & `"`byad'"'!=`""' gen _BY==1
 			
-			qui merge 1:1 `_by' `_over' `_study' using `pfile', nogen
+			* if `"`byIPD'"'!=`""' & "`subgroup'"==`""' {
+			*	rename `byIPD' _BY
+			*}
+			*else if `"`byad'"'!=`""' gen _BY = 1
+			
+			qui merge 1:1 `_by' `_over' `_study' using `pfile', assert(match using)
+			qui count if _merge==2
+			if r(N) {						// July 2014: can only be "using" obs if no cclist (subgroup/overall not applicable for svars alone)
+				assert `"`cclist'"'==`""'
+				assert inlist(_USE, 3, 5) if _merge==2
+			}
+			drop _merge
+			
 			qui save `pfile', replace
 			
 		}	// end if `"`cclist'"'!=`""' | `"`svars'"'!=`""'
@@ -1400,7 +1442,7 @@ program ipdmetan, rclass sortpreserve
 					tokenize `r(numlist)'
 					local minADby = `1'							// `minADby' = lowest AD value
 					qui replace _BY = _BY - (2 - `minADby') if !missing(_BY)
-					local byad									// reset byad (see line 419)
+					local byad									// reset byad (see line 551)
 				}
 				else local minADby = 2
 						
@@ -1416,7 +1458,7 @@ program ipdmetan, rclass sortpreserve
 			}
 		}
 		else if `ADfail' {			// N.B. `ADfail' implies external data used (`"`ADonly'"'==`""')
-			use `pfile', clear		//  ...else error 2000 would have been trapped earlier (line 365)
+			use `pfile', clear		//  ...else error 2000 would have been trapped earlier (line 389)
 			cap do `labfile'
 			cap do `bylabfile'
 			gen _SOURCE=1
@@ -1659,7 +1701,7 @@ program ipdmetan, rclass sortpreserve
 			}
 			tempname tstat							// test statistic
 			scalar `tstat' = `eff'/`se_eff'
-			scalar `Qdiff' = `Q' - `Qsum'			// tempname already defined, set to zero as default (line 1333)
+			scalar `Qdiff' = `Q' - `Qsum'			// tempname already defined, set to zero as default (line 1536)
 		
 			* Heterogeneity stats
 			tempname tausq HsqM Isq
@@ -1715,8 +1757,8 @@ program ipdmetan, rclass sortpreserve
 						return scalar rc_eff_lci = `rc_eff_lci'		// whether ES lower confidence limit converged
 						return scalar rc_eff_uci = `rc_eff_uci'		// whether ES upper confidence limit converged					
 						
-						return scalar eff_lci = `eff_lci'
-						return scalar eff_uci = `eff_uci'					
+						return scalar eff_lci = r(eff_lci)
+						return scalar eff_uci = r(eff_uci)
 					}
 					if "`reModel'"=="bs" {
 						tempname tsq_var
@@ -1909,7 +1951,7 @@ program ipdmetan, rclass sortpreserve
 			drop `bylabels'
 		}
 		summ `vlablen', meanonly
-		local lablen=`r(max)'
+		local lablen=r(max)
 		drop `vlablen'
 		
 		if `"`_over'"'!=`""' {						// "over" variable labels
@@ -1941,8 +1983,8 @@ program ipdmetan, rclass sortpreserve
 			}
 		}
 		
-		if `"`ipdover'"'==`""' local stitle `"`varlab1'"'
-		else local stitle "Subgroup"
+		if `"`ipdover'"'!=`""' & `overlen'>1 local stitle "Subgroup"
+		else local stitle `"`varlab1'"'
 		if `"`_by'"'!=`""' local stitle `"`byvarlab' and `stitle'"'
 
 		sort `use5' `_by' `_over' _USE `_source' `sgroup'
@@ -1983,13 +2025,13 @@ program ipdmetan, rclass sortpreserve
 			}
 		}
 	}
-	
-			
-			
+
+
+
 	******************************************
 	* Prepare dataset for graphics or saving *
 	******************************************
-	
+
 	if `"`saving'"'!=`""' | `"`graph'"'==`""' {
 		
 		quietly {
@@ -2019,9 +2061,12 @@ program ipdmetan, rclass sortpreserve
 				label var `temp' `"`nrlab`i''"'
 			}
 			
-			* Variable name (title) for "_LABELS"
+			* Variable name (titles) for "_LABELS"... also "_NN" (if appropriate)
 			label var _LABELS `"`stitle'"'
 			if `"`stacklabel'"'!=`""' label var _LABELS "Study ID"
+			if `"`_NN'"'!=`""' {
+				if `"`: variable label _NN'"'==`""' label var _NN "No. pts"
+			}			
 			
 			* Apply variable labels and formats to lcols/rcols only present in aggregate data
 			forvalues i=1/`na' {
@@ -2197,6 +2242,7 @@ program ipdmetan, rclass sortpreserve
 			drop `use5' `sgroup'
 
 			replace _USE = 0 if _USE == -1
+			replace _USE = 6 if _USE == 4
 			replace _USE = 4 if inlist(_USE, -0.5, -1.5, 2.5, 3.5, 4.5, 5.5)
 			
 		}	// end quietly
@@ -2208,20 +2254,13 @@ program ipdmetan, rclass sortpreserve
 		
 		* Pass to forestplot
 		if `"`graph'"'==`""' {
-
-			if `"`ipdover'"'!=`""' {
-				local fplotopts `"nowt `fplotopts'"'
-				if `"`_NN'"'!=`""' {
-					label var _NN "No. pts"
-					local rcols `"_NN `rcols'"'		// Automatically add "_NN" to rcols if ipdover (and _NN exists)
-				}
-			}
-			if "`reModel'"=="fe" local reDesc		// no random-effects note if fixed-effects
+			if "`reModel'"!="fe" local reDesc `"NOTE: Weights are from `reDesc'"'	// random-effects note
+			else local reDesc
 			
 			gettoken word1 rest : lcols
-			if `"`word1'"'==`"`plotvar'"' local lcols `"`rest'"'
-			
-			forestplot, nopreserve `name' labels(_LABELS) by(`_by') plotid(`plotid') ///
+			if `"`word1'"'==`"`plotvar'"' local lcols `"`rest'"'	// remove `plotvar' from `lcols' (see line 619)
+
+			forestplot, nopreserve `ipdover' `name' labels(_LABELS) by(`_by') plotid(`plotid') ///
 				renote(`reDesc') `interaction' `eform' effect(`effect') lcols(`lcols') rcols(`rcols') `fplotopts'
 		}
 
@@ -2765,48 +2804,46 @@ program DrawTable
 		}
 	}
 
-	local uselen 21							// default (minimum)
-	if `lablen'>21 local uselen=`lablen'
-	if `lablen'>32 local uselen=32 			// maximum
-	
 	* Find maximum length of study title and effect title
 	* Allow them to spread over several lines, but only up to a maximum number of chars
 	* If a single line must be more than 32 chars, truncate and stop
-	local line = 1
-	TitleSpread `"`stitle'"', width(`uselen')
-	local sline = r(k)
-	forvalues i=1/`sline' {
+	local uselen = cond(`"`ipdover'"'=="", 21, 25)				// default (minimum); max is 32
+	if `lablen'>21 local uselen=min(`lablen', 32)
+	SpreadTitle `"`stitle'"', target(`uselen') maxwidth(32)		// study (+ subgroup) title
+	local swidth = max(`uselen', `r(maxwidth)')
+	local slines = r(nlines)
+	forvalues i=1/`slines' {
 		local stitle`i' `"`r(title`i')'"'
 	}
-	TitleSpread `"`etitle'"', width(10)
-	local eline = r(k)
-	local diff = `eline' - `sline'
+	SpreadTitle `"`etitle'"', target(10) maxwidth(15)		// effect title (i.e. "Odds ratio" etc.)
+	local ewidth = max(10, `r(maxwidth)')
+	local elines = r(nlines)
+	local diff = `elines' - `slines'
 	if `diff'<=0 {
-		forvalues i=1/`sline' {
+		forvalues i=1/`slines' {
 			local etitle`i' `"`r(title`=`i'+`diff'')'"'		// stitle uses most lines (or equal): line up etitle with stitle
 		}
 	}
 	else {
-		forvalues i=`eline'(-1)1 {					// run backwards, otherwise macros are deleted by the time they're needed
+		forvalues i=`elines'(-1)1 {					// run backwards, otherwise macros are deleted by the time they're needed
 			local etitle`i' `"`r(title`i')'"'
 			local stitle`i' = cond(`i'>=`diff', `"`stitle`=`i'-`diff'''"', `""')	// etitle uses most lines: line up stitle with etitle
 		}
 	}
 	
-	di as text _n "{hline `uselen'}{c TT}{hline 45}"
-	
-	local line = max(`eline', `sline')
-	if `line'>1 {
-		forvalues i=1/`=`line'-1' {
-			di as text "`stitle`i''{col `=`uselen'+1'}{c |} " %~10s `"`etitle`i''"'
+	* Now display the title lines, starting with the "extra" lines and ending with the row including CI & weight
+	di as text _n "{hline `swidth'}{c TT}{hline `=`ewidth'+35'}"
+	local nl = max(`elines', `slines')
+	if `nl' > 1 {
+		forvalues i=1/`=`nl'-1' {
+			di as text "`stitle`i''{col `=`swidth'+1'}{c |} " %~`ewidth's `"`etitle`i''"'
 		}
 	}
-
 	cap confirm var _NN
 	if !_rc local _NN "_NN"
-	if `"`ipdover'"'==`""' local final "{col `=`uselen'+37'}% Weight"
-	else if `"`_NN'"'!=`""' local final "{col `=`uselen'+37'}No. pts"
-	di as text "`stitle`line''{col `=`uselen'+1'}{c |} " %~10s `"`etitle`line''"' "{col `=`uselen'+14'}[`c(level)'% Conf. Interval]`final'"
+	if `"`ipdover'"'==`""' local final "{col `=`swidth'+`ewidth'+27'}% Weight"
+	else if `"`_NN'"'!=`""' local final "{col `=`swidth'+`ewidth'+27'}No. pts"
+	di as text "`stitle`nl''{col `=`swidth'+1'}{c |} " %~10s `"`etitle`nl''"' "{col `=`swidth'+`ewidth'+4'}[`c(level)'% Conf. Interval]`final'"
 	local final
 
 
@@ -2816,7 +2853,10 @@ program DrawTable
 	if !_rc {
 		local _by "_BY"
 		local nby : word count `bylist'
+		assert `nby'>0
 	}
+	else assert `"`bylist'"'==""		// July 2014: establish that "`_by'" <==> "`bylist'"
+	
 	cap confirm var _OVER
 	if !_rc local _over "_OVER"
 	
@@ -2824,32 +2864,33 @@ program DrawTable
 	tempvar touse
 	forvalues i=1/`nby' {				// this will be 1/1 if no subgroups
 
-		di as text "{hline `uselen'}{c +}{hline 45}"
-			
+		di as text "{hline `swidth'}{c +}{hline `=`ewidth'+35'}"
+
+		qui gen `touse' = 1
 		if `"`bylist'"'!=`""' {
 			local byi : word `i' of `bylist'
+			qui replace `touse' = `touse' * (_BY==`byi')
+			summ _ES if `touse' & _USE==1, meanonly
+			if !r(N) local nodata "{col `=`swidth'+4'} (No subgroup data)"
+			else local K`i' = r(N)
+			
 			local bytext : label `bylab' `byi'
-			di as text substr(`"`bytext'"', 1, `=`uselen'-1') + "{col `=`uselen'+1'}{c |}"
-
-			summ _ES if _BY==`byi' & _USE==1, meanonly
-			local K`i' = r(N)
+			di as text substr(`"`bytext'"', 1, `=`swidth'-1') + "{col `=`swidth'+1'}{c |}`nodata'"
+			local nodata	// clear macro
 		}
 		if "`eform'"!=`""' local xexp `"exp"'
 
+		tempvar touse2
 		forvalues h=1/`overlen' {
-			
-			qui gen `touse' = 1
-			if `"`_by'"'!=`""' {
-				qui replace `touse' = `touse'*(_BY==`byi')
-			}
+			clonevar `touse2' = `touse'
 			if `"`_over'"'!=`""' {
-				qui replace `touse' = `touse'*(_OVER==`h')
+				qui replace `touse2' = `touse2' * (_OVER==`h')
 			}
-			summ `sortby' if inlist(_USE, 1, 2) & `touse', meanonly
+			summ `sortby' if inlist(_USE, 1, 2) & `touse2', meanonly
 			if `overlen'>1 {
-				di as text "{col `=`uselen'+1'}{c |}"
-				if !r(N) local nodata "{col `=`uselen'+4'} (Insufficient data)"
-				di as text substr(`"`varlab`h''"', 1, `=`uselen'-1') "{col `=`uselen'+1'}{c |}`nodata'"
+				di as text "{col `=`swidth'+1'}{c |}"
+				if !r(N) local nodata "{col `=`swidth'+4'} (Insufficient data)"
+				di as text substr(`"`varlab`h''"', 1, `=`swidth'-1') "{col `=`swidth'+1'}{c |}`nodata'"
 				local nodata	// clear macro
 			}
 			if r(N) {
@@ -2869,19 +2910,20 @@ program DrawTable
 					else local final `"%7.2f `=100*_WT[`k']'"'
 					
 					if missing(`_ES_') {
-						di as text substr(`"`_labels_'"',1, 32) "{col `=`uselen'+1'}{c |}{col `=`uselen'+4'} (Insufficient data)"
+						di as text substr(`"`_labels_'"',1, 32) "{col `=`swidth'+1'}{c |}{col `=`swidth'+4'} (Insufficient data)"
 					}
 					else {
-						di as text substr(`"`_labels_'"',1, 32) "{col `=`uselen'+1'}{c |}{col `=`uselen'+4'}" ///
-							as res %7.3f `=`xexp'(`_ES_')' "{col `=`uselen'+15'}" ///
-							as res %7.3f `=`xexp'(`_LCI_')' "{col `=`uselen'+25'}" ///
-							as res %7.3f `=`xexp'(`_UCI_')' "{col `=`uselen'+36'}" `final'
+						di as text substr(`"`_labels_'"',1, 32) "{col `=`swidth'+1'}{c |}{col `=`swidth'+`ewidth'-6'}" ///
+							as res %7.3f `=`xexp'(`_ES_')' "{col `=`swidth'+`ewidth'+5'}" ///
+							as res %7.3f `=`xexp'(`_LCI_')' "{col `=`swidth'+`ewidth'+15'}" ///
+							as res %7.3f `=`xexp'(`_UCI_')' "{col `=`swidth'+`ewidth'+26'}" `final'
 					}
 				}
 			}
-			drop `touse'
+			drop `touse2'
 
 		}		// end forvalues j=1/`overlen'
+		drop `touse'
 
 		* Subgroup effects
 		if `"`bylist'"'!=`""' & `"`subgroup'"'==`""' {
@@ -2901,15 +2943,17 @@ program DrawTable
 				else local final `"%7.2f `=100*_WT[`r(min)']'"'
 			}
 
-			di as text "{col `=`uselen'+1'}{c |}"
+			di as text "{col `=`swidth'+1'}{c |}"
+			if `"`ipdover'"'!=`""' local sgeffect "Effect in subset"
+			else local sgeffect "Subgroup effect"
 			if missing(`_ES_') {
-				di as text "Subgroup effect{col `=`uselen'+1'}{c |}{col `=`uselen'+4'} (Insufficient data)"
+				di as text "`sgeffect'{col `=`swidth'+1'}{c |}{col `=`swidth'+4} (Insufficient data)"
 			}
 			else {
-				di as text "Subgroup effect{col `=`uselen'+1'}{c |}{col `=`uselen'+4'}" ///
-					as res %7.3f `=`xexp'(`_ES_')' "{col `=`uselen'+15'}" ///
-					as res %7.3f `=`xexp'(`_LCI_')' "{col `=`uselen'+25'}" ///
-					as res %7.3f `=`xexp'(`_UCI_')' "{col `=`uselen'+36'}" `final'
+				di as text "`sgeffect'{col `=`swidth'+1'}{c |}{col `=`swidth'+`ewidth'-6'}" ///
+					as res %7.3f `=`xexp'(`_ES_')' "{col `=`swidth'+`ewidth'+5'}" ///
+					as res %7.3f `=`xexp'(`_LCI_')' "{col `=`swidth'+`ewidth'+15'}" ///
+					as res %7.3f `=`xexp'(`_UCI_')' "{col `=`swidth'+`ewidth'+26'}" `final'
 			}
 		}
 	}		// end forvalues i=1/`nby'
@@ -2917,7 +2961,7 @@ program DrawTable
 
 	*** Overall effect
 	if `"`overall'"'==`""' {
-		di as text "{hline `uselen'}{c +}{hline 45}"
+		di as text "{hline `swidth'}{c +}{hline `=`ewidth'+35'}"
 
 		summ `sortby' if _USE==1, meanonly
 		local K = r(N)
@@ -2935,12 +2979,12 @@ program DrawTable
 		}
 		else local final `"%7.2f `=100*_WT[`r(min)']'"'
 				
-		di as text %-20s "Overall effect{col `=`uselen'+1'}{c |}{col `=`uselen'+4'}" ///
-			as res %7.3f `=`xexp'(`_ES_')' "{col `=`uselen'+15'}" ///
-			as res %7.3f `=`xexp'(`_LCI_')' "{col `=`uselen'+25'}" ///
-			as res %7.3f `=`xexp'(`_UCI_')' "{col `=`uselen'+36'}" `final'
+		di as text %-20s "Overall effect{col `=`swidth'+1'}{c |}{col `=`swidth'+`ewidth'-6'}" ///
+			as res %7.3f `=`xexp'(`_ES_')' "{col `=`swidth'+`ewidth'+5'}" ///
+			as res %7.3f `=`xexp'(`_LCI_')' "{col `=`swidth'+`ewidth'+15'}" ///
+			as res %7.3f `=`xexp'(`_UCI_')' "{col `=`swidth'+`ewidth'+26'}" `final'
 	}
-	di as text "{hline `uselen'}{c BT}{hline 45}"
+	di as text "{hline `swidth'}{c BT}{hline `=`ewidth'+35'}"
 
 	* Tests, heterogeneity etc. -- only for pooled analysis (i.e. no ipdover)
 	if `"`ipdover'"'==`""' {
@@ -2974,9 +3018,9 @@ program DrawTable
 						local pvalue=2*ttail(`K`i''-1, abs(`tstati'))
 						local dist "t"
 					}
-					di as text substr("`bylabi'", 1, `=`uselen'-1') "{col `=`uselen'+1'}`dist' = " as res %7.3f `tstati' as text "  p = " as res %7.3f `pvalue'
+					di as text substr("`bylabi'", 1, `=`swidth'-1') "{col `=`swidth'+1'}`dist' = " as res %7.3f `tstati' as text "  p = " as res %7.3f `pvalue'
 				}
-				else di as text substr("`bylabi'", 1, `=`uselen'-1') "{col `=`uselen'+1'}(Insufficient data)"
+				else di as text substr("`bylabi'", 1, `=`swidth'-1') "{col `=`swidth'+1'}(Insufficient data)"
 			}
 
 			if `"`overall'"'==`""' {
@@ -2986,7 +3030,7 @@ program DrawTable
 					local pvalue=2*ttail(`K'-1,abs(`tstat'))
 					local dist "t"
 				}
-				di as text "Overall{col `=`uselen'+1'}`dist' = " as res %7.3f `tstat' as text "  p = " as res %7.3f `pvalue'
+				di as text "Overall{col `=`swidth'+1'}`dist' = " as res %7.3f `tstat' as text "  p = " as res %7.3f `pvalue'
 			}
 		}
 			
@@ -2997,22 +3041,22 @@ program DrawTable
 
 			* Q, I2, H2
 			if "`remodel'"=="sa" {
-				di as text "{hline `uselen'}{c TT}{hline 13}"
-				di as text `"{col `=`uselen'+1'}{c |}{col `=`uselen'+7'}Value"'
-				di as text "{hline `uselen'}{c +}{hline 13}"
+				di as text "{hline `swidth'}{c TT}{hline 13}"
+				di as text `"{col `=`swidth'+1'}{c |}{col `=`swidth'+7'}Value"'
+				di as text "{hline `swidth'}{c +}{hline 13}"
 			}
 			else {
-				di as text "{hline `uselen'}{c TT}{hline 35}"
-				di as text `"{col `=`uselen'+1'}{c |}{col `=`uselen'+7'}Value{col `=`uselen'+18'}df{col `=`uselen'+25'}p-value"'
-				di as text "{hline `uselen'}{c +}{hline 35}"
+				di as text "{hline `swidth'}{c TT}{hline 35}"
+				di as text `"{col `=`swidth'+1'}{c |}{col `=`swidth'+7'}Value{col `=`swidth'+18'}df{col `=`swidth'+25'}p-value"'
+				di as text "{hline `swidth'}{c +}{hline 35}"
 				local qpval = chi2tail(`df', `q')
-				di as text "Cochrane Q {col `=`uselen'+1'}{c |}{col `=`uselen'+5'}" ///
-					as res %7.2f `q' "{col `=`uselen'+16'}" %3.0f `df' "{col `=`uselen'+23'}" %7.3f `qpval'
+				di as text "Cochrane Q {col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
+					as res %7.2f `q' "{col `=`swidth'+16'}" %3.0f `df' "{col `=`swidth'+23'}" %7.3f `qpval'
 			}
 			if `: word count `tausq''==1 {
-				di as text "I{c 178} (%) {col `=`uselen'+1'}{c |}{col `=`uselen'+4'}" as res %7.1f 100*`isq' "%"
-				di as text "Modified H{c 178} {col `=`uselen'+1'}{c |}{col `=`uselen'+5'}" as res %7.3f `hsq'
-				di as text "tau{c 178} {col `=`uselen'+1'}{c |}{col `=`uselen'+4'}" as res %8.4f `tausq'
+				di as text "I{c 178} (%) {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" as res %7.1f 100*`isq' "%"
+				di as text "Modified H{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" as res %7.3f `hsq'
+				di as text "tau{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" as res %8.4f `tausq'
 			}
 			else {		// display second box with CIs for tausq etc.
 				foreach x in isq hsq tausq {
@@ -3021,22 +3065,22 @@ program DrawTable
 					local `x'_lci `2'
 					local `x'_uci `3'
 				}
-				di as text "{hline `uselen'}{c BT}{hline 35}"
-				di as text _n "{hline `uselen'}{c TT}{hline 35}"
-				di as text "{col `=`uselen'+1'}{c |}{col `=`uselen'+7'}Value{col `=`uselen'+15'}[`level'% Conf. Interval]"
-				di as text "{hline `uselen'}{c +}{hline 35}"
-				di as text "I{c 178} (%) {col `=`uselen'+1'}{c |}{col `=`uselen'+4'}" ///
-					as res %7.1f 100*`isq_est' "%{col `=`uselen'+14'}" ///
-					as res %7.1f 100*`isq_lci' "%{col `=`uselen'+24'}" %7.1f 100*`isq_uci' "%"
-				di as text "Modified H{c 178} {col `=`uselen'+1'}{c |}{col `=`uselen'+5'}" ///
-					as res %7.3f `hsq_est' "{col `=`uselen'+15'}" ///
-					as res %7.3f `hsq_lci' "{col `=`uselen'+25'}" %7.3f `hsq_uci'
-				di as text "tau{c 178} {col `=`uselen'+1'}{c |}{col `=`uselen'+4'}" ///
-					as res %8.4f `tausq_est' "{col `=`uselen'+14'}" ///
-					as res %8.4f `tausq_lci' "{col `=`uselen'+24'}" %8.4f `tausq_uci'
+				di as text "{hline `swidth'}{c BT}{hline 35}"
+				di as text _n "{hline `swidth'}{c TT}{hline 35}"
+				di as text "{col `=`swidth'+1'}{c |}{col `=`swidth'+7'}Value{col `=`swidth'+15'}[`level'% Conf. Interval]"
+				di as text "{hline `swidth'}{c +}{hline 35}"
+				di as text "I{c 178} (%) {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" ///
+					as res %7.1f 100*`isq_est' "%{col `=`swidth'+14'}" ///
+					as res %7.1f 100*`isq_lci' "%{col `=`swidth'+24'}" %7.1f 100*`isq_uci' "%"
+				di as text "Modified H{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
+					as res %7.3f `hsq_est' "{col `=`swidth'+15'}" ///
+					as res %7.3f `hsq_lci' "{col `=`swidth'+25'}" %7.3f `hsq_uci'
+				di as text "tau{c 178} {col `=`swidth'+1'}{c |}{col `=`swidth'+4'}" ///
+					as res %8.4f `tausq_est' "{col `=`swidth'+14'}" ///
+					as res %8.4f `tausq_lci' "{col `=`swidth'+24'}" %8.4f `tausq_uci'
 			}
-			if "`remodel'"=="sa" di as text "{hline `uselen'}{c BT}{hline 13}"
-			else di as text "{hline `uselen'}{c BT}{hline 35}"
+			if "`remodel'"=="sa" di as text "{hline `swidth'}{c BT}{hline 13}"
+			else di as text "{hline `swidth'}{c BT}{hline 35}"
 				
 			* Display explanations
 			di as text _n `"I{c 178} = between-study variance (tau{c 178}) as a percentage of total variance"'
@@ -3047,42 +3091,42 @@ program DrawTable
 		if `"`bylist'"'!=`""' & `"`subgroup'"'==`""' {
 			
 			di as text _n(2) "Q statistics for heterogeneity (calculated using Inverse Variance weights)"
-			di as text "{hline `uselen'}{c TT}{hline 35}"
-			di as text "{col `=`uselen'+1'}{c |}{col `=`uselen'+7'}Value{col `=`uselen'+17'}df{col `=`uselen'+24'}p-value"
-			di as text "{hline `uselen'}{c +}{hline 35}"
+			di as text "{hline `swidth'}{c TT}{hline 35}"
+			di as text "{col `=`swidth'+1'}{c |}{col `=`swidth'+7'}Value{col `=`swidth'+17'}df{col `=`swidth'+24'}p-value"
+			di as text "{hline `swidth'}{c +}{hline 35}"
 
 			forvalues i=1/`nby' {
 				local byi: word `i' of `bylist'
 				local bylabi : label `bylab' `byi'
-				if `"`bylabi'"'!="." local bylabi = substr(`"`bylabi'"', 1, `=`uselen'-1')
+				if `"`bylabi'"'!="." local bylabi = substr(`"`bylabi'"', 1, `=`swidth'-1')
 				
 				local Q`i' : word `i' of `qlist'
 				if `"`Q`i''"'!=`""' {
 					local df`i' = `K`i'' - 1
 					local qpval = chi2tail(`df`i'', `Q`i'')
 					local dfcol = cond(`"`overall'"'==`""', 18, 16)
-					di as text "`bylabi'{col `=`uselen'+1'}{c |}{col `=`uselen'+5'}" ///
-						as res %7.2f `Q`i'' "{col `=`uselen'+`dfcol''}" %3.0f `df`i'' "{col `=`uselen'+23'}" %7.3f `qpval'
+					di as text "`bylabi'{col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
+						as res %7.2f `Q`i'' "{col `=`swidth'+`dfcol''}" %3.0f `df`i'' "{col `=`swidth'+23'}" %7.3f `qpval'
 				}
-				else di as text "`bylabi'{col `=`uselen'+1'}{c |}{col `=`uselen'+5'}(Insufficient data)"
+				else di as text "`bylabi'{col `=`swidth'+1'}{c |}{col `=`swidth'+5'}(Insufficient data)"
 			}
 				
 			if `"`overall'"'==`""' {
 				local qpval = chi2tail(`df', `q')
-				di as text "Overall{col `=`uselen'+1'}{c |}{col `=`uselen'+5'}" ///
-					as res %7.2f `q' "{col `=`uselen'+18'}" %3.0f `df' "{col `=`uselen'+23'}" %7.3f `qpval'
+				di as text "Overall{col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
+					as res %7.2f `q' "{col `=`swidth'+18'}" %3.0f `df' "{col `=`swidth'+23'}" %7.3f `qpval'
 
 				local qdiffpval = chi2tail(`=`nby'-1', `qdiff')
-				di as text "Between{col `=`uselen'+1'}{c |}{col `=`uselen'+5'}" ///
-					as res %7.2f `qdiff' "{col `=`uselen'+18'}" %3.0f `=`nby'-1' "{col `=`uselen'+23'}" %7.3f `qdiffpval'
+				di as text "Between{col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
+					as res %7.2f `qdiff' "{col `=`swidth'+18'}" %3.0f `=`nby'-1' "{col `=`swidth'+23'}" %7.3f `qdiffpval'
 					
 				tempname Fstat
 				scalar `Fstat' = (`qdiff'/(`nby'-1)) / (`q'/`df')
 				local Fpval = Ftail(`=`nby'-1', `df', `Fstat')
-				di as text "Between:Within (F){col `=`uselen'+1'}{c |}{col `=`uselen'+5'}" ///
-					as res %7.2f `Fstat' "{col `=`uselen'+14'}" %3.0f `=`nby'-1' as text "," as res %3.0f `df' "{col `=`uselen'+23'}" %7.3f `Fpval'
+				di as text "Between:Within (F){col `=`swidth'+1'}{c |}{col `=`swidth'+5'}" ///
+					as res %7.2f `Fstat' "{col `=`swidth'+14'}" %3.0f `=`nby'-1' as text "," as res %3.0f `df' "{col `=`swidth'+23'}" %7.3f `Fpval'
 			}
-			di as text "{hline `uselen'}{c BT}{hline 35}"
+			di as text "{hline `swidth'}{c BT}{hline 35}"
 		}
 	}	// end if `"`ipdover'"'==`""'
 
@@ -3090,53 +3134,80 @@ end
 
 
 * Subroutine to DrawTable: "spreads" titles out over multiple lines if appropriate
-program TitleSpread, rclass
+* (also used in ipdover)
+* Updated July 2014
+program SpreadTitle, rclass
 
-	syntax anything(name=title id="title string"), width(integer)
-
-	local line = 1
-	local titlelen = length(`title')
-	local spread = int(`titlelen'/`width')+1
-	if `spread'>1 {
-		local end = 0
-		local count = 1
-		local last = word(`title', -1)
-
-		local current = word(`title', `count')
-		local next = word(`title', `=`count'+1')
-					
-		while `end' == 0 {
-			local title`line' = `"`title`line''"' + " " + `"`current'"'		// add in the next word
-			local check = `"`title`line''"' + `" `next'"'					// what next would be
-
-			local ++count
-			local current = word(`title', `count')
-			if `"`current'"' == "" | length(`"`title`line''"') > 32 {
-				local end = 1
-				if length(`"`title`line''"') > 32 {
-					local title`line' = substr(`"`title`line''"', 1, 31)
-					local width=32
-				}
-			}
-			if length(`"`title`line''"') > `titlelen'/`spread' ///
-				| length(`"`check'"') > `titlelen'/`spread' {
-				if `end' == 0 {
-					local ++line
-					local next = word(`title', `=`count'+1')
-				}
-			}
+	syntax anything(name=title id="title string"), [TArget(integer 0) MAXWidth(integer 0) MAXLines(integer 0)]
+	* Target = aim for this width, but allow expansion if alternative is wrapping "too early" (i.e before line is adequately filled)
+	* Maxwidth = absolute maximum width.
+	
+	if !`target' {
+		if !`maxwidth' {
+			disp as err "must specify at least one of target or maxwidth"
+			exit 198
+		}
+		local target = `maxwidth'
+	}
+	
+	if `maxwidth' {
+		cap assert `maxwidth'>=`target'
+		if _rc {
+			disp as err "maxwidth value must be greater than or equal to target value"
+			exit 198
 		}
 	}
-	else local title1 `title'
+	
+	local titlelen = length(`title')
+	local spread = int(`titlelen'/`target') + 1
+	* if `maxlines' & `spread'>`maxlines' local spread = `maxlines'
+	
+	local line = 1
+	local end = 0
+	local count = 2
+
+	local title1 = word(`title', 1)
+	local newwidth = length(`"`title1'"')
+	local next = word(`title', 2)
+	
+	while `"`next'"' != "" {
+		local check = trim(`"`title`line''"' + " " +`"`next'"')			// (potential) next iteration of `title`line''
+		if length(`"`check'"') > `titlelen'/`spread' {					// if too long
+																		// and further from target than before, or greater than maxwidth
+			if abs(length(`"`check'"')-(`titlelen'/`spread')) > abs(length(`"`title`line''"')-(`titlelen'/`spread')) ///
+				| (`maxwidth' & length(`"`check'"') > `maxwidth') {
+				if `maxlines' & `line'==`maxlines' {					// if reached max no. of lines
+					local title`line' `"`check'"'						//   - use next iteration anyway (to be truncated)
+					continue, break										//   - break loop
+				}
+				else {													// otherwise:
+					local ++line										//  - new line
+					local title`line' `"`next'"'						//  - begin new line with next word
+				}
+			}
+			else local title`line' `"`check'"'		// else use next iteration
+			
+		}
+		else local title`line' `"`check'"'		// else use next iteration
+
+		local ++count
+		local next = word(`title', `count')
+		local newwidth = max(`newwidth', length(`"`title`line''"'))		// update `newwidth'
+	}
+
+	* If last string is too long (including in above case), truncate
+	if `newwidth' <= `target' local maxwidth = `target'
+	else local maxwidth = cond(`maxwidth', min(`newwidth', `maxwidth'), `newwidth')
+	if length(`"`title`line''"') > `maxwidth' local title`line' = substr(`"`title`line''"', 1, `maxwidth')
 	
 	* Return strings
 	forvalues i=1/`line' {
-		return local title`i' `"`title`i''"'
+		return local title`i' = trim(`"`title`i''"')
 	}
-	return scalar k = `line'
+	return scalar nlines = `line'
+	return scalar maxwidth = min(`newwidth', `maxwidth')
 	
 end
-
 
 
 

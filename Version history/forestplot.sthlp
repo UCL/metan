@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 1.0  David Fisher  30jan2014}{...}
+{* *! version 1.1  David Fisher  23jul2014}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
 {vieweralsosee "admetan" "help admetan"}{...}
@@ -41,7 +41,7 @@ where {it:varlist} is:
 {synopt :{opt nonu:ll}}suppress null hypothesis line{p_end}
 {synopt :{opt noov:erall}, {opt nosu:bgroup}}suppress display of overall and/or subgroup pooled estimates{p_end}
 {synopt :{opt nostat:s}, {opt nowt}}suppress display of effect estimates and/or weights in right-hand columns{p_end}
-{synopt :{cmd:plotid(}{it:varlist} [{cmd:, {ul:l}ist {ul:nogr}aph}]{cmd:)}}define groups of observations in which
+{synopt :{cmd:plotid(}{it:varname} [{cmd:, {ul:l}ist {ul:nogr}aph}]{cmd:)}}define groups of observations in which
 to apply specific plot rendition options{p_end}
 {synopt :{it:{help twoway_options}}}other Stata twoway graph options, as appropriate{p_end}
 
@@ -88,7 +88,7 @@ Otherwise, {cmd:forestplot} will expect to find variables in memory named {bf:_E
 
 {pstd}
 {cmd:forestplot} will also check for variables corresponding to {it:wt} and {it:use},
-respectively representing the meta-analysis weight (relative marker size),
+respectively representing the weight (relative marker size)
 and an indicator of the contents of each observation (study effects, titles, spacing, description of heterogeneity, etc).
 The default names for these variables are {bf:_WT} and {bf:_USE} respectively (although this may be overridden);
 {cmd:forestplot} will assume they are constant if not found.
@@ -97,13 +97,13 @@ The default names for these variables are {bf:_WT} and {bf:_USE} respectively (a
 The values of the variable {it:use} are interpreted by {cmd:forestplot} in the following way:
 {p_end}
 
-	0 = subgroup labels
+	0 = subgroup labels (headings)
 	1 = non-missing study estimates
 	2 = missing study estimates
 	3 = subgroup pooled effects
-	4 = blank line, or other text (e.g. description of heterogeneity)
+	4 = description of between-subgroup heterogeneity
 	5 = overall pooled effect
-
+	6 = blank line
 
 
 {marker options}{...}
@@ -117,6 +117,7 @@ It may be that the data in memory comes from multiple separate meta-analyses, wh
 it is desired to plot within the same {it:plot region} (see {it:{help region_options}}).
 Specifiying {opt dataid()} tells {cmd:forestplot} where the data from one meta-analysis ends
 and the next begins, and results in correct placement of the overall effect line(s).
+This option should be unnecessary in most circumstances.
 
 {phang}
 {opt dp(#)} specifies the number of decimal places to format the effect sizes.
@@ -143,8 +144,9 @@ In the case of {opt favours()}, suboptions must be passed to a separate {opt xml
 For example: ...{opt favours(string)} {cmd:xmlabel(, labgap(*1.5))}.
 
 {phang}
-{opt labels(varname)} specify (text) variable containing labels for the left-hand side of the graph,
+{opt labels(varname)} specifies a (text) variable containing labels for the left-hand side of the graph,
 e.g. subgroup titles, heterogeneity details and, usually, study names.
+You don't need to specify this option if the variable {bf:_LABELS} exists and contains the appropriate information.
 
 {phang}
 {opt lcols(string)}, {opt rcols(string)} define columns of additional data to the left or right of the graph.
@@ -269,8 +271,28 @@ affect the rendition of (unweighted) pooled estimate markers.
 {title:Examples}
 
 {pstd}
-Examples (including an example dataset) will be available soon.
-In the meantime, please contact the author.
+Setup
+
+{pmore}
+{cmd:. use ipdmetan_example.dta, clear}{p_end}
+{pmore}
+{cmd:. stset tcens, fail(fail)}{p_end}
+{pmore}
+{cmd:. qui ipdmetan, study(trialid) hr by(region) nograph saving(results.dta) : stcox trt, strata(sex)}{p_end}
+{pmore}
+{cmd:. use results, clear}
+
+{pstd}
+Use of {it:plot#}{cmd:opts()}.  Note the use of {cmd:plotid(_BY)} rather than {cmd:plotid(region)}, since the {cmd:by()} variable is given the generic name {bf:_BY} in the results set.
+
+{pmore}
+{cmd:. forestplot, hr favours(Favours treatment # Favours control) plotid(_BY) box1opts(mcolor(red)) ci1opts(lcolor(red) rcap) box2opts(mcolor(blue)) ci2opts(lcolor(blue))}
+
+{pstd}
+Replace weights with numbers of patients
+
+{pmore}
+{cmd:. forestplot, hr favours(Favours treatment # Favours control) nowt rcols(_NN)}
 
 
 {title:Author}
