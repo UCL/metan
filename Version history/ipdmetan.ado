@@ -35,6 +35,7 @@
 *   Following UK Stata Users Meeting, reworked the plotid() option as recommended by Vince Wiggins
 
 * version 1.0  David Fisher  31jan2014
+* First released on SSC
 
 * version 1.01  David Fisher  07feb2014
 * Reason: fixed bug - Mata main routine contained mm_root, so failed at compile even if mm_root wasn't actually called/needed
@@ -48,14 +49,24 @@
 * Reason:
 * - return F statistic for subgroups
 * - correct error in `touse' when passed from admetan
-* - correct error in behaviour of stacklabel under certain conditions (line 2016)
+* - correct error in behaviour of stacklabel under certain conditions (line 2119)
 
-*! version 1.04  David Fisher  09apr2014
+* version 1.04  David Fisher  09apr2014
 * - fixed bug with DerSimonian & Laird random-effects
 * - fixed bug which failed to drop tempvar containing held estimates
-* - fixed bug in output table title when using ipdover (lines 2700-2705)
+* - fixed bug in output table title when using ipdover (lines 2798-2803)
 * - _rsample now returned for admetan too
 * - added ovwt/sgwt options
+
+*! version 1.05 David Fisher 05jun2014
+* Submitted to Stata Journal
+* - added Kontopantelis's bootstrap DL method and Isq sensitivity analysis
+*     and Rukhin's Bayesian tausq estimators
+* - revisited syntax for Hartung-Knapp t-based variance estimator (and removed "t" option)
+* - changes to names of some saved results, e.g. mu_hat/se_mu_hat are now eff/se_eff
+*     also "study" is preferred to "trial" throughout, except for ipdover
+* - improved parsing of prefix/mixed-effects models (i.e. those containing one or more colons)
+*     also improved management of non-convergence and user breaking
 
 
 program ipdmetan, rclass sortpreserve
@@ -69,6 +80,7 @@ program ipdmetan, rclass sortpreserve
 	_on_colon_parse `0'
 
 	local command `"`s(after)'"'
+	local origcmd : copy local command
 	local 0 `"`s(before)'"'
 	
 	* Parse ipdmetan options (before colon)
@@ -95,9 +107,11 @@ program ipdmetan, rclass sortpreserve
 		noTABle	noHET noTOTal 		///
 		PLOTID(string)				///
 		SAving(string)				/// specify filename in which to save "resultsset"
-		T Z							/// distribution to use for confidence intervals
 		/// Undocumented options
 		ZTOL(real 1e-6)	LEVEL(passthru)	/// ztol = tolerance for z-score (abs(ES/seES)); level = CI (default 95)
+		/// Options for specific random-effects models
+		/// (these need to appear here in order to set defaults; later parsing of re() will override)
+		REPS(real 1000) ISQ(real .8)	/// reps for bootstrap; isq for sensitivity analysis
 		ITOL(real 1e-8) MAXTAUSQ(real 50) ///
 		MAXITER(real 1000)			/// defaults for mm_root (in GetEstimates)
 		QUADPTS(real 40)			/// default quadrature points for &Integrate (in GetEstimates)
@@ -134,35 +148,65 @@ program ipdmetan, rclass sortpreserve
 		* Sort out synonyms
 		if `"`random'"'!=`""' {
 			local 0 `"`random'"'
-			syntax [anything(name=reModel id="random-effects model")] [, ITOL(real 1e-8) MAXTausq(real 50) MAXITer(real 1000)]
+			syntax [anything(name=reModel id="random-effects model")] ///
+				[, ITOL(real 1e-8) MAXTausq(real 50) REPS(real 1000) MAXITer(real 1000) QUADPTS(real 40) ISQ(real .8)]
 			if inlist("`reModel'", "", "r", "random", "rand", "re", "dl") local reModel "dl"	// DerSimonian/Laird random-effects (default)
+			else if inlist("`reModel'", "dlt", "hk") local reModel "dlt"					// DL with Hartung-Knapp variance estimator
+			else if inlist("`reModel'", "bdl", "dlb") local reModel "dlb"					// Bootstrap DerSimonian/Laird
 			else if inlist("`reModel'", "q", "gq", "genq", "vb", "eb") local reModel "gq"	// Generalised Q aka Empirical Bayes
 			else if inlist("`reModel'", "g", "gamma", "bt", "bs") local reModel "bs"		// Biggerstaff/Tweedie random-effects (approx Gamma)
-			else if inlist("`reModel'", "f", "fe", "fixed") local reModel "fe"			// Fixed-effects
-			else if inlist("`reModel'", "vc", "ca") local reModel "vc"				// Variance-component aka Cochran ANOVA
-			else if !inlist("`reModel'", "sj", "ml", "pl", "reml") {				// SJ = (improved) Sidik/Jonkman
-				disp as err "Invalid random-effects model"							// ML/REML = (simple) ML/REML
-				exit 198															// PL = "Profile" ML
-			}
-		}
+			else if inlist("`reModel'", "f", "fe", "fixed") local reModel "fe"		// Fixed-effects
+			else if inlist("`reModel'", "vc", "ca", "he") local reModel "vc"		// Variance-component aka Cochran ANOVA aka Hedges
+			else if inlist("`reModel'", "sens", "sa") local reModel "sa"			// Sensitivity analysis (at fixed Isq)
+			else if !inlist("`reModel'", "dlt", "sj", "b0", "bp", "ml", "pl", "reml") {
+				disp as err "Invalid random-effects model"							// SJ = (improved) Sidik/Jonkman
+				exit 198															// B0/BP = Rukhin Bayes estimators
+			}																		// ML/REML = (simple) ML/REML
+		}																			// PL = "Profile" ML
 		if inlist("`reModel'", "gq", "bs", "ml", "pl", "reml") {
 			capture mata mata which mm_root()
 			if _rc {
-				disp as err "Iterative tau-squared calculations require mm_root from -moremata-"
+				disp as err "Iterative tau-squared calculations require mm_root() from -moremata-"
 				disp as err "Type -ssc install moremata- to obtain it"
 				exit 499
 			}
 			if "`reModel'"=="bs" {
 				capture mata mata which integrate()
 				if _rc {
-					disp as err "Approximate Gamma method requires the mata function integrate"
+					disp as err "Approximate Gamma method requires the mata function integrate()"
 					disp as err "Type -ssc install integrate- to obtain it"
 					exit 499
 				}
 			}
+			if "`reModel'"=="dlb" {
+				capture mata mata which mm_bs()
+				local rc1 = _rc
+				capture mata mata which mm_jk()
+				if _rc | `rc1' {
+					disp as err "Bootstrap DerSimonian-Laird method requires the mata functions mm_bs() and mm_jk() from -moremata-"
+					disp as err "Type -ssc install moremata- to obtain it"
+					exit 499
+				}
+			}			
 		}
-		if "`reModel'"=="sj" & "`z'"=="" local t "t"
+		if "`reModel'"=="sa" {
+			if "`by'"!="" {
+				disp as err "Sensitivity analysis cannot be used with the by() option"
+				exit 198
+			}
+			if `isq'<0 | `isq'>=1 {
+				disp as err "I^2 value for sensitivity analysis must be in the range [0, 1)"
+				exit 198
+			}
+		}
+		else {
+			if `isq'!=.8 {
+				disp as err "isq() option can only be used when requesting a sensitivity analysis (sa) model"
+				exit 198
+			}
+		}
 	}
+	return local re_model "`reModel'"
 	
 	* Parse forest plot options to extract those relevant to ipdmetan
 	* But first, temporarily rename options which may be supplied to EITHER ipdmetan OR forestplot.
@@ -184,38 +228,54 @@ program ipdmetan, rclass sortpreserve
 		disp as err "cannot specify both ovwt and sgwt"
 		exit 198
 	}
-
-	* Initial parse of estimation command (with "capture")
-	cap `version' _prefix_command ipdmetan, `level' `eform' : `command'
-	local cmdname `"`s(cmdname)'"'
 	
-	* Test for `command' itself being a prefix command, e.g. svy
-	cap _on_colon_parse `command'
-	if !_rc {
-		local after `"`s(after)'"'
-		local before `"`s(before)'"' 
-		`version' _prefix_command ipdmetan, `level' `eform' : `after'	// if a prefix command, `after' should be a valid command
-		local command `"`s(command)'"'
-		local cmdname `"`s(cmdname)'"'
-		`version' _prefix_command ipdmetan, `level' `eform' : `before'	// ... as should `before'
-		local pcommand `"`s(command)' : "'
-		local pcmdname `"`s(cmdname)'"'
+	* Main ipdmetan loop needs to add "if `touse' & `sgroup'==`i'" after "`cmdname' `anything'" but before "`options'"
+	* Hence, need to check for, and deal with, complex syntaxes e.g. svy or mixed
+	
+	* Begin by checking for a second colon and testing for a "prefix command" syntax
+	local pcommand
+	local before "before"
+	while `"`before'"'!=`""' {
+		cap _on_colon_parse `command'
+		if !_rc {
+			local before `"`s(before)'"' 
+			local after `"`s(after)'"' 
+			cap `version' _prefix_command ipdmetan, `level' `eform' : `before'
+			
+			* If valid syntax, check that `command' is not a mixed model, as these also use colons
+			if !_rc {
+				local cmdname `"`s(cmdname)'"'
+				if !inlist("`cmdname'", "xtmixed", "xtmelogit", "xtmepoisson") ///
+					& !inlist("`cmdname'", "mixed", "meglm", "melogit", "meqrlogit", "meprobit", "mecloglog") ///
+					& !inlist("`cmdname'", "meologit", "meoprobit", "mepoisson", "meqrpoisson", "menbreg") {	
+				
+					local pcommand `"`s(command)' : `pcommand'"'
+					local command `"`after'"'
+				}
+				else local before
+			}
+			else continue, break
+		}
+		else continue, break
 	}
 	
-	* Test for `command' having a mixed-model structure
+	* Having removed prefixes, test for mixed-model structure
+	cap `version' _prefix_command ipdmetan, `level' `eform' : `command'
+	local cmdname `"`s(cmdname)'"'
 	if inlist("`cmdname'", "xtmixed", "xtmelogit", "xtmepoisson") ///
 		| inlist("`cmdname'", "mixed", "meglm", "melogit", "meqrlogit", "meprobit", "mecloglog") ///
-		| inlist("`cmdname'", "meologit", "meoprobit", "mepoisson", "meqrpoisson", "menbreg") {			// if a mixed-effect model
-		local anything `s(anything)'
-		_parse expand stub1 stub2 : anything
-		`version' _prefix_command ipdmetan, `level' `eform' : `s(cmdname)' `stub1_1'
+		| inlist("`cmdname'", "meologit", "meoprobit", "mepoisson", "meqrpoisson", "menbreg") {
+		
+		local sanything `"`s(anything)'"'
+		_parse expand stub1 stub2 : sanything
 		forvalues i=2/`stub1_n' {
 			local cmdrest `"`cmdrest' (`stub1_`i'')"'
 		}
 		local cmdrest `"|| `cmdrest'"'
+		local command `"`cmdname' `stub1_1'"'
 	}	
-		
-	* Final parse of estimation command (without "capture")
+
+	* Final parse of estimation command only (without "capture")
 	`version' _prefix_command ipdmetan, `level' `eform' : `command'
 	local cmdname	`"`s(cmdname)'"'
 	local ADonly : copy local adonly					// use capitalised version for clarity (still contains "adonly")
@@ -226,13 +286,24 @@ program ipdmetan, rclass sortpreserve
 	local cmdargs	`"`s(anything)'"'
 	local cmdif		`"`s(if)'"'
 	local cmdin		`"`s(in)'"'
-	local cmdopts	`"`s(options)'"'
+	local cmdopts = cond(`"`s(options)'"'==`""', `""', `", `s(options)'"')
+	* MAY 2014: `cmdopts' only appears with `cmdname' and `cmdrest', so include comma in case of user-defined program with no options allowed
 	local level		`"`s(level)'"'
 	if "`level'" == "" local level `c(level)'
 	* local eform		`"`s(eform)'"'
 	local eform		`"`s(efopt)'"'
-	local command	`"`s(command)'"'
-
+	* local command	`"`s(command)'"'
+	
+	* Re-assemble full command line and return
+	* (do this now to allow for user error-checking with "return list")
+	local finalcmd `"`pcommand' `cmdname' `cmdargs' `cmdif' `cmdin' `cmdopts' `cmdrest'"'
+	local finalcmd = trim(itrim(`"`finalcmd'"'))
+	if `"`ADonly'"'==`""' {
+		return local command `"`finalcmd'"'
+		return local cmdname `"`cmdname'"'
+	}
+	
+	
 
 	*********
 	* Setup *
@@ -279,8 +350,6 @@ program ipdmetan, rclass sortpreserve
 		}
 		local pooltext "Trial subgroup analysis"
 		local het "nohet"		// cannot have heterogeneity stats with ipdover
-		local z "z"
-		local t					// cannot use t-distribution unless pooling
 	}
 	
 	** Pooled meta-analysis (IPD, AD or both)
@@ -306,12 +375,6 @@ program ipdmetan, rclass sortpreserve
 			}
 		}
 		
-		if "`z'"!="" & "`t'"!="" {
-			disp as err `"Cannot specify both z and t options; please choose just one"'
-			exit 198
-		}
-		if "`t'"=="" local z "z"
-	
 		* Parse ad() option
 		foreach x in npts byad vars {		// these options should not appear outside of the ad() option
 			if `"``x''"'!=`""' {
@@ -581,12 +644,12 @@ program ipdmetan, rclass sortpreserve
 			qui drop `sobs'
 		}
 			
-		* Test to see if subgroup variable varies within studies/trials; if it does, exit with error
+		* Test to see if subgroup variable varies within studies; if it does, exit with error
 		if `"`ipdover'"'==`""' & `"`cmdname'"'!=`""' {
 			qui tab `overh' if `stouse', m
 			if r(r) != `ns' {					// N.B. `ns' is already stratified by `by'
 				disp as err "Data is not suitable for meta-analysis"
-				disp as err " as subgroup variable (in option 'by') is not constant within trials."
+				disp as err " as subgroup variable (in option 'by') is not constant within studies."
 				disp as err "Use alternative command 'ipdover' if appropriate."
 				exit 198
 			}
@@ -604,7 +667,7 @@ program ipdmetan, rclass sortpreserve
 				
 				qui tab `overh' if `stouse', m
 				if r(r) != `ntg' {
-					disp as err "plotid: variable `plotvar' is not constant within trials"
+					disp as err "plotid: variable `plotvar' is not constant within studies"
 					exit 198
 				}
 			}
@@ -620,10 +683,10 @@ program ipdmetan, rclass sortpreserve
 		}
 		
 		* If any string variables, "decode" them
-		* and replace string var with numeric var in list "study"
+		*   and replace string var with numeric var in list "study"
 		* If numeric, make a copy of each (original) value label value-by-value
-		* to avoid unlabelled values being displayed as blanks
-		* (also, for `study' with IPD+AD it needs to be added to)
+		*   to avoid unlabelled values being displayed as blanks
+		*   (also, for `study' with IPD+AD it needs to be added to)
 		* Then, store value label
 		cap confirm string var `overh'
 		if !_rc {
@@ -666,7 +729,7 @@ program ipdmetan, rclass sortpreserve
 		cap label save `bylab' using `bylabfile'		// ("capture" since bylab might not be defined yet)
 	}
 	
-	* Store max "by" value and max study ID for ProcessAD (need to do this now before dataset is changed, starting line 686)
+	* Store max "by" value and max study ID for ProcessAD (need to do this now, before dataset is changed)
 	if `"`ad'"'!=`""' {
 		if `"`byIPD'"'!=`""' {
 			summ `byIPD' if `touse', meanonly
@@ -761,13 +824,19 @@ program ipdmetan, rclass sortpreserve
 		_prefix_clear, e r
 
 		local eclass=0
+		local nosortpreserve=0
 		if `"`total'"'==`""' {		// run the command using the entire dataset
-			cap `version' `pcommand' `cmdname' `cmdargs' if `touse', `cmdopts' `cmdrest'
+			sort `obs'
+			cap `version' `pcommand' `cmdname' `cmdargs' if `touse' `cmdopts' `cmdrest'
 			local rc = _rc
 			if `rc' {
 				local errtext = cond(`"`pcmdname'"'!=`""', `"`pcmdname'"', `"`cmdname'"')
 				_prefix_run_error `rc' ipdmetan `errtext'
 			}
+			tempname obs2
+			qui gen `obs2'=_n
+			cap assert `obs'==`obs2'
+			local nosortpreserve = (_rc!=0)		// if running `cmdname' changes sort order, "sortpreserve" is not used, therefore must sort manually
 		
 			// check if e-class
 			cap mat list e(b)
@@ -838,78 +907,90 @@ program ipdmetan, rclass sortpreserve
 				* If not poolvar (i.e. basic syntax), results from _prefix_expand should match those from e(b)
 				assert (`"`ecolna'"'!=`""') == (`"`poolvar'"'==`""')
 				assert (`"`ecoleq'"'!=`""') == (`"`poolvar'"'==`""')
-				if `"`poolvar'"'==`""' {
+				
+				if `"`poolvar'"'==`""' {				// MAY 2014: only check for conflicts if poolvar not supplied
 					assert `"`ecolna'"'==`"`colna'"'
 					if substr(`"`coleq'"', 1, 1)!=`"_"' {
 						assert `"`ecoleq'"'==`"`coleq'"'
 					}
-				}
-				local estvar `"`poolvar'"'
-				local name1
-				local name2
-				
-				forvalues i=1/`nexp' {
-					local colnai : word `i' of `colna'
-					local coleqi : word `i' of `coleq'
-
-					_ms_parse_parts `colnai'
-					if !r(omit) {
+					local name1
+					local name2
 					
-						* If estvar already exists, check for conflicts with subsequent coeffs
-						* (cannot currently check for difference between, e.g. "arm" and "1.arm"
-						*   - i.e. how to tell when a var is factor if not made explicit... is this a problem?)
-						if `"`estvar'"'!=`""' {
-							if `"`coleqi'"'==`"`estvareq'"' {			// can only be a conflict if same eq
+					forvalues i=1/`nexp' {
+						local colnai : word `i' of `colna'
+						local coleqi : word `i' of `coleq'
+
+						_ms_parse_parts `colnai'
+						if !r(omit) {
+						
+							* If estvar already exists, check for conflicts with subsequent coeffs
+							* (cannot currently check for difference between, e.g. "arm" and "1.arm"
+							*   - i.e. how to tell when a var is factor if not made explicit... is this a problem?)
+							if `"`estvar'"'!=`""' {
+								if `"`coleqi'"'==`"`estvareq'"' {			// can only be a conflict if same eq
+									if `"`r(type)'"'=="interaction" {
+										local rname1 = cond(`"`r(op1)'"'==`""', `"`r(name1)'"', `"`r(op1)'.`r(name1)'"')
+										local rname2 = cond(`"`r(op2)'"'==`""', `"`r(name2)'"', `"`r(op2)'.`r(name2)'"')
+									
+										if (`"`interaction'"'!=`""' & ///
+												( inlist(`"`name1'"',`"`rname1'"',`"`rname2'"') ///
+												| inlist(`"`name2'"',`"`rname1'"',`"`rname2'"') )) ///
+											| (`"`interaction'"'==`""' & inlist(`"`estvar'"',`"`rname1'"',`"`rname2'"')) {
+											disp as err "Automated identification of estvar failed; please use poolvar() option or supply exp_list"
+											exit 198
+										}
+									}
+									else if inlist(`"`r(type)'"',"variable","factor") {
+										local rname = cond(`"`r(op)'"'==`""', `"`r(name)'"', `"`r(op)'.`r(name)'"')
+									
+										if (`"`interaction'"'!=`""' & inlist(`"`rname'"',`"`name1'"',`"`name2'"')) ///
+											| (`"`interaction'"'==`""' & `"`rname'"'==`"`estvar'"') {
+											disp as err "Automated identification of estvar failed; please use poolvar() option or supply exp_list"
+											exit 198
+										}
+									}
+								}
+							}		// end if `"`estvar'"'!=`""'
+						
+							* Else define estvar
+							else if `"`interaction'"'!=`""' {
 								if `"`r(type)'"'=="interaction" {
-									local rname1 = cond(`"`r(op1)'"'==`""', `"`r(name1)'"', `"`r(op1)'.`r(name1)'"')
-									local rname2 = cond(`"`r(op2)'"'==`""', `"`r(name2)'"', `"`r(op2)'.`r(name2)'"')
-								
-									if (`"`interaction'"'!=`""' & ///
-											( inlist(`"`name1'"',`"`rname1'"',`"`rname2'"') ///
-											| inlist(`"`name2'"',`"`rname1'"',`"`rname2'"') )) ///
-										| (`"`interaction'"'==`""' & inlist(`"`estvar'"',`"`rname1'"',`"`rname2'"')) {
-										disp as err "Automated identification of estvar failed; please use poolvar() option or supply exp_list"
-										exit 198
-									}
-								}
-								else if inlist(`"`r(type)'"',"variable","factor") {
-									local rname = cond(`"`r(op)'"'==`""', `"`r(name)'"', `"`r(op)'.`r(name)'"')
-								
-									if (`"`interaction'"'!=`""' & inlist(`"`rname'"',`"`name1'"',`"`name2'"')) ///
-										| (`"`interaction'"'==`""' & `"`rname'"'==`"`estvar'"') {
-										disp as err "Automated identification of estvar failed; please use poolvar() option or supply exp_list"
-										exit 198
-									}
+									local estvar `colnai'
+									local estvareq `coleqi'
+									local name1 `"`r(name1)'"'
+									local name2 `"`r(name2)'"'
 								}
 							}
-						}		// end if `"`estvar'"'!=`""'
-					
-						* Else define estvar
-						else if `"`interaction'"'!=`""' {
-							if `"`r(type)'"'=="interaction" {
+							else {
 								local estvar `colnai'
-								local estvareq `coleqi'
-								local name1 `"`r(name1)'"'
-								local name2 `"`r(name2)'"'
-							}
-						}
-						else {
-							local estvar `colnai'
-							local estvareq `coleqi'							
-						}		// end else
-					}		// end if !r(omit)
-				}		// end foreach x of local colnames 
+								local estvareq `coleqi'							
+							}		// end else
+						}		// end if !r(omit)
+					}		// end forvalues i=1/`nexp'
 
-				if `"`estvar'"'==`""' {
-					disp as err "Automated identification of estvar failed; please use poolvar() option or supply exp_list"
-					exit 198
+					if `"`estvar'"'==`""' {
+						disp as err "Automated identification of estvar failed; please use poolvar() option or supply exp_list"
+						exit 198
+					}
+				}		// end if `"`poolvar'"'==`""'
+
+				* This section updated May 2014
+				if `"`poolvar'"'!=`""' {		// parse `poolvar' -- assume "estvareq:estvar" format
+					local estexp `poolvar'
+					cap _on_colon_parse `estexp'
+					* if _rc local estvar `"`estexp'"'	// no colon found
+					* else {
+					* 	local estvareq `"`s(before)'"'
+					* 	local estvar `"`s(after)'"'
+					* }
+					if !_rc local estvareq `"`s(before)'"'	// June 2014: above code unnecessary since estvar not used
 				}
-				
-				if !inlist(`"`estvareq'"', "_", "") local estvareq `"[`estvareq']"'
-				else local estvareq
-				
-				local beta `"`estvareq'_b[`estvar']"'
-				local sebeta `"`estvareq'_se[`estvar']"'
+				else {
+					if inlist(`"`estvareq'"', "_", "") local estexp `"`estvar'"'
+					else local estexp `"`estvareq':`estvar'"'
+				}
+				local beta `"_b[`estexp']"'
+				local sebeta `"_se[`estexp']"'
 				local nbeta `"e(N)"'
 
 			}		// end else (i.e. if eclass)
@@ -919,7 +1000,7 @@ program ipdmetan, rclass sortpreserve
 		
 			// Define expressions if noTOTAL
 			if `"`poolvar'"'!=`""' local exp_list `"(_b[`poolvar']) (_se[`poolvar']) (e(N))"'
-			local estvar `poolvar'
+			local estexp `poolvar'
 			local nexp : word count `exp_list'
 			tokenize `exp_list'
 			local beta `1'
@@ -932,6 +1013,8 @@ program ipdmetan, rclass sortpreserve
 				exit 198
 			}
 		}
+		
+		return local estvar `"`estexp'"'	// return this asap in case of later problems
 	
 		** Set up postfile
 		tempname postname
@@ -990,7 +1073,9 @@ program ipdmetan, rclass sortpreserve
 
 		
 		*** Analyse IPD
-
+		local userbreak=0				// JUN 2014: initialise
+		local noconverge=0				// JUN 2014: initialise
+		
 		* Main IPD analysis loop
 		cap drop _rsample
 		qui gen byte _rsample=0			// this will show which observations were used
@@ -1012,15 +1097,15 @@ program ipdmetan, rclass sortpreserve
 				cap drop `sgroup'
 				qui bysort `stouse' `byIPD' `overh' : gen long `sgroup' = (_n==1)*`stouse'
 				qui replace `sgroup' = sum(`sgroup')
-				local ns = `sgroup'[_N]				// total number of studies (might be repeats if `by' not trial-level)
+				local ns = `sgroup'[_N]				// total number of studies (might be repeats if `by' is not trial-level)
 			}
 			sort `obs'
 		
-			* Loop over trial IDs (or levels of `h'th "over" var)
+			* Loop over study IDs (or levels of `h'th "over" var)
 			forvalues i=1/`ns' {
 				summ `obs' if `touse' & `sgroup'==`i', meanonly
 				
-				* Find value of by() for current trial ID
+				* Find value of by() for current study ID
 				if `"`byIPD'"'!=`""' {
 					local val = `byIPD'[`r(min)']
 					local postby `"(`val')"'
@@ -1031,35 +1116,53 @@ program ipdmetan, rclass sortpreserve
 				if `"`_over'"'!=`""' local postover `"(`h')"'
 				
 				* Create label containing original values or strings,
-				* then add (original) trial ID
+				* then add (original) study ID
 				local val = `overh'[`r(min)']
 				local poststudy `"(`val')"'
 				local trlabi : label (`overh') `val'
 				if `"`messages'"'!=`""' disp as text  "Fitting model for `overh' = `trlabi' ... " _c				
-				cap `version' `pcommand' `cmdname' `cmdargs' if `touse' & `sgroup'==`i', `cmdopts' `cmdrest'	//MAR2014 - think about how to deal with a user-defined cmd which does not use sortpreserve
+				cap `version' `pcommand' `cmdname' `cmdargs' if `touse' & `sgroup'==`i' `cmdopts' `cmdrest'
 				local rc = c(rc)
-				if `rc'==1 error 1		// user break
+				* if `rc'==1 error 1					// user break
 				
 				if `rc' {	// if unsuccessful, insert blanks
 					if `"`messages'"'!=`""' {
 						disp as err "Error: " _c
-						cap noisily error _rc
+						if `rc'==1 {
+							disp as err "user break"	// added JUN 2014
+							local userbreak=1
+						}
+						else cap noisily error _rc
 					}
 					local reps = 3 + `nr'
 					local postreps : di _dup(`reps') `" (.)"'
 					local postcoeffs `"(2) `postreps'"'			// (2) for _USE ==> unsuccessful
 				}
 				else {
-					* If fitting successful but coefficient was not estimated
-					if `sebeta'==0 | missing(`sebeta') | abs(`beta'/`sebeta')<`ztol' | missing(`beta'/`sebeta') {
+					* If model was fitted successfully but desired coefficient was not estimated
+					if `eclass' {						// ADDED MAY 2014
+						local colna : colnames e(b)
+						local coleq : coleq e(b)
+						if e(converged)==0 {
+							local noconverge=1
+							local nocvtext " (convergence not achieved)"
+						}
+					}
+					if `eclass' & (!`: list estvar in colna' | (`"`estvareq'"'!=`""' & !`: list estvareq in coleq')) {
 						if `"`messages'"'!=`""' {
-							disp as err "Coefficent cannot be estimated"
+							disp as err "Coefficent could not be estimated"
+						}
+						local postcoeffs `"(2) (.) (.) (`nbeta')"'
+					}					
+					else if `sebeta'==0 | missing(`sebeta') | abs(`beta'/`sebeta')<`ztol' | missing(`beta'/`sebeta') {
+						if `"`messages'"'!=`""' {
+							disp as err "Coefficent could not be estimated"
 						}
 						local postcoeffs `"(2) (.) (.) (`nbeta')"'
 					}
 					else {
 						local postcoeffs `"(1) (`beta') (`sebeta') (`nbeta')"'
-						if `"`messages'"'!=`""' disp as res "Done"
+						if `"`messages'"'!=`""' disp as res "Done`nocvtext'"
 						if !`eclass' & `"`total'"'!=`""' {
 							cap mat list e(b)
 							local eclass = (!_rc)
@@ -1072,12 +1175,16 @@ program ipdmetan, rclass sortpreserve
 							local postcoeffs `"`postcoeffs' (`us_`j'')"'
 						}
 					}
+					local nocvtext		// clear macro
 				}
-
 				post `postname' (`i') `postby' `postover' `poststudy' `postcoeffs'
 				local postby
 				local postover
 				local postcoeffs
+				
+				if `nosortpreserve' | `"`total'"'!=`""' {
+					sort `obs'		// if `cmdname' doesn't use sortpreserve (or noTOTAL), re-sort before continuing
+				}
 
 			}	// end forvalues i=1/`ns'
 		}		// end forvalues h=1/`overlen'
@@ -1090,7 +1197,7 @@ program ipdmetan, rclass sortpreserve
 				local blank=0
 				
 				if (`"`ipdover'"'!=`""' | `nr') {
-					cap `version' `pcommand' `cmdname' `cmdargs' if `byIPD'==`byi' & `touse', `cmdopts' `cmdrest'
+					cap `version' `pcommand' `cmdname' `cmdargs' if `byIPD'==`byi' & `touse' `cmdopts' `cmdrest'
 					if !_rc {
 						local postexp `"(.) (3) (`beta') (`sebeta') (`nbeta')"'
 						if `nr' /* ADDED MAR 2014 - don't return stats if AD+IPD (byIPD ==> byad here) */ & `"`ad'"'==`""' {{
@@ -1352,12 +1459,20 @@ program ipdmetan, rclass sortpreserve
 	qui count if _USE == 5
 	assert `r(N)' == (`"`overall'"'==`""')
 
+	* Availablility of participant numbers per study
 	cap confirm var _NN
 	if !_rc {
 		summ _NN, meanonly
-		if !`r(N)' qui drop _NN		// drop if no data (i.e. no. pts not available)
+		if !`r(N)' qui drop _NN		// drop if no data (i.e. pt nos. not available)
 		cap confirm var _NN
-		if !_rc local _NN "_NN"
+		if !_rc local _NN "_NN"		// macro `_NN' is a marker of whether or not pt nos. are available
+	}
+	if "`reModel'"=="b0" {			// if B0 estimator, must have _NN for all _USE==1
+		cap assert _NN>=0 & !missing(_NN) if _USE==1
+		if _rc {
+			disp as err "Participant numbers not available for all studies; cannot calculate tau`=char(178)' estimator B0"
+			exit 198
+		}
 	}
 
 	* Store value labels in new var "_LABELS"
@@ -1393,7 +1508,7 @@ program ipdmetan, rclass sortpreserve
 	if !`r(N)' {
 		disp as err `"No estimates found. Check:"'
 		disp as err `"- specification of interaction option"'
-		disp as err `"- model is able to be fitted within the entire dataset and/or a specific trial"'
+		disp as err `"- model is able to be fitted within the entire dataset and/or a specific study"'
 		exit 198
 	}
 	qui count if _USE==1
@@ -1406,7 +1521,7 @@ program ipdmetan, rclass sortpreserve
 	* This also applies to subgroup/overall estimates if "ipdover"
 	* Hence, just calculate limits for entire dataset, and replace within subsequent subroutines if necessary
 	tempname crit
-	scalar `crit' = invnorm(.5+`level'/200)	// normal distribution
+	scalar `crit' = invnorm(.5+`level'/200)		// normal distribution
 	qui gen _LCI = _ES - `crit'*_seES
 	qui gen _UCI = _ES + `crit'*_seES
 	
@@ -1432,7 +1547,7 @@ program ipdmetan, rclass sortpreserve
 				qui replace `touse' = `touse'*(_OVER==`j')
 			}
 		
-			cap mata: GetEstimates("`touse'", "sgwt", "`reModel'", `maxtausq', `itol', `maxiter', `quadpts', `level')
+			cap mata: GetEstimates("`touse'", "sgwt", "`reModel'", `reps', `maxtausq', `itol', `maxiter', `quadpts', `level', `isq')
 			if _rc>=3000 {
 				disp as err "Mata error"
 				exit _rc
@@ -1443,12 +1558,10 @@ program ipdmetan, rclass sortpreserve
 				if `"`_by'"'!=`""' & `"`ipdover'"'==`""' {
 
 					* Store scalars
-					foreach x in mu_hat se_mu_hat Q K tausq sigmasq {
+					foreach x in eff se_eff Q K tausq sigmasq {
 						tempname `x'`i'
 						scalar ``x'`i'' = r(`x')
 					}
-					tempname tstat`i'
-					scalar `tstat`i'' = `mu_hat`i''/`se_mu_hat`i''
 					tempname Qr`i' Isq`i'
 					if `"`r(Qr)'"'!=`""' {
 						scalar `Qr`i'' = r(Qr)
@@ -1458,25 +1571,22 @@ program ipdmetan, rclass sortpreserve
 					scalar `Qsum' = `Qsum' + `Q`i''
 
 					* Store effect size, SE and confidence limits in the dataset
-					qui replace _ES = `mu_hat`i'' if _USE==3 & _BY==`byi'			// subgroup ES
-					qui replace _seES = `se_mu_hat`i'' if _USE==3 & _BY==`byi'		// subgroup seES
+					qui replace _ES = `eff`i'' if _USE==3 & _BY==`byi'			// subgroup ES
+					qui replace _seES = `se_eff`i'' if _USE==3 & _BY==`byi'		// subgroup seES
 					if "`reModel'"=="pl" {
-						if "`t'"!="" {
-							scalar `tstat`i'' = `tstat`i''*sqrt((`K`i''-1)/`Qr`i'')		// t correction
+						qui replace _LCI = r(eff_lci) if _USE==3 & _BY==`byi'
+						qui replace _UCI = r(eff_uci) if _USE==3 & _BY==`byi'
+					}
+					else {
+						if "`reModel'"=="dlt" {
+							scalar `se_eff`i'' = `se_eff`i'' * sqrt(`Qr`i''/(`K`i''-1))		// Hartung-Knapp variance estimator
+							scalar `crit' = invttail(`K`i''-1, .5-`level'/200)				// t-distribution critical value
 						}
-						qui replace _LCI = r(mu_hat_lci) if _USE==3 & _BY==`byi'
-						qui replace _UCI = r(mu_hat_uci) if _USE==3 & _BY==`byi'
+						qui replace _LCI = `eff`i'' - `crit'*`se_eff`i'' if _USE==3 & _BY==`byi'
+						qui replace _UCI = `eff`i'' + `crit'*`se_eff`i'' if _USE==3 & _BY==`byi'
 					}
-					else if "`t'"!="" {
-						scalar `tstat`i'' = `tstat`i''*sqrt((`K`i''-1)/`Qr`i'')		// t correction
-						scalar `tcrit' = invttail(`K`i''-1, .5-`level'/200)
-						qui replace _LCI = `mu_hat`i'' - `tcrit'*`se_mu_hat`i''*sqrt(`Qr`i''/(`K`i''-1)) if _USE==3 & _BY==`byi'
-						qui replace _UCI = `mu_hat`i'' + `tcrit'*`se_mu_hat`i''*sqrt(`Qr`i''/(`K`i''-1)) if _USE==3 & _BY==`byi'
-					}
-					else {		// use z-value
-						qui replace _LCI = `mu_hat`i'' - `crit'*`se_mu_hat`i'' if _USE==3 & _BY==`byi'
-						qui replace _UCI = `mu_hat`i'' + `crit'*`se_mu_hat`i'' if _USE==3 & _BY==`byi'
-					}
+					tempname tstat`i'			// test statistic
+					scalar `tstat`i'' = `eff`i''/`se_eff`i''
 
 					* Subgroup numbers of patients
 					if `"`_NN'"'!=`""' {
@@ -1504,7 +1614,7 @@ program ipdmetan, rclass sortpreserve
 	if `"`_over'"'!=`""' {
 		forvalues j=1/`overlen' {
 			qui gen `touse' = (_USE==1)*(_OVER==`j')
-			cap mata: GetEstimates("`touse'", "ovwt", "`reModel'", `maxtausq', `itol', `maxiter', `quadpts', `level')
+			cap mata: GetEstimates("`touse'", "ovwt", "`reModel'", `reps', `maxtausq', `itol', `maxiter', `quadpts', `level', `isq')
 			if _rc>=3000 {
 				disp as err "Mata error"
 				exit _rc
@@ -1515,7 +1625,7 @@ program ipdmetan, rclass sortpreserve
 	}
 	else {
 		qui gen `touse' = (_USE==1)
-		cap mata: GetEstimates("`touse'", "ovwt", "`reModel'", `maxtausq', `itol', `maxiter', `quadpts', `level')
+		cap mata: GetEstimates("`touse'", "ovwt", "`reModel'", `reps', `maxtausq', `itol', `maxiter', `quadpts', `level', `isq')
 		if _rc>=3000 {
 			disp as err "Mata error"
 			exit _rc
@@ -1526,51 +1636,47 @@ program ipdmetan, rclass sortpreserve
 		if `"`ipdover'"'==`""' {
 		
 			* Store scalars
-			foreach x in mu_hat se_mu_hat Q Qr /*K*/ sigmasq {
+			foreach x in eff se_eff Q Qr /*K*/ sigmasq {
 				tempname `x'
 				scalar ``x'' = r(`x')
 			}
-			
-			tempname tstat
-			scalar `tstat' = `mu_hat'/`se_mu_hat'
-			scalar `Qdiff' = `Q' - `Qsum'		// tempname already defined, set to zero as default (line 1333)
 		
 			* Store effect size and confidence limits in the dataset
-			qui replace _ES = `mu_hat' if _USE==5			// overall ES
-			qui replace _seES = `se_mu_hat' if _USE==5		// overall seES
+			qui replace _ES = `eff' if _USE==5			// overall ES
+			qui replace _seES = `se_eff' if _USE==5		// overall seES
 			if "`reModel'"=="pl" {
-				if "`t'"!="" {
-					scalar `tstat' = `tstat'*sqrt((`K'-1)/`Qr')		// t correction	
+				qui replace _LCI = r(eff_lci) if _USE==5
+				qui replace _UCI = r(eff_uci) if _USE==5
+			}
+			else {
+				scalar `crit' = invnorm(.5+`level'/200)			// normal distribution critical value (default)
+				if "`reModel'"=="dlt" {
+					scalar `se_eff' = `se_eff' * sqrt(`Qr'/(`K'-1))		// Hartung-Knapp variance estimator
+					scalar `crit' = invttail(`K'-1, .5-`level'/200)				// t distribution critical value
 				}
-				tempname mu_hat_lci mu_hat_uci
-				scalar `mu_hat_lci' = r(mu_hat_lci)
-				scalar `mu_hat_uci' = r(mu_hat_uci)
-				qui replace _LCI = `mu_hat_lci' if _USE==5
-				qui replace _UCI = `mu_hat_uci' if _USE==5
+				qui replace _LCI = `eff' - `crit'*`se_eff' if _USE==5
+				qui replace _UCI = `eff' + `crit'*`se_eff' if _USE==5
 			}
-			else if "`t'"!="" {
-				scalar `tstat' = `tstat'*sqrt((`K'-1)/`Qr')			// t correction	
-				scalar `tcrit' = invttail(`K'-1, .5-`level'/200)
-				qui replace _LCI = `mu_hat' - `tcrit'*`se_mu_hat'*sqrt(`Qr'/(`K'-1)) if _USE==5
-				qui replace _UCI = `mu_hat' + `tcrit'*`se_mu_hat'*sqrt(`Qr'/(`K'-1)) if _USE==5
-			}
-			else {		// use z-value
-				qui replace _LCI = `mu_hat' - `crit'*`se_mu_hat' if _USE==5
-				qui replace _UCI = `mu_hat' + `crit'*`se_mu_hat' if _USE==5
-			}
+			tempname tstat							// test statistic
+			scalar `tstat' = `eff'/`se_eff'
+			scalar `Qdiff' = `Q' - `Qsum'			// tempname already defined, set to zero as default (line 1333)
 		
 			* Heterogeneity stats
 			tempname tausq HsqM Isq
 			scalar `tausq' = r(tausq)
-			scalar `Isq'=`tausq'/(`tausq'+`sigmasq')	// General formula for Isq (including D+L)
+			if "`reModel'"!="sa" {
+				scalar `Isq'=`tausq'/(`tausq'+`sigmasq')	// General formula for Isq (including D+L)
+			}
+			else scalar `Isq'=`isq'
 			scalar `HsqM'=`tausq'/`sigmasq'				// General formula for HsqM (including D+L)	
 			
 			if `"`overall'"'==`""' {
-				return scalar Q=`Q'
+				if "`reModel'"!="sa" return scalar Q=`Q'	// Q is meaningless for sensitivity analysis
 				return scalar sigmasq=`sigmasq'
 				return scalar tausq=`tausq'
 				return scalar Isq=`Isq'
-				return scalar HsqM=`HsqM'
+				if "`reModel'"!="sa" return scalar HsqM=`HsqM'
+				else return scalar HsqM=float(`HsqM')		// If user-defined I^2 is a round(ish) number, so should H^2 be
 				
 				* Subgroup statistics
 				if `"`_by'"'!=`""' & `"`subgroup'"'==`""' {
@@ -1581,41 +1687,41 @@ program ipdmetan, rclass sortpreserve
 				}
 			}
 			
-			if inlist(`"`reModel'"', "gq", "bs", "ml", "pl", "reml") {		// confidence limits for tausq, Isq and Hsq
-				tempname tausq_lci tausq_uci HsqM_lci HsqM_uci Isq_lci Isq_uci
-				scalar `tausq_lci' = r(tausq_lci)
-				scalar `tausq_uci' = r(tausq_uci)
+			if inlist(`"`reModel'"', "dlb", "gq", "bs", "ml", "pl", "reml") {		// confidence limits for tausq, Isq and Hsq
+				tempname tsq_lci tsq_uci HsqM_lci HsqM_uci Isq_lci Isq_uci
+				scalar `tsq_lci' = r(tsq_lci)
+				scalar `tsq_uci' = r(tsq_uci)
 				
-				scalar `HsqM_lci'=`tausq_lci'/`sigmasq'
-				scalar `HsqM_uci'=`tausq_uci'/`sigmasq'
+				scalar `HsqM_lci'=`tsq_lci'/`sigmasq'
+				scalar `HsqM_uci'=`tsq_uci'/`sigmasq'
 
-				scalar `Isq_lci'=`tausq_lci'/(`tausq_lci'+`sigmasq')
-				scalar `Isq_uci'=`tausq_uci'/(`tausq_uci'+`sigmasq')
+				scalar `Isq_lci'=`tsq_lci'/(`tsq_lci'+`sigmasq')
+				scalar `Isq_uci'=`tsq_uci'/(`tsq_uci'+`sigmasq')
 				
 				if `"`overall'"'==`""' {
 					local rc_tausq = r(rc_tausq)
-					local rc_tausq_lci = r(rc_tausq_lci)
-					local rc_tausq_uci = r(rc_tausq_uci)
-					return scalar rc_tausq = `rc_tausq'				// whether tausq point estimate converged
-					return scalar rc_tausq_lci = `rc_tausq_lci'		// whether tausq lower confidence limit converged
-					return scalar rc_tausq_uci = `rc_tausq_uci'		// whether tausq upper confidence limit converged
+					local rc_tsq_lci = r(rc_tsq_lci)
+					local rc_tsq_uci = r(rc_tsq_uci)
+					return scalar rc_tausq = `rc_tausq'			// whether tausq point estimate converged
+					return scalar rc_tsq_lci = `rc_tsq_lci'		// whether tausq lower confidence limit converged
+					return scalar rc_tsq_uci = `rc_tsq_uci'		// whether tausq upper confidence limit converged
 					
-					return scalar tausq_lci=`tausq_lci'
-					return scalar tausq_uci=`tausq_uci'
+					return scalar tsq_lci=`tsq_lci'
+					return scalar tsq_uci=`tsq_uci'
 
 					if "`reModel'"=="pl" {
-						local rc_mu_lci = r(rc_mu_lci)
-						local rc_mu_uci = r(rc_mu_uci)
-						return scalar rc_mu_lci = `rc_mu_lci'		// whether mu_hat lower confidence limit converged
-						return scalar rc_mu_uci = `rc_mu_uci'		// whether mu_hat upper confidence limit converged					
+						local rc_eff_lci = r(rc_eff_lci)
+						local rc_eff_uci = r(rc_eff_uci)
+						return scalar rc_eff_lci = `rc_eff_lci'		// whether ES lower confidence limit converged
+						return scalar rc_eff_uci = `rc_eff_uci'		// whether ES upper confidence limit converged					
 						
-						return scalar mu_hat_lci = `mu_hat_lci'
-						return scalar mu_hat_uci = `mu_hat_uci'					
+						return scalar eff_lci = `eff_lci'
+						return scalar eff_uci = `eff_uci'					
 					}
 					if "`reModel'"=="bs" {
-						tempname tausq_var
-						scalar `tausq_var' = r(tausq_var)
-						if `"`overall'"'==`""' return scalar tausq_var = `tausq_var'
+						tempname tsq_var
+						scalar `tsq_var' = r(tsq_var)
+						if `"`overall'"'==`""' return scalar tsq_var = `tsq_var'
 					}
 				}
 			}
@@ -1655,8 +1761,6 @@ program ipdmetan, rclass sortpreserve
 		drop `=cond(`"`_by'"'!=`""' & `"`overall'"'!=`""' & `"`subgroup'"'==`""', "ovwt", "sgwt")'
 		rename `=cond(`"`_by'"'!=`""' & `"`overall'"'!=`""' & `"`subgroup'"'==`""', "sgwt", "ovwt")' _WT
 	}
-	* April 2014 -- think about adding options "sgwt" and "ovwt" to override this
-	* (e.g. if using admetan to get ipdover-like results for summary data, see emails from Marie Dam Lauridsen)
 	
 	
 	*** Return other statistics
@@ -1672,13 +1776,8 @@ program ipdmetan, rclass sortpreserve
 	mkmat `_over' `_by' `_study' _ES _seES `_NN' _WT if inlist(_USE, 1, 2), matrix(`coeffs')
 	return matrix coeffs=`coeffs'
 
-	if `"`ADonly'"'==`""' {
-		return local estvar `"`estvar'"'
-		return local command `"`command'"'
-	}
-	return local dist `"`z'`t'"'			// test distribution for pooled effects - z or t
 	if `"`byad'"'!=`""' {
-		foreach x in K1 K2 totnpts1 totnpts2 mu_hat1 mu_hat2 se_mu_hat1 se_mu_hat2 {
+		foreach x in K1 K2 totnpts1 totnpts2 eff1 eff2 se_eff1 se_eff2 {
 			if `"``x''"'==`""' local `x'=.
 		}
 	}
@@ -1687,10 +1786,10 @@ program ipdmetan, rclass sortpreserve
 		return scalar k2=`K2'
 		return scalar n1=`totnpts1'
 		return scalar n2=`totnpts2'
-		return scalar mu_hat1=`mu_hat1'
-		return scalar mu_hat2=`mu_hat2'
-		return scalar se_mu_hat1=`se_mu_hat1'
-		return scalar se_mu_hat2=`se_mu_hat2'
+		return scalar eff1=`eff1'
+		return scalar eff2=`eff2'
+		return scalar se_eff1=`se_eff1'
+		return scalar se_eff2=`se_eff2'
 	}	
 	else {
 		if `"`totnpts'"'==`""' local totnpts=.
@@ -1699,9 +1798,8 @@ program ipdmetan, rclass sortpreserve
 		
 		* Pooled estimates
 		if `"`ipdover'"'==`""' & `"`overall'"'==`""' {
-			return local re_model "`reModel'"
-			return scalar mu_hat=`mu_hat'
-			return scalar se_mu_hat=`se_mu_hat'
+			return scalar eff=`eff'
+			return scalar se_eff=`se_eff'
 		}
 	}
 
@@ -1714,6 +1812,9 @@ program ipdmetan, rclass sortpreserve
 	* Full method names
 	if "`reModel'"=="fe" local reDesc "Fixed-effects"
 	else if "`reModel'"=="dl" local reDesc "Random-effects; DerSimonian-Laird estimator"
+	else if "`reModel'"=="sa" local reDesc "Random-effects; Sensitivity analysis with user-defined I`=char(178)'"
+	else if "`reModel'"=="dlb" local reDesc "Random-effects; Bootstrap DerSimonian-Laird estimator"
+	else if "`reModel'"=="dlt" local reDesc "Random-effects; DerSimonian-Laird with Hartung-Knapp variance estimator"
 	else if "`reModel'"=="gq" local reDesc "Random-effects; Generalised Q estimator"
 	else if "`reModel'"=="bs" local reDesc "Random-effects; Approximate Gamma estimator"
 	else if "`reModel'"=="vc" local reDesc "Random-effects; ANOVA-type estimator"
@@ -1721,8 +1822,10 @@ program ipdmetan, rclass sortpreserve
 	else if "`reModel'"=="ml" local reDesc "Random-effects; ML estimator"
 	else if "`reModel'"=="pl" local reDesc "Random-effects; Profile ML estimator"
 	else if "`reModel'"=="reml" local reDesc "Random-effects; REML estimator"
+	else if "`reModel'"=="bp" local reDesc "Random-effects; Rukhin BP estimator"
+	else if "`reModel'"=="b0" local reDesc "Random-effects; Rukhin B0 estimator"
 	
-	* Print number of trials/patients to screen
+	* Print number of studies/patients to screen
 	* (NB nos. actually analysed as opposed to the number supplied in original data)
 	if `"`ADfile'"'!=`""' {
 		if `"`byad'"'==`""' {
@@ -1750,17 +1853,17 @@ program ipdmetan, rclass sortpreserve
 			local KAD `K2'
 			local totnptsAD `totnpts2'
 		}
-		disp as text _n "Trials included from IPD: " as res `KIPD'
+		disp as text _n "Studies included from IPD: " as res `KIPD'
 		local dispnpts=cond(missing(`totnptsIPD'), "Unknown", string(`totnptsIPD'))
 		disp as text "Patients included: " as res "`dispnpts'"
 		
-		disp as text _n "Trials included from aggregate data: " as res `KAD'
+		disp as text _n "Studies included from aggregate data: " as res `KAD'
 		local dispnpts=cond(missing(`totnptsAD'), "Unknown", string(`totnptsAD'))
 		disp as text "Patients included: " as res "`dispnpts'"
 	}
 	else {
 		disp _n _c
-		if `"`ipdover'"'==`""' disp as text "Trials included: " as res `K'
+		if `"`ipdover'"'==`""' disp as text "Studies included: " as res `K'
 		local dispnpts=cond(missing(`totnpts'), "Unknown", string(`totnpts'))
 		disp as text "Patients included: " as res "`dispnpts'"
 	}
@@ -1770,16 +1873,23 @@ program ipdmetan, rclass sortpreserve
 	else if `"`ADonly'"'!=`""' local pooling "`pooltext' of aggregate data"
 	else local pooling "`pooltext' of main (treatment) effect estimate"
 	
-	di _n as text "`pooling'" as res " `estvareq'`estvar'"
+	di _n as text "`pooling'" as res " `estexp'"
 	if `"`ipdover'"'==`""' {
 		disp as text "using" as res " `reDesc'"
 	}
 	if `"`total'"'!=`""' {
-		disp as err _n "caution: initial model fitting in full sample was suppressed"
+		disp as err _n "Caution: initial model fitting in full sample was suppressed"
 	}
 	if `"`pcmdname'"'!=`""' {
-		disp as err _n "caution: prefix command supplied to ipdmetan. please check estimates carefully"
+		disp as err _n "Caution: prefix command supplied to ipdmetan. Please check estimates carefully"
 	}
+	if `noconverge' {
+		disp as err _n "Caution: model did not converge for one or more studies. Pooled estimate may not be accurate"
+	}
+	if `userbreak' {
+		disp as err _n "Caution: model fitting for one or more studies was stopped by user. Pooled estimate may not be accurate"
+	}
+
 	
 	
 	**************************
@@ -1814,15 +1924,15 @@ program ipdmetan, rclass sortpreserve
 		if `"`ipdover'"'==`""' & `"`overall'"'==`""' & (`"`_by'"'==`""' | `"`subgroup'"'!=`""') {
 			local isqlist `Isq'
 			local hsqlist `HsqM'
-			local tausqlist `tausq'
-			if inlist("`reModel'", "gq", "bs", "ml", "pl", "reml") {
+			local tsqlist `tausq'
+			if inlist("`reModel'", "dlb", "gq", "bs", "ml", "pl", "reml") {
 				local isqlist `"`isqlist' `Isq_lci' `Isq_uci'"'
 				local hsqlist `"`hsqlist' `HsqM_lci' `HsqM_uci'"'
-				local tausqlist `"`tausqlist' `tausq_lci' `tausq_uci'"'
+				local tsqlist `"`tsqlist' `tsq_lci' `tsq_uci'"'
 			}
 			local isqlist `"isq(`isqlist')"'
 			local hsqlist `"hsq(`hsqlist')"'
-			local tausqlist `"tausq(`tausqlist')"'
+			local tsqlist `"tausq(`tsqlist')"'
 		}
 		if `"`_by'"'!=`""' & `"`subgroup'"'==`""' {
 			forvalues i=1/`nby' {
@@ -1838,8 +1948,8 @@ program ipdmetan, rclass sortpreserve
 		sort `use5' `_by' `_over' _USE `_source' `sgroup'
 		qui gen long `obs'=_n
 		DrawTable, sortby(`obs') overlen(`overlen') lablen(`lablen') stitle(`stitle') etitle(`effect') `varlabopt' `eform' ///
-			bylab(`bylab') bylist(`bylist') q(`Q') qlist(`Qlist') qdiff(`Qdiff') tstat(`tstat') tstatlist(`tstatlist') `z' `t' ///
-			`isqlist' `hsqlist' `tausqlist' `overall' `subgroup' `ipdover'
+			bylab(`bylab') bylist(`bylist') remodel(`reModel') q(`Q') qlist(`Qlist') qdiff(`Qdiff') tstat(`tstat') tstatlist(`tstatlist') ///
+			`isqlist' `hsqlist' `tsqlist' `overall' `subgroup' `ipdover'
 		drop `obs'
 		
 		if `"`messages'"'!=`""' {
@@ -1851,24 +1961,24 @@ program ipdmetan, rclass sortpreserve
 					if `rc_tausq'==1 disp as err "tau{c 178} point estimate failed to converge within `maxiter' iterations"
 					if `rc_tausq'>1 disp as err "tau{c 178} point estimate failed to converge: invalid search interval"
 				}
-				if `rc_tausq_lci'==0 disp as text "Lower confidence limit of tau{c 178} converged successfully"
-				if `rc_tausq_lci'==1 disp as err "Lower confidence limit of tau{c 178} failed to converge within `maxiter' iterations"
-				if `rc_tausq_lci'==2 disp as text "Lower confidence limit of tau{c 178} truncated at zero"
-				if `rc_tausq_lci'==3 disp as text "Lower confidence limit of tau{c 178} greater than `maxtausq'"
+				if `rc_tsq_lci'==0 disp as text "Lower confidence limit of tau{c 178} converged successfully"
+				if `rc_tsq_lci'==1 disp as err "Lower confidence limit of tau{c 178} failed to converge within `maxiter' iterations"
+				if `rc_tsq_lci'==2 disp as text "Lower confidence limit of tau{c 178} truncated at zero"
+				if `rc_tsq_lci'==3 disp as text "Lower confidence limit of tau{c 178} greater than `maxtausq'"
 				
-				if `rc_tausq_uci'==0 disp as text "Upper confidence limit of tau{c 178} converged successfully"
-				if `rc_tausq_uci'==1 disp as err "Upper confidence limit of tau{c 178} failed to converge within `maxiter' iterations"
-				if `rc_tausq_uci'==2 disp as text "Upper confidence limit of tau{c 178} truncated at zero"
-				if `rc_tausq_uci'==3 disp as text "Upper confidence limit of tau{c 178} greater than `maxtausq'"
+				if `rc_tsq_uci'==0 disp as text "Upper confidence limit of tau{c 178} converged successfully"
+				if `rc_tsq_uci'==1 disp as err "Upper confidence limit of tau{c 178} failed to converge within `maxiter' iterations"
+				if `rc_tsq_uci'==2 disp as text "Upper confidence limit of tau{c 178} truncated at zero"
+				if `rc_tsq_uci'==3 disp as text "Upper confidence limit of tau{c 178} greater than `maxtausq'"
 				
 				if "`reModel'"=="pl" {
-					if `rc_mu_lci'==0 disp as text "Lower confidence limit of ES converged successfully"
-					if `rc_mu_lci'==1 disp as err "Lower confidence limit of ES failed to converge within `maxiter' iterations"
-					if `rc_mu_lci'>1 disp as err "Lower confidence limit of ES failed to converge: invalid search interval"
+					if `rc_eff_lci'==0 disp as text "Lower confidence limit of ES converged successfully"
+					if `rc_eff_lci'==1 disp as err "Lower confidence limit of ES failed to converge within `maxiter' iterations"
+					if `rc_eff_lci'>1 disp as err "Lower confidence limit of ES failed to converge: invalid search interval"
 					
-					if `rc_mu_uci'==0 disp as text "Upper confidence limit of ES converged successfully"
-					if `rc_mu_uci'==1 disp as err "Upper confidence limit of ES failed to converge within `maxiter' iterations"
-					if `rc_mu_uci'>1 disp as err "Upper confidence limit of ES failed to converge: invalid search interval"
+					if `rc_eff_uci'==0 disp as text "Upper confidence limit of ES converged successfully"
+					if `rc_eff_uci'==1 disp as err "Upper confidence limit of ES failed to converge within `maxiter' iterations"
+					if `rc_eff_uci'>1 disp as err "Upper confidence limit of ES failed to converge: invalid search interval"
 				}
 			}
 		}
@@ -2491,12 +2601,7 @@ prog define ProcessAD, rclass
 	** External aggregate data (to combine with IPD)
 	if `"`adonly'"'==`""' {
 		tempvar studyAD
-		* qui bysort `touse' (`obsAD') : gen int `studyAD' = _n + `smax'		// Generate sequential trial ID nos.
-																			// following on from those of IPD trial
-		gen int `studyAD' = _n + `smax'
-		* qui count
-		* local ni=r(N)
-		* sort `obsAD'
+		gen int `studyAD' = _n + `smax'		// Generate sequential study ID nos. for AD following on from IPD
 		
 		* Add aggregate data studies to value label
 		cap confirm numeric var `study'
@@ -2649,7 +2754,7 @@ end
 program DrawTable
 
 	syntax, SORTBY(varname) OVERLEN(integer) LABLEN(integer) STITLE(string asis) ETITLE(string asis) ///
-		[BYLAB(name) BYLIST(numlist integer miss) Z T TSTAT(name) TSTATLIST(namelist) ///
+		[BYLAB(name) BYLIST(numlist integer miss) REMODEL(string) TSTAT(name) TSTATLIST(namelist) ///
 		Q(name) QLIST(namelist) QDIFF(name) ISQ(namelist) HSQ(namelist) TAUSQ(namelist) ///
 		EFORM noOVERALL noSUBGROUP IPDOVER *]
 	
@@ -2705,7 +2810,7 @@ program DrawTable
 	local final
 
 
-	*** Loop over trials, and subgroups if appropriate
+	*** Loop over studies, and subgroups if appropriate
 	local nby=1
 	cap confirm var _BY
 	if !_rc {
@@ -2845,9 +2950,13 @@ program DrawTable
 		
 		if `"`bylist'"'==`""' | `"`subgroup'"'!=`""' {
 			if `"`overall'"'==`""' {
-				if `"`t'"'!=`""' local pvalue=2*ttail(`K'-1,abs(`tstat'))
-				else local pvalue=2*normal(-abs(`tstat'))
-				di as text _n "Test of overall effect = " as res `null' as text ":  `z'`t' = " ///
+				local pvalue=2*normal(-abs(`tstat'))
+				local dist "z"
+				if `"`remodel'"'==`"dlt"' {
+					local pvalue=2*ttail(`K'-1, abs(`tstat'))
+					local dist "t"
+				}
+				di as text _n "Test of overall effect = " as res `null' as text ":  `dist' = " ///
 					as res %7.3f `tstat' as text "  p = " as res %7.3f `pvalue'
 			}
 		}
@@ -2859,33 +2968,47 @@ program DrawTable
 			
 				local tstati : word `i' of `tstatlist'
 				if `"`tstati'"'!=`""' {
-					if `"`t'"'!=`""' local pvalue=2*ttail(`K`i''-1,abs(`tstati'))
-					else local pvalue=2*normal(-abs(`tstati'))
-					di as text substr("`bylabi'", 1, `=`uselen'-1') "{col `=`uselen'+1'}`z'`t' = " as res %7.3f `tstati' as text "  p = " as res %7.3f `pvalue'
+					local pvalue=2*normal(-abs(`tstati'))
+					local dist "z"
+					if `"`remodel'"'==`"dlt"' {
+						local pvalue=2*ttail(`K`i''-1, abs(`tstati'))
+						local dist "t"
+					}
+					di as text substr("`bylabi'", 1, `=`uselen'-1') "{col `=`uselen'+1'}`dist' = " as res %7.3f `tstati' as text "  p = " as res %7.3f `pvalue'
 				}
 				else di as text substr("`bylabi'", 1, `=`uselen'-1') "{col `=`uselen'+1'}(Insufficient data)"
 			}
 
 			if `"`overall'"'==`""' {
-				if `"`t'"'!=`""' local pvalue=2*ttail(`K'-1,abs(`tstat'))
-				else local pvalue=2*normal(-abs(`tstat'))
-				di as text "Overall{col `=`uselen'+1'}`z'`t' = " as res %7.3f `tstat' as text "  p = " as res %7.3f `pvalue'
+				local pvalue=2*normal(-abs(`tstat'))
+				local dist "z"
+				if `"`remodel'"'==`"dlt"' {
+					local pvalue=2*ttail(`K'-1,abs(`tstat'))
+					local dist "t"
+				}
+				di as text "Overall{col `=`uselen'+1'}`dist' = " as res %7.3f `tstat' as text "  p = " as res %7.3f `pvalue'
 			}
 		}
 			
 		* Heterogeneity measures box: no subgroups
 		if `"`overall'"'==`""' & (`"`bylist'"'==`""' | `"`subgroup'"'!=`""') {
-			di as text _n(2) "Heterogeneity Measures"
+			if "`remodel'"=="sa" local extratext `" as res " (user-defined)""'
+			di as text _n(2) "Heterogeneity Measures" `extratext'
 
 			* Q, I2, H2
-			di as text "{hline `uselen'}{c TT}{hline 35}"
-			di as text "{col `=`uselen'+1'}{c |}{col `=`uselen'+7'}Value{col `=`uselen'+18'}df{col `=`uselen'+25'}p-value"
-			di as text "{hline `uselen'}{c +}{hline 35}"
-				
-			local qpval = chi2tail(`df', `q')
-			di as text "Cochrane Q {col `=`uselen'+1'}{c |}{col `=`uselen'+5'}" ///
-				as res %7.2f `q' "{col `=`uselen'+16'}" %3.0f `df' "{col `=`uselen'+23'}" %7.3f `qpval'
-				
+			if "`remodel'"=="sa" {
+				di as text "{hline `uselen'}{c TT}{hline 13}"
+				di as text `"{col `=`uselen'+1'}{c |}{col `=`uselen'+7'}Value"'
+				di as text "{hline `uselen'}{c +}{hline 13}"
+			}
+			else {
+				di as text "{hline `uselen'}{c TT}{hline 35}"
+				di as text `"{col `=`uselen'+1'}{c |}{col `=`uselen'+7'}Value{col `=`uselen'+18'}df{col `=`uselen'+25'}p-value"'
+				di as text "{hline `uselen'}{c +}{hline 35}"
+				local qpval = chi2tail(`df', `q')
+				di as text "Cochrane Q {col `=`uselen'+1'}{c |}{col `=`uselen'+5'}" ///
+					as res %7.2f `q' "{col `=`uselen'+16'}" %3.0f `df' "{col `=`uselen'+23'}" %7.3f `qpval'
+			}
 			if `: word count `tausq''==1 {
 				di as text "I{c 178} (%) {col `=`uselen'+1'}{c |}{col `=`uselen'+4'}" as res %7.1f 100*`isq' "%"
 				di as text "Modified H{c 178} {col `=`uselen'+1'}{c |}{col `=`uselen'+5'}" as res %7.3f `hsq'
@@ -2912,7 +3035,8 @@ program DrawTable
 					as res %8.4f `tausq_est' "{col `=`uselen'+14'}" ///
 					as res %8.4f `tausq_lci' "{col `=`uselen'+24'}" %8.4f `tausq_uci'
 			}
-			di as text "{hline `uselen'}{c BT}{hline 35}"
+			if "`remodel'"=="sa" di as text "{hline `uselen'}{c BT}{hline 13}"
+			else di as text "{hline `uselen'}{c BT}{hline 35}"
 				
 			* Display explanations
 			di as text _n `"I{c 178} = between-study variance (tau{c 178}) as a percentage of total variance"'
@@ -3031,10 +3155,10 @@ mata:
 /* Mittlboeck & Heinzl, Stat. Med. 2006; 25: 4321–33 "A simulation study comparing properties of heterogeneity measures in meta-analyses" */
 /* Higgins & Thompson, Stat. Med. 2002; 21: 1539–58 "Quantifying heterogeneity in a meta-analysis" */
 void GetEstimates(string scalar touse, string scalar wtvec, string scalar model,
-	real scalar maxtausq, real scalar itol, real scalar maxiter, real scalar quadpts, real scalar level)
+	real scalar reps, real scalar maxtausq, real scalar itol, real scalar maxiter, real scalar quadpts, real scalar level, real scalar isq)
 {
 	real colvector yi, se, vi, wi
-	real scalar k, mu_hat, se_mu_hat, Q, Qr, c, sigmasq, tausq_m, tausq_dl, tausq
+	real scalar k, eff, se_eff, Q, Qr, c, sigmasq, tausq_m, tausq_dl, tausq
 
 	st_view(yi=., ., "_ES", touse)
 	if(length(yi)==0) {
@@ -3045,39 +3169,60 @@ void GetEstimates(string scalar touse, string scalar wtvec, string scalar model,
 	wi=1:/vi
 	k=length(yi)
 
-	mu_hat = mean(yi, wi)					// fixed-effects estimate
-	se_mu_hat = 1/sqrt(sum(wi))				// SE of fixed-effects estimate
-	Q = crossdev(yi, mu_hat, wi, yi, mu_hat)	// standard Q statistic
-	Qr = Q									// "random-effects" Q statistic
-	c = sum(wi) - mean(wi,wi)				// c = S1 - (S2/S1)
-	sigmasq = (k-1)/c						// "typical" within-study variance (cf Mittlboeck, Bowden)
+	eff = mean(yi, wi)					// fixed-effects estimate
+	se_eff = 1/sqrt(sum(wi))			// SE of fixed-effects estimate
+	Q = crossdev(yi, eff, wi, yi, eff)	// standard Q statistic
+	Qr = Q								// "random-effects" Q statistic
+	c = sum(wi) - mean(wi,wi)			// c = S1 - (S2/S1)
+	sigmasq = (k-1)/c					// "typical" within-study variance (cf Mittlboeck, Bowden)
 	st_numscalar("r(Q)", Q)
 	st_numscalar("r(K)", k)
 	st_numscalar("r(sigmasq)", sigmasq)
 
 	/* Initialise tau-squared */
-	tausq_m = (Q-(k-1))/c					// untruncated DerSimonian & Laird estimator
+	tausq_m = (Q-(k-1))/c				// untruncated DerSimonian & Laird estimator
 	tausq_dl = max((0, tausq_m))
 	
 	/* Run models */
-	if (model=="fe" | model=="dl") {
-		st_numscalar("r(tausq)", tausq_dl)
-
-		if (model=="dl") {
+	if (model=="fe" | model=="dl" | model=="dlt") {		// Fixed effects or basic DerSimonian-Laird
+		st_numscalar("r(tausq)", tausq_dl)				// (including with Hartung-Knapp variance estimator)
+		if (model=="dl" | model=="dlt") {
 			wi = 1:/(vi:+tausq_dl)
 		}
 	}
 	
+	else if (model=="sa") {						// Sensitivity analysis: use given Isq and sigmasq to generate tausq
+		tausq = isq*sigmasq/(1-isq)
+		st_numscalar("r(tausq)", tausq)
+		wi = 1:/(vi:+tausq)
+	}
+	
+	else if (model=="dlb") {					// Kontopantelis's bootstrap DerSimonian-Laird
+		DLb_subr(yi, vi, eff, level, reps)
+	}
+
 	else if (model=="vc" | model=="sj") {		// "variance component" aka Cochran ANOVA-type estimator
 		tausq = max((0, variance(yi) - mean(vi)))
 		wi = 1:/(vi:+tausq)
-		mu_hat = mean(yi, wi)
-		se_mu_hat = 1/sqrt(sum(wi))
-		Qr = crossdev(yi, mu_hat, wi, yi, mu_hat)
+		eff = mean(yi, wi)
+		se_eff = 1/sqrt(sum(wi))
+		Qr = crossdev(yi, eff, wi, yi, eff)
 		if (model=="sj") {						// Sidik & Jonkman, with Cochran tausq as initial estimate
 			tausq = tausq * Qr / (k-1)
+			wi = 1:/(vi:+tausq)
 		}
 		st_numscalar("r(tausq)", tausq)
+	}
+	
+	else if (model=="b0" | model=="bp") {		// Rukhin Bayes estimators
+		tausq = variance(yi)*(k-1)/(k+1)
+		if (model=="b0") {
+			st_view(ni=., ., "_NN")				// existence of _NN should have already been tested for if B0
+			N = sum(ni)
+			tausq = tausq - ( (N-k)*(k-1)*mean(vi)/((k+1)*(N-k+2)) )
+		}
+		st_numscalar("r(tausq)", tausq)
+		wi = 1:/(vi:+tausq)
 	}
 	
 	else if (model=="gq") {
@@ -3085,7 +3230,7 @@ void GetEstimates(string scalar touse, string scalar wtvec, string scalar model,
 	}
 
 	else if (model=="bs") {
-		bs_subr(yi, vi, wi, Q, c, level, maxtausq, itol, maxiter, quadpts, se_mu_hat)
+		bs_subr(yi, vi, wi, Q, c, level, maxtausq, itol, maxiter, quadpts, se_eff)
 	}
 
 	else if (model=="ml" | model=="pl") {
@@ -3101,15 +3246,15 @@ void GetEstimates(string scalar touse, string scalar wtvec, string scalar model,
 	}
 
 	/* Calculate final results if not done yet */
-	if (model!="vc" & model!="sj") {
-		mu_hat=mean(yi, wi)							// random-effects estimate
+	if (model!="vc") {
+		eff=mean(yi, wi)							// random-effects estimate
 		if (model!="bs") {							// SE of random-effects estimate
-			se_mu_hat=1/sqrt(sum(wi))				// (defined differently for BS model)
+			se_eff=1/sqrt(sum(wi))				// (defined differently for BS model)
 		}
-		Qr = crossdev(yi, mu_hat, wi, yi, mu_hat)	// "random-effects Q"
+		Qr = crossdev(yi, eff, wi, yi, eff)	// "random-effects Q"
 	}
-	st_numscalar("r(mu_hat)", mu_hat)
-	st_numscalar("r(se_mu_hat)", se_mu_hat)
+	st_numscalar("r(eff)", eff)
+	st_numscalar("r(se_eff)", se_eff)
 	st_numscalar("r(Qr)", Qr)	
 
 	/* Output matrix plus weights, and summary stats */
@@ -3121,8 +3266,24 @@ void GetEstimates(string scalar touse, string scalar wtvec, string scalar model,
 
 /* *** Subroutines for iterative models *** */
 
-void Q_subr(real colvector yi, real colvector vi, real colvector wi, real scalar Q,
-	real scalar level, real scalar maxtausq, real scalar itol, real scalar maxiter)
+void DLb_subr(real colvector yi, real colvector vi, real scalar eff, real scalar level,
+	real scalar reps)
+{
+	// Kontopantelis's bootstrap DerSimonian-Laird estimator
+	// (PLoS ONE 2013; 8(7): e69930)
+	transmorphic B, J
+	real colvector report
+	B = mm_bs(&ftausq(), (yi,vi), 1, reps, 0, 1, ., ., ., eff)
+	J = mm_jk(&ftausq(), (yi,vi), 1, 1, ., ., ., ., ., eff)
+	report = mm_bs_report(B, ("mean", "bca"), level, 0, J)
+	st_numscalar("r(tausq)", report[1])
+	st_numscalar("r(tsq_lci)", max((0,report[2])))
+	st_numscalar("r(tsq_uci)", report[3])
+}
+
+
+void Q_subr(real colvector yi, real colvector vi, real colvector wi, real scalar Q, real scalar level,
+	real scalar maxtausq, real scalar itol, real scalar maxiter)
 {
 	// Mandel/Paule method (J Res Natl Bur Stand 1982; 87: 377–85)
 	// Generalised Q point estimate (e.g. DerSimonian & Kacker, Contemporary Clinical Trials 2007; 28: 105-114)
@@ -3137,60 +3298,60 @@ void Q_subr(real colvector yi, real colvector vi, real colvector wi, real scalar
 	st_numscalar("r(tausq)", tausq)
 	st_numscalar("r(rc_tausq)", rc_tausq)
 
-	real scalar Q_crit_hi, Q_crit_lo, tausq_lci, rc_tausq_lci, tausq_uci, rc_tausq_uci
+	real scalar Q_crit_hi, Q_crit_lo, tsq_lci, rc_tsq_lci, tsq_uci, rc_tsq_uci
 	Q_crit_hi = invchi2(k-1, .5 + (level/200))	// higher critical value to compare Q against (for *lower* bound of tausq)
 	Q_crit_lo = invchi2(k-1, .5 - (level/200))	// lower critical value to compare Q against (for *upper* bound of tausq)
 	if (Q<Q_crit_lo) {			// Q falls below the lower critical value
-		rc_tausq_lci = 2
-		rc_tausq_lci = 2
-		tausq_lci = 0
-		tausq_uci = 0
+		rc_tsq_lci = 2
+		rc_tsq_lci = 2
+		tsq_lci = 0
+		tsq_uci = 0
 	}		
 	else {
 		if (Q>Q_crit_hi) {		// Q is larger than the higher critical value, so can find lower bound using mm_root
-			rc_tausq_lci = mm_root(tausq_lci, &Q_crit(), 0, maxtausq, itol, maxiter, yi, vi, k, Q_crit_hi)
+			rc_tsq_lci = mm_root(tsq_lci, &Q_crit(), 0, maxtausq, itol, maxiter, yi, vi, k, Q_crit_hi)
 		}
 		else {
-			rc_tausq_lci = 2
-			tausq_lci = 0			// otherwise, the lower bound for tausq is 0
+			rc_tsq_lci = 2
+			tsq_lci = 0			// otherwise, the lower bound for tausq is 0
 		}
 		/* Now find upper bound for tausq using mm_root */
-		rc_tausq_uci = mm_root(tausq_uci, &Q_crit(), tausq_lci, maxtausq, itol, maxiter, yi, vi, k, Q_crit_lo)
+		rc_tsq_uci = mm_root(tsq_uci, &Q_crit(), tsq_lci, maxtausq, itol, maxiter, yi, vi, k, Q_crit_lo)
 	}
-	st_numscalar("r(tausq_lci)", tausq_lci)
-	st_numscalar("r(tausq_uci)", tausq_uci)
-	st_numscalar("r(rc_tausq_lci)", rc_tausq_lci)
-	st_numscalar("r(rc_tausq_uci)", rc_tausq_uci)
+	st_numscalar("r(tsq_lci)", tsq_lci)
+	st_numscalar("r(tsq_uci)", tsq_uci)
+	st_numscalar("r(rc_tsq_lci)", rc_tsq_lci)
+	st_numscalar("r(rc_tsq_uci)", rc_tsq_uci)
 }
 
 
-void bs_subr(real colvector yi, real colvector vi, real colvector wi, real scalar Q, real scalar c,
-	real scalar level, real scalar maxtausq, real scalar itol, real scalar maxiter, real scalar quadpts, real scalar se_mu_hat)
+void bs_subr(real colvector yi, real colvector vi, real colvector wi, real scalar Q, real scalar c, real scalar level,
+	real scalar maxtausq, real scalar itol, real scalar maxiter, real scalar quadpts, real scalar se_eff)
 {
 	// Confidence interval around D&L tau-squared using approximate Gamma distribution for Q
 	// based on paper by Biggerstaff and Tweedie (Stat Med 1997; 16: 753–68)
 
 	/* Estimate variance of tausq */
-	real scalar k, tausq_m, tausq, d, Q_var, tausq_var
+	real scalar k, tausq_m, tausq, d, Q_var, tsq_var
 	k = length(yi)
 	tausq_m = (Q-(k-1))/c
 	tausq = max((0, tausq_m))
 	d = cross(wi,wi) - 2*mean(wi:^2,wi) + (mean(wi,wi)^2)
 	Q_var = 2*(k-1) + 4*c*tausq_m + 2*d*(tausq_m^2)
-	tausq_var = Q_var/(c^2)
+	tsq_var = Q_var/(c^2)
 	st_numscalar("r(tausq)", tausq)
-	st_numscalar("r(tausq_var)", tausq_var)
+	st_numscalar("r(tsq_var)", tsq_var)
 
 	/* Find confidence limits for tausq */
-	real scalar tausq_lci, rc_tausq_lci, tausq_uci, rc_tausq_uci
-	rc_tausq_lci = mm_root(tausq_lci=., &gamma_crit(), 0, maxtausq, itol, maxiter, tausq_m, k, c, d, .5+(level/200))
-	rc_tausq_uci = mm_root(tausq_uci=., &gamma_crit(), tausq_lci, maxtausq, itol, maxiter, tausq_m, k, c, d, .5-(level/200))
-	st_numscalar("r(tausq_lci)", tausq_lci)
-	st_numscalar("r(tausq_uci)", tausq_uci)
-	st_numscalar("r(rc_tausq_lci)", rc_tausq_lci)
-	st_numscalar("r(rc_tausq_uci)", rc_tausq_uci)
+	real scalar tsq_lci, rc_tsq_lci, tsq_uci, rc_tsq_uci
+	rc_tsq_lci = mm_root(tsq_lci=., &gamma_crit(), 0, maxtausq, itol, maxiter, tausq_m, k, c, d, .5+(level/200))
+	rc_tsq_uci = mm_root(tsq_uci=., &gamma_crit(), tsq_lci, maxtausq, itol, maxiter, tausq_m, k, c, d, .5-(level/200))
+	st_numscalar("r(tsq_lci)", tsq_lci)
+	st_numscalar("r(tsq_uci)", tsq_uci)
+	st_numscalar("r(rc_tsq_lci)", rc_tsq_lci)
+	st_numscalar("r(rc_tsq_uci)", rc_tsq_uci)
 	
-	/* Find weights and standard error for mu_hat */
+	/* Find weights and standard error for ES */
 	real scalar lambda, r
 	lambda = ((k-1) + c*tausq_m)/(2*(k-1) + 4*c*tausq_m + 2*d*(tausq_m^2))
 	r = ((k-1) + c*tausq_m)*lambda
@@ -3200,56 +3361,57 @@ void bs_subr(real colvector yi, real colvector vi, real colvector wi, real scala
 		else wsi = wsi \ integrate(&Intgrnd(), 0, ., quadpts, params)
 	}
 	wi = wi*gammap(r, lambda*(k-1)) :+ wsi
-	se_mu_hat = sqrt(sum(wi:*wi:*(vi :+ tausq_m)) / (sum(wi)^2))
+	se_eff = sqrt(sum(wi:*wi:*(vi :+ tausq_m)) / (sum(wi)^2))
 }
 
 
 // ML, without or without use of likelihood profiling
-void MLPL_subr(real colvector yi, real colvector vi, real colvector wi, real scalar tausq_dl, 
-	real scalar level, real scalar maxtausq, real scalar itol, real scalar maxiter, string scalar model)
+void MLPL_subr(real colvector yi, real colvector vi, real colvector wi, real scalar tausq_dl, real scalar level,
+	real scalar maxtausq, real scalar itol, real scalar maxiter, string scalar model)
 {
-	// Iterative point estimates for tausq and mu_hat using ML
+	// Iterative point estimates for tausq and ES using ML
 	rc_tausq = mm_root(tausq=., &ML_est(), 0, maxtausq, itol, maxiter, yi, vi)
 	st_numscalar("r(tausq)", tausq)
 	st_numscalar("r(rc_tausq)", rc_tausq)
 
 	// Calculate ML log-likelihood value
-	real scalar mu_hat_ml, ll_ml, crit
+	real scalar eff_ml, ll_ml, crit
 	wi = 1:/(vi:+tausq)
-	mu_hat_ml = mean(yi, wi)
-	ll_ml = 0.5*sum(ln(wi)) - 0.5*crossdev(yi, mu_hat_ml, wi, yi, mu_hat_ml)
+	eff_ml = mean(yi, wi)
+	ll_ml = 0.5*sum(ln(wi)) - 0.5*crossdev(yi, eff_ml, wi, yi, eff_ml)
 	crit = ll_ml - (invchi2(1, level/100)/2)
 
 	// Confidence interval for tausq using likelihood profiling
-	real scalar tausq_lci, rc_tausq_lci, tausq_uci, rc_tausq_uci
-	rc_tausq_lci = mm_root(tausq_lci=., &ML_profile_tausq(), 0, tausq, itol, maxiter, yi, vi, crit)
-	rc_tausq_uci = mm_root(tausq_uci=., &ML_profile_tausq(), tausq, maxtausq, itol, maxiter, yi, vi, crit)
-	st_numscalar("r(tausq_lci)", tausq_lci)
-	st_numscalar("r(tausq_uci)", tausq_uci)
-	st_numscalar("r(rc_tausq_lci)", rc_tausq_lci)
-	st_numscalar("r(rc_tausq_uci)", rc_tausq_uci)
+	real scalar tsq_lci, rc_tsq_lci, tsq_uci, rc_tsq_uci
+	rc_tsq_lci = mm_root(tsq_lci=., &ML_profile_tausq(), 0, tausq, itol, maxiter, yi, vi, crit)
+	rc_tsq_uci = mm_root(tsq_uci=., &ML_profile_tausq(), tausq, maxtausq, itol, maxiter, yi, vi, crit)
+	st_numscalar("r(tsq_lci)", tsq_lci)
+	st_numscalar("r(tsq_uci)", tsq_uci)
+	st_numscalar("r(rc_tsq_lci)", rc_tsq_lci)
+	st_numscalar("r(rc_tsq_uci)", rc_tsq_uci)
 	
 	if (model=="pl") {
-		// Confidence interval for mu_hat using likelihood profiling
+		// Confidence interval for ES using likelihood profiling
 		// (use four times the D+L RE lci and uci for search limits)
 		real scalar wi_dl, llim
 		wi_dl = 1:/(vi:+tausq_dl)
 		llim = mean(yi, wi_dl) - 4*1.96/sqrt(sum(wi_dl))
 		ulim = mean(yi, wi_dl) + 4*1.96/sqrt(sum(wi_dl))
 		
-		real scalar mu_hat_lci, mu_hat_uci, rc_mu_lci, rc_mu_uci
-		rc_mu_lci = mm_root(mu_hat_lci=., &ML_profile_mu(), llim, mu_hat_ml, itol, maxiter, yi, vi, crit, maxtausq, itol, maxiter)
-		rc_mu_uci = mm_root(mu_hat_uci=., &ML_profile_mu(), mu_hat_ml, ulim, itol, maxiter, yi, vi, crit, maxtausq, itol, maxiter)
-		st_numscalar("r(mu_hat_lci)", mu_hat_lci)
-		st_numscalar("r(mu_hat_uci)", mu_hat_uci)
-		st_numscalar("r(rc_mu_lci)", rc_mu_lci)
-		st_numscalar("r(rc_mu_uci)", rc_mu_uci)
+		real scalar eff_lci, eff_uci, rc_eff_lci, rc_eff_uci
+		rc_eff_lci = mm_root(eff_lci=., &ML_profile_mu(), llim, eff_ml, itol, maxiter, yi, vi, crit, maxtausq, itol, maxiter)
+		rc_eff_uci = mm_root(eff_uci=., &ML_profile_mu(), eff_ml, ulim, itol, maxiter, yi, vi, crit, maxtausq, itol, maxiter)
+		st_numscalar("r(eff_lci)", eff_lci)
+		st_numscalar("r(eff_uci)", eff_uci)
+		st_numscalar("r(rc_eff_lci)", rc_eff_lci)
+		st_numscalar("r(rc_eff_uci)", rc_eff_uci)
 	}
 }
 
 
 // REML
-void REML_subr(real colvector yi, real colvector vi, real colvector wi, real scalar level, real scalar maxtausq, real scalar itol, real scalar maxiter)
+void REML_subr(real colvector yi, real colvector vi, real colvector wi, real scalar level,
+	real scalar maxtausq, real scalar itol, real scalar maxiter)
 {
 	// Iterative tau-squared using REML
 	rc_tausq = mm_root(tausq=., &REML_est(), 0, maxtausq, itol, maxiter, yi, vi)
@@ -3257,17 +3419,17 @@ void REML_subr(real colvector yi, real colvector vi, real colvector wi, real sca
 	st_numscalar("r(rc_tausq)", rc_tausq)
 	
 	// Confidence interval using likelihood profiling
-	real scalar mu_hat_reml, ll_reml
+	real scalar eff_reml, ll_reml
 	wi = 1:/(vi:+tausq)
-	mu_hat_reml = mean(yi, wi)
-	ll_reml = 0.5*sum(ln(wi)) - 0.5*ln(sum(wi)) - 0.5*crossdev(yi, mu_hat_reml, wi, yi, mu_hat_reml)
+	eff_reml = mean(yi, wi)
+	ll_reml = 0.5*sum(ln(wi)) - 0.5*ln(sum(wi)) - 0.5*crossdev(yi, eff_reml, wi, yi, eff_reml)
 	crit = ll_reml - (invchi2(1, level/100)/2)
-	rc_tausq_lci = mm_root(tausq_lci=., &REML_profile(), 0, tausq, itol, maxiter, yi, vi, crit)
-	rc_tausq_uci = mm_root(tausq_uci=., &REML_profile(), tausq, maxtausq, itol, maxiter, yi, vi, crit)
-	st_numscalar("r(tausq_lci)", tausq_lci)
-	st_numscalar("r(tausq_uci)", tausq_uci)
-	st_numscalar("r(rc_tausq_lci)", rc_tausq_lci)
-	st_numscalar("r(rc_tausq_uci)", rc_tausq_uci)
+	rc_tsq_lci = mm_root(tsq_lci=., &REML_profile(), 0, tausq, itol, maxiter, yi, vi, crit)
+	rc_tsq_uci = mm_root(tsq_uci=., &REML_profile(), tausq, maxtausq, itol, maxiter, yi, vi, crit)
+	st_numscalar("r(tsq_lci)", tsq_lci)
+	st_numscalar("r(tsq_uci)", tsq_uci)
+	st_numscalar("r(rc_tsq_lci)", rc_tsq_lci)
+	st_numscalar("r(rc_tsq_uci)", rc_tsq_uci)
 }
 
 
@@ -3275,14 +3437,31 @@ void REML_subr(real colvector yi, real colvector vi, real colvector wi, real sca
 
 /* *** Iteration functions *** */
 
+/* DerSimonian-Laird (truncated, for bootstrap) */
+/* Using same approach as Kontopantelis (metaan and PLoS ONE 2013); */
+/*  i.e. using originally estimated ES within the re-samples */
+real scalar ftausq(real matrix coeffs, real colvector weight, real scalar eff) {
+	real colvector yi, vi, wi
+	real scalar k, Q, c, tausq
+
+	yi = select(coeffs[,1], weight)
+	vi = select(coeffs[,2], weight)
+	k = length(yi)
+	wi = 1:/vi
+	Q = crossdev(yi, eff, wi, yi, eff)
+	c = sum(wi) - mean(wi, wi)
+	tausq = max((0, (Q-(k-1))/c))
+	return(tausq)
+}
+
 /* Generalised Q */
 real scalar Q_crit(real scalar tausq, real colvector yi, real colvector vi, real scalar k, real scalar crit) {
 	real colvector wi
-	real scalar mu_hat, newtausq
+	real scalar eff, newtausq
 
 	wi=1:/(vi:+tausq)
-	mu_hat=mean(yi, wi)
-	newtausq = (k/crit)*crossdev(yi, mu_hat, wi, yi, mu_hat)/sum(wi) + mean(vi, wi)
+	eff=mean(yi, wi)
+	newtausq = (k/crit)*crossdev(yi, eff, wi, yi, eff)/sum(wi) + mean(vi, wi)
 	return(tausq-newtausq)
 }
 
@@ -3295,7 +3474,7 @@ real scalar gamma_crit(real scalar tausq, real scalar tausq_m, real scalar k, re
 	limit=lambda*(c*tausq_m + (k-1))
 	return(gammap(r,limit)-crit)
 }
-/* Approximate Gamma - mu_hat */
+/* Approximate Gamma - ES */
 real rowvector Intgrnd(real rowvector t, real rowvector params) {
 	real scalar s, lambda, r, c, k, ans
 
@@ -3309,23 +3488,23 @@ real rowvector Intgrnd(real rowvector t, real rowvector params) {
 }
 
 /* ML */
-real scalar ML_est(real scalar tausq, real colvector yi, real colvector vi, | real scalar mu_hat) {
+real scalar ML_est(real scalar tausq, real colvector yi, real colvector vi, | real scalar eff) {
 	real colvector wi
 	real scalar newtausq
 
 	wi=1:/(vi:+tausq)
-	if (mu_hat==.) mu_hat=mean(yi, wi)
-	newtausq = crossdev(yi, mu_hat, wi:^2, yi, mu_hat)/sum(wi:^2) - mean(vi, wi:^2)
+	if (eff==.) eff=mean(yi, wi)
+	newtausq = crossdev(yi, eff, wi:^2, yi, eff)/sum(wi:^2) - mean(vi, wi:^2)
 	return(tausq-newtausq)
 }
 /* ML profiling - tausq */
 real scalar ML_profile_tausq(real scalar tausq, real colvector yi, real colvector vi, real scalar crit) {
 	real colvector wi
-	real scalar mu_hat, ll
+	real scalar eff, ll
 
 	wi=1:/(vi:+tausq)
-	mu_hat=mean(yi, wi)
-	ll = 0.5*sum(ln(wi)) - 0.5*crossdev(yi, mu_hat, wi, yi, mu_hat)
+	eff=mean(yi, wi)
+	ll = 0.5*sum(ln(wi)) - 0.5*crossdev(yi, eff, wi, yi, eff)
 	return(ll-crit)
 }
 /* ML profiling - mu */
@@ -3342,21 +3521,21 @@ real scalar ML_profile_mu(real scalar mu, real colvector yi, real colvector vi, 
 /* REML */
 real scalar REML_est(real scalar tausq, real colvector yi, real colvector vi) {
 	real colvector wi
-	real scalar mu_hat, newtausq
+	real scalar eff, newtausq
 
 	wi=1:/(vi:+tausq)
-	mu_hat=sum(wi:*yi)/sum(wi)
-	newtausq = crossdev(yi, mu_hat, wi:^2, yi, mu_hat)/sum(wi:^2) - mean(vi, wi:^2) + (1/sum(wi)) 
+	eff=sum(wi:*yi)/sum(wi)
+	newtausq = crossdev(yi, eff, wi:^2, yi, eff)/sum(wi:^2) - mean(vi, wi:^2) + (1/sum(wi)) 
 	return(tausq-newtausq)
 }
 /* REML profiling */
 real scalar REML_profile(real scalar tausq, real colvector yi, real colvector vi, real scalar crit) {
 	real colvector wi
-	real scalar mu_hat, ll
+	real scalar eff, ll
 	
 	wi=1:/(vi:+tausq)
-	mu_hat=sum(wi:*yi)/sum(wi)
-	ll = 0.5*sum(ln(wi)) - 0.5*ln(sum(wi)) - 0.5*crossdev(yi, mu_hat, wi, yi, mu_hat)
+	eff=sum(wi:*yi)/sum(wi)
+	ll = 0.5*sum(ln(wi)) - 0.5*ln(sum(wi)) - 0.5*crossdev(yi, eff, wi, yi, eff)
 	return(ll-crit)
 }
 

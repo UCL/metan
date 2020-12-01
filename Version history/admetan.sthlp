@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 1.0  David Fisher  31jan2014}{...}
+{* *! version 1.01  David Fisher  15apr2014}{...}
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "ipdover" "help ipdover"}{...}
@@ -49,10 +49,13 @@ or
 As such, it may be seen as a direct alternative to {help metan}.
 {it:varlist} must be supplied, and must contain either two or three variables:
 the effect size (on the normal scale), followed by either the standard error of the effect size
-or the lower and upper 95% confidence limits.
+or the lower and upper 95% confidence limits. Note that {cmd:admetan} assumes that confidence intervals are symmetric,
+and calculates variances as (CI width)/2z. Hence, supplied confidence limits must be based on a
+Normal distribution, or the pooled result will not be accurate.
 
 {pstd}
 Any {help ipdmetan##options:ipdmetan} options may be used with the exception of {opt ad()}, {opt nototal}, and {cmd:plotid(_BYAD)}.
+
 
 {marker options}{...}
 {title:Options}

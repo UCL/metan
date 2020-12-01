@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 1.01  David Fisher  15apr2014}{...}
+{* *! version 1.02  David Fisher  23may2014}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "admetan" "help admetan"}{...}
@@ -43,7 +43,6 @@
 {synopt :{opt re}}specify the DerSimonian & Laird random-effects model{p_end}
 {synopt :{cmd:re(}{help ipdmetan##re_model:{it:re_model}}{cmd:)}}specify alternative random-effects models{p_end}
 {synopt :{cmd:sortby(}{it:varname}|{cmd:_n)}}specify ordering of studies in table and forestplot{p_end}
-{synopt :{opt t z}}specify the distribution for calculating confidence limits around the pooled estimate{p_end}
 
 {syntab :Combined IPD/aggregate data analysis}
 {synopt :{cmd:ad(}{it:{help filename}} {ifin}{cmd:,} {help ipdmetan##aggregate_data_options:{it:aggregate_data_options}}{cmd:)}}
@@ -79,13 +78,19 @@ or a variable currently in memory; {it:%fmt} is an optional {help format}; and {
 {marker re_model}{...}
 {synopthdr :re_model}
 {synoptline}
-{synopt :{opt vb}, {opt q}, {opt genq} or {opt eb}}Generalised Q random-effects (a.k.a. "empirical Bayes"){p_end}
-{synopt :{opt bs}, {opt bt} or {opt gamma}}Approximate Gamma random-effects{p_end}
-{synopt :{opt vc} or {opt ca}}Variance-component aka Cochran ANOVA-type random-effects{p_end}
-{synopt :{opt sj}}(improved) Sidik-Jonkman random-effects (implies {cmd:t}){p_end}
-{synopt :{opt ml}}(simple) maximum likelihood (ML) -based random-effects{p_end}
-{synopt :{opt pl}}"Profile" maximum likelihood-based random-effects{p_end}
-{synopt :{opt reml}}Restricted maximum likelihood (REML) -based random-effects{p_end}
+{synopt :{opt dl}}DerSimonian-Laird estimator{p_end}
+{synopt :{opt bdl} or {opt dlb}}Bootstrap DerSimonian-Laird estimator (due to Kontopantelis) {p_end}
+{synopt :{opt dlt} or {opt hk}}DerSimonian-Laird with Hartung-Knapp t-based variance estimator{p_end}
+{synopt :{opt vc}, {opt ca} or {opt he}}Hedges variance-component aka Cochran estimator{p_end}
+{synopt :{opt sj}}Sidik-Jonkman two-step estimator{p_end}
+{synopt :{opt b0}}Rukhin B0 estimator{p_end}
+{synopt :{opt bp}}Rukhin BP estimator{p_end}
+{synopt :{opt bs}, {opt bt} or {opt gamma}}Biggerstaff-Tweedie approximate Gamma model{p_end}
+{synopt :{opt vb}, {opt q}, {opt genq} or {opt eb}}Mandel-Paule aka Generalised Q aka "empirical Bayes" estimator{p_end}
+{synopt :{opt ml}}(simple) maximum likelihood (ML) estimator{p_end}
+{synopt :{opt pl}}"Profile" maximum likelihood model{p_end}
+{synopt :{opt reml}}Restricted maximum likelihood (REML) estimator{p_end}
+{synopt :{opt sa} [{cmd:, isq(}{it:real}{cmd:)}]}Sensitivity analysis with user-defined I-squared (default is 0.8){p_end}
 {synoptline}
 
 {marker aggregate_data_options}{...}
@@ -207,11 +212,7 @@ To use equations, use the format {cmd:poolvar(}{it:eqname}{cmd::}{it:varname}{cm
 {opt re} or {opt random} specifies DerSimonian & Laird random-effects
 
 {phang}
-{cmd:re(}{help ipdmetan##re_model:{it:re_model}}{cmd:)} or {cmd:random(}{help ipdmetan##re_model:{it:re_model}}{cmd:)}
-specifies other possible random-effects models. For details of these models,
-see the reference list at the end of this page, or the forthcoming Stata Journal article.
-
-{pmore}
+{cmd:re(}{help ipdmetan##re_model:{it:re_model}}{cmd:)} specifies other possible random-effects models. For details of these models, see the Stata Journal article referenced below.
 If {help ipdmetan##re_model:{it:re_model}} is not specified, the DerSimonian & Laird random-effects model is assumed.
 
 {phang}
@@ -220,16 +221,6 @@ The default ordering is by {it:study_ID}. Note that {opt sortby} does not alter 
 
 {pmore}
 To order the studies by their first appearance in the data (using the current sort order), specify {cmd:sortby(_n)}.
-
-{phang}
-{opt t}, {opt z} specify the distribution (Student's {it:t} on {it:k}-1 degrees of freedom, or Normal) to use when calculating confidence limits around the pooled estimate(s).
-{opt z} is the default unless {cmd:re(sj)} is specified.
-
-{pmore}
-Note that {opt t}, {opt z} do not affect the reported confidence limits around the individual study estimates,
-which are always calculated using a Normal distribution. This behaviour has no impact on the pooled estimate, since the
-standard error is the same in any case.
-
 
 {dlgtab:Combined IPD/aggregate data analysis}
 
@@ -307,8 +298,8 @@ This allows multiple such datasets to be {help append}ed without this informatio
 {p2col 5 25 29 2: Scalars}{p_end}
 {synopt:{cmd:r(k)}}Number of included studies {it:k}{p_end}
 {synopt:{cmd:r(n)}}Number of included participants{p_end}
-{synopt:{cmd:r(mu_hat)}}Overall (pooled) effect size{p_end}
-{synopt:{cmd:r(se_mu_hat)}}Standard error of overall (pooled) effect size{p_end}
+{synopt:{cmd:r(eff)}}Overall (pooled) effect size{p_end}
+{synopt:{cmd:r(se_eff)}}Standard error of overall (pooled) effect size{p_end}
 {synopt:{cmd:r(Q)}}Q statistic of heterogeneity (N.B. has degrees of freedom {it:k}–1){p_end}
 {synopt:{cmd:r(tausq)}}Between-study variance tau-squared{p_end}
 {synopt:{cmd:r(sigmasq)}}Average within-study variance{p_end}
@@ -317,8 +308,10 @@ This allows multiple such datasets to be {help append}ed without this informatio
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Macros}{p_end}
-{synopt:{cmd:r(re_model)}}Random-effects model used{p_end}
+{synopt:{cmd:r(command)}}Full estimation command-line {p_end}
+{synopt:{cmd:r(cmdname)}}Estimation command name{p_end}
 {synopt:{cmd:r(estvar)}}Name of pooled coefficient{p_end}
+{synopt:{cmd:r(re_model)}}Random-effects model used{p_end}
 
 {synoptset 25 tabbed}{...}
 {p2col 5 25 29 2: Matrices}{p_end}
@@ -340,17 +333,62 @@ Certain iterative random-effects models may save the following additional result
 {synopt:{cmd:r(tsq_lci)}}Lower confidence limit for tau-squared{p_end}
 {synopt:{cmd:r(tsq_uci)}}Upper confidence limit for tau-squared{p_end}
 {synopt:{cmd:r(rc_tausq)}}Whether tau-squared point estimate converged successfully{p_end}
-{synopt:{cmd:r(rc_tausq_lci)}}Whether tau-squared lower confidence limit converged successfully{p_end}
-{synopt:{cmd:r(rc_tausq_uci)}}Whether tau-squared upper confidence limit converged successfully{p_end}
-{synopt:{cmd:r(rc_mu_lci)}}Whether mu_hat lower confidence limit converged successfully{p_end}
-{synopt:{cmd:r(rc_mu_uci)}}Whether mu_hat upper confidence limit converged successfully{p_end}
+{synopt:{cmd:r(rc_tsq_lci)}}Whether tau-squared lower confidence limit converged successfully{p_end}
+{synopt:{cmd:r(rc_tsq_uci)}}Whether tau-squared upper confidence limit converged successfully{p_end}
+{synopt:{cmd:r(rc_eff_lci)}}Whether mu_hat lower confidence limit converged successfully{p_end}
+{synopt:{cmd:r(rc_eff_uci)}}Whether mu_hat upper confidence limit converged successfully{p_end}
 
 
-{title:Examples}
+{title:Examples} (see Stata Journal article for more details)
 
 {pstd}
-Examples (including an example dataset) will be available soon.
-In the meantime, please contact the author.
+Setup
+
+{pmore}
+{cmd:. use ipdmetan_example.dta, clear}{p_end}
+{pmore}
+{cmd:. stset tcens, fail(fail)}
+
+{pstd}
+Basic use
+
+{pmore}
+{cmd:. ipdmetan, study(trialid) hr by(region) forest(favours(Favours treatment # Favours control)) : stcox trt, strata(sex)}{p_end}
+
+{pstd}
+Treatment-covariate interactions
+
+{pmore}
+{cmd:. ipdmetan, study(trialid) interaction hr keepall forest(favours("Favours greater treatment effect" "with higher disease stage" # "Favours greater treatment effect" "with lower disease stage") boxsca(200)) : stcox trt##c.stage}
+
+{pstd}
+Random effects
+
+{pmore}
+{cmd:. ipdmetan, study(trialid) hr nograph re : stcox trt, strata(sex)}{p_end}
+{pmore}
+{cmd:. ipdmetan, study(trialid) hr nograph re(q) : stcox trt, strata(sex)}
+
+{pstd}
+Aggregate data setup: create aggregate dataset from IPD dataset (for example purposes only)
+
+{pmore}
+{cmd:. qui ipdmetan, study(trialid) hr nograph saving(region2.dta) : stcox trt if region==2, strata(sex)}{p_end}
+{pmore}
+{cmd:. clonevar _STUDY = trialid}{p_end}
+
+{pstd}
+Aggregate data analysis
+
+{pmore}
+{cmd:. ipdmetan, study(_STUDY) hr ad(region2.dta if _USE==1, vars(_ES _seES) npts(_NN) byad) nooverall : stcox trt if region==1, strata(sex)}
+
+{pstd}
+Further functionality: Peto log-rank analysis and additional forestplot options
+
+{pmore}
+{cmd:. ipdmetan (u[1,1]/V[1,1]) (1/sqrt(V[1,1])), study(trialid) rcols((u[1,1]) %5.2f "o-E(o)" (V[1,1]) %5.1f "V(o)") by(region) plotid(region) hr forest(nooverall nostats nowt box1opts(mcolor(red)) ci1opts(lcolor(red) rcap)}
+{cmd: box2opts(mcolor(blue)) ci2opts(lcolor(blue)) favours(Favours treatment # Favours control) texts(90)) : sts test trt, mat(u V)}
 
 
 {title:Author}
@@ -369,23 +407,9 @@ Thanks to the authors of {help metan}, upon which this code is based;
 paticularly Ross Harris for his comments and good wishes.
 
 
-{title:References} for random-effects models
+{title:Reference}
 
-{phang}Biggerstaff B., R. Tweedie. 1997. Incorporating variability in estimates of heterogeneity
-in the random effects model in meta-analysis. Statistics in Medicine 16: 753-68{p_end}
-
-{phang}DerSimonian R., N. Laird. 1986. Meta-analysis in clinical trials. Controlled Clinical Trials 7: 177-88{p_end}
-
-{phang}DerSimonian R., R. Kacker. 2007. Random-effects models for meta-analysis of clinical trials:
-An update. Contemporary Clinical Trials 28: 105-14{p_end}
-
-{phang}Hardy R. J., S. G. Thompson. 1996. A likelihood approach to meta-analysis with random effects.
-Statistics in Medicine 15: 619-29{p_end}
-
-{phang}Sidik K., J. N. Jonkman. 2007. A comparison of heterogeneity variance estimators in combining
-results of studies. Statistics in Medicine 26: 1964-81{p_end}
-
-{phang}Viechtbauer W. 2007. Confidence intervals for the amount of heterogeneity in meta-analysis.
-Statistics in Medicine 26: 37-52{p_end}
+{phang}Fisher D. yyyy. Two-stage individual participant data meta-analysis and generalised forest plots.
+Stata Journal vv: pp-pp{p_end}
 
 

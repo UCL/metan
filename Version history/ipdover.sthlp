@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 1.0  David Fisher  31jan2014}{...}
+{* *! version 1.01  David Fisher  15apr2014}{...}
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "metan" "help metan"}{...}
@@ -39,7 +39,12 @@ Basic syntax is
 {pstd}
 which fits the model {it:command} once within each level of each variable in {it:varlist}
 and saves effect sizes and standard errors for screen output and display of a forest plot.
-It functions in a similar way to {help ipdmetan}, with the following main differences:
+Any e-class regression command (whether built-in or user-defined) should be compatible
+with this basic syntax of {cmd:ipdover}; see {help ipdmetan} for help with using non e-class
+commands.
+
+{pstd}
+{cmd:ipdover} functions in a similar way to {help ipdmetan}, with the following main differences:
 the {cmd:over()} option replaces {cmd:study()} and {cmd:by()};
 the {cmd:ad()} and {cmd:re()} options are not permitted;
 and the {cmd:plotid()} option has a slightly different syntax (see below).
