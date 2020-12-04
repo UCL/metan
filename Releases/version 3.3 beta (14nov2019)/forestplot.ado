@@ -1,4 +1,4 @@
-* Program to generate forestplots -- used by ipdmetan etc. but can also be run by itself
+* Program to generate forestplots -- used by ipdmetan etc.  but can also be run by itself
 * April 2013
 *   Forked from main ipdmetan code
 * September 2013
