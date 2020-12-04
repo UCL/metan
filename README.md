@@ -13,18 +13,33 @@ Updates include a wide range of random-effects models, cumulative and influence 
 
 Also included is an “immediate” command **metani**, which accepts numlists or matrices as input rather than variables in memory; and the **metannt** program for use as a post-analysis command with binary data, to display estimated intervention effects in terms of the absolute reduction in risk and number needed to treat.  Other graphical commands produce funnel plots to assess small study effects, and L’Abbe plots to examine whether the assumption of a common odds ratio, risk ratio or risk difference is reasonable.
 
-A description of available Stata meta-analysis commands may be found at  http://www.stata.com/support/faqs/stat/meta.html.
+Below is a full list of files included in the package:
+
+File name | Description | Associated documentation
+----------|-------------|-------------------------
+metan.ado | Core **metan** functionality | metan.sthlp<br>metan_binary.sthlp<br>metan_continuous.sthlp<br>metan_proportion.sthlp<br>metan_model.sthlp
+lmetan.mlib | Mata code to run iterative random-effects models | metan_model.sthlp<br>metan.mata (uncompiled source code, for reference)
+metan_pooling.ado | Alternative "in-line" Mata code for use with Stata versions earlier than 16.1 (the version under which lmetan.mata was compiled) | metan_model.sthlp
+forestplot.ado | Creates a forest plot from appropriately structured data | forestplot.sthlp
+metani.ado | "Immediate" form of **metan** | metani.sthlp
+metannt.ado | Post-analysis command to display absolute risk reduction and NNT (binary data only) | metannt.sthlp
+labbe.ado | Draws a L'Abbe plot for event data (proportion of successes in the two groups) | labbe.sthlp
+metan9.ado | Previous version of **metan** as described in [Stata Journal Issue 8](https://www.stata-journal.com/article.html?article=sbe24_2) (2008) | metan9.sthlp
+metan7.ado | Previous version of **metan** as described in [STB-44](https://www.stata.com/products/stb/journals/stb44.html) (1998) | metan7.sthlp
+metan_hlp_run.ado | Enables the "click to run" element of the examples in metan.sthlp and elsewhere. A specific implementation of an idea originally developed by Robert Picard. | None; command not for general use
+
+A description of other available Stata meta-analysis commands may be found at  http://www.stata.com/support/faqs/stat/meta.html.
 
 # Installation
 
 We currently recommend installation via the Stata Statistical Software Components (SSC) archive.
 To see a package description, including contents, type within Stata:
 
-    .ssc describe metan
+    . ssc describe metan
 
 ...and to perform the installation, type:
 
-    .ssc install metan
+    . ssc install metan
 
 Package updates via SSC are handled using the **ado update** command; see the built-in Stata documentation.
 
@@ -32,7 +47,7 @@ Package updates via SSC are handled using the **ado update** command; see the bu
 
 Currently, documentation on usage and options may be found in the documentation files within Stata.  After installation, type in Stata:
 
-    .help metan
+    . help metan
 
 # Differences from previous versions of metan
 
