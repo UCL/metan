@@ -1733,7 +1733,7 @@ metaprop p16p p16tot, random ftt cimethod(exact) ///
 	astext(70) texts(100)
 log off log2
 graph save "$Graphs/graph43_metan9"
-log on  log3
+log on log3
 metan p16p p16tot, proportion random ftt cimethod(exact) ///
 	label(namevar=author, yearvar=year) sortby(year author) ///
 	forestplot(xlab(0.1(0.1)1) xline(0, lcolor(black)) ///
