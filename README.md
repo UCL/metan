@@ -35,7 +35,7 @@ A description of other available Stata meta-analysis commands may be found at  h
 This GitHub repository is structured as follows:
 * **Releases:** An archive of formal releases via SSC or the Stata Journal
 * **Validation:** A set of do-files and log-files demonstrating validation of results from **metan** v4.0 compared to v3.04 and to Stata 16's **meta** suite, and testing that all options work correctly
-* **Version history:** Git "commits" of code development for **metan** v4.0 and its progenitor program **admetan**
+* **Version history:** Git "commits" of code development for **metan** v4.0 and its forerunner program **admetan**
 
 # Installation
 
