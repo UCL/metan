@@ -79,7 +79,39 @@ As of November 2020 (Stata version 16.1), Stata 16's **meta** suite is currently
 
 Finally, note that there is an important difference in the way that **metan** and Stata 16's **meta** suite report heterogenity statistics with random-effects models.  **metan** views I-squared (and its transformations H and H-squared) as being descriptive of the observed data, and I-squared is therefore derived from Q regardless of the specified model unless specified otherwise with relevant options (see documentation within Stata).  By constrast, Stata 16's **meta** suite reports I-squared based on Q if a common-effect model is specified, or based on tau-squared if a random-effects model is specified.
 
-
 # Examples
 
 Examples may be found in the documentation files within Stata.  Additional examples may be added here in the future.
+
+# Credits and Acknowledgments
+
+Author and maintainer of current version of **metan**:
+* David J Fisher, MRC Clinical Trials Unit at University College London
+
+Authors of previous versions of **metan**:
+* Ross J Harris, Department of Social Medicine, University of Bristol
+* Mike J Bradburn, Centre for Statistics in Medicine, University of Oxford
+* Jon J Deeks, Centre for Statistics in Medicine, University of Oxford
+* Roger M Harbord, Department of Social Medicine, University of Bristol
+* Doug G Altman, Centre for Statistics in Medicine, University of Oxford
+* Thomas J Steichen, Department of Social Medicine, University of Bristol
+* Jonathan AC Sterne, Department of Social Medicine, University of Bristol
+
+Additional support and advice:
+* Vince Wiggins, StataCorp
+* Patrick Royston, MRC Clinical Trials Unit at University College London
+* Julian PT Higgins, Centre for Medical Statistics, University of Bristol
+* Jonathan AC Sterne, Centre for Medical Statistics, University of Bristol
+
+# Contact
+
+David J Fisher
+
+MRC Clinical Trials Unit at University College London<br>
+90 High Holborn<br>
+London WC1V 6LJ
+
+d.fisher@ucl.ac.uk
+
++44 20 7670 4646
+
