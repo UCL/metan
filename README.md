@@ -30,6 +30,13 @@ metan_hlp_run.ado | Enables the "click to run" element of the examples in metan.
 
 A description of other available Stata meta-analysis commands may be found at  http://www.stata.com/support/faqs/stat/meta.html.
 
+# Repository structure and contents
+
+This GitHub repository is structured as follows:
+* **Releases:** An archive of formal releases via SSC or the Stata Journal
+* **Validation:** A set of do-files and log-files demonstrating validation of results from **metan** v4.0 compared to v3.04 and to Stata 16's **meta** suite, and testing that all options work correctly
+* **Version history:** Git "commits" of code development for **metan** v4.0 and its progenitor program **admetan**
+
 # Installation
 
 We currently recommend installation via the Stata Statistical Software Components (SSC) archive.
@@ -43,6 +50,8 @@ To see a package description, including contents, type within Stata:
 
 Package updates via SSC are handled using the **ado update** command; see the built-in Stata documentation.
 
+The facility to install directly from this GitHub repository will be added soon.
+
 # Usage and documentation
 
 Currently, documentation on usage and options may be found in the documentation files within Stata.  After installation, type in Stata:
@@ -54,16 +63,16 @@ Currently, documentation on usage and options may be found in the documentation 
 This latest version of **metan** is designed to run under Stata version 11 and upwards, (with the exception of two random-effects models requiring numerical integration, handled via an additional user-contributed Mata function written for Stata version 12).  The previous 2008 version of **metan** (v3.04) remains available within this package under the name **metan9**, and the original 1998 version (v1.86), written for Stata version 7, remains available under the name **metan7**.
 
 The 2020 version of **metan** has been designed with consistency and backwards-compatibility in mind.  However, there are some differences in syntax and behaviour from previous versions.  In particular:
-* The preferred, documented syntax is for most options specific to the forest plot (i.e. those that do not affect the results appearing in the Results Window) to be placed within the **forestplot()** option rather than directly to **metan**.  Previously-valid syntax continues to be supported, but with a message printed to the Results Window as a reminder that the documented syntax has changed
+* The preferred, documented syntax is for most options specific to the forest plot (i.e. those that do not affect the results appearing in the Results Window) to be placed within the **forestplot()** option rather than directly to **metan**.  Previously-valid syntax continues to be supported, but with a message printed to the Results Window as a reminder that the documented syntax has changed.
   * Certain options now affect the output in the Results Window as well as the forest plot
-  * For details of other, more specific, changes to syntax and behaviour relating to the forest plot, see forestplot.
-* Prediction intervals are no longer displayed with dotted lines if the number of studies is less than three; instead, the interval is simply not displayed at all. Amessage is printed to the Results Window explaining this
+  * For details of other, more specific, changes to syntax and behaviour relating to the forest plot, see **forestplot**
+* Prediction intervals are no longer displayed with dotted lines if the number of studies is less than three; instead, the interval is simply not displayed at all. Amessage is printed to the Results Window explaining this.
   * If **rflevel()** is different from **olevel()**, then results from **metan** may differ slightly from **metan9** due to a subtle error in the older code, which has been corrected
-* Saved results are now always on the interval scale.  For example: if using binary outcome data, *_ES* and *_seES* might contain the individual study *log* Risk Ratios and standard errors, and *r(eff)* and *r(se_eff)* the pooled log Risk Ratio and its standard error.  (The variable name *_selogES* is therefore no longer used.) This has the advantage of consistency across outcome types, and means that saved results may be passed directly to **forestplot** or elsewhere without needing to take logarithms
+* Saved results are now always on the interval scale.  For example: if using binary outcome data, *_ES* and *_seES* might contain the individual study *log* Risk Ratios and standard errors, and *r(eff)* and *r(se_eff)* the pooled log Risk Ratio and its standard error.  (The variable name *_selogES* is therefore no longer used.) This has the advantage of consistency across outcome types, and means that saved results may be passed directly to **forestplot** or elsewhere without needing to take logarithms.
   * The names of all returned values saved in *r()* by **metan9** continue to be honoured.  (For those interested: this is done using **return historical**)
-* With the Mantel-Haenszel and Peto common-effect models, continuity correction is generally not necessary for pooling, and may in fact lead to increased bias (see, for example, [Bradburn et al 2007](https://doi.org/10.1002/sim.2528)).  Hence, in this version of **metan**, no continuity correction is applied by default with these models unless in extreme cases. Note however that for display purposes a correction *will* be applied (if necessary) to the individual study estimates and weights
+* With the Mantel-Haenszel and Peto common-effect models, continuity correction is generally not necessary for pooling, and may in fact lead to increased bias (see, for example, [Bradburn et al 2007](https://doi.org/10.1002/sim.2528)).  Hence, in this version of **metan**, no continuity correction is applied by default with these models unless in extreme cases. Note however that for display purposes a correction *will* be applied (if necessary) to the individual study estimates and weights.
   * The above can be summarized as: by default, **metan** will analyse the available data in the best way possible.  Any of the behaviour described above may be over-ridden by explicit use of options
-* If a random-effects model is specified, overall and subgroup-specific Q statistics are based on the inverse-variance common-effect model.  However, *between*-subgroup heterogeneity is tested by considering the dispersal of subgroup-specific pooled effects from the weighted average of subgroup effects under the specified model, as described for example in chapter 19 of Borenstein et al "Introduction to Meta-analysis" (Wiley, 2009).  Note that under the inverse-variance common-effect model, this approach is equivalent to variance partitioning as used in previous versions of **metan**
+* If a random-effects model is specified, overall and subgroup-specific Q statistics are based on the inverse-variance common-effect model.  However, *between*-subgroup heterogeneity is tested by considering the dispersal of subgroup-specific pooled effects from the weighted average of subgroup effects under the specified model, as described for example in chapter 19 of Borenstein et al "Introduction to Meta-analysis" (Wiley, 2009).  Note that under the inverse-variance common-effect model, this approach is equivalent to variance partitioning as used in previous versions of **metan**.
   * Similar behaviour is seen when specifying user-defined weights with **wgt()**, except that overall and subgroup-specific Q statistics measure the dispersal of individual effects from the weighted pooled estimate, using standard inverse-variance weights.  This matches the pre-existing behaviour of metan with the Mantel-Haenszel and Peto methods.  (If a random-effects model is specified with **wgt()**, Q statistics are calculated under the equivalent common-effect model.)
   * For the Mantel-Haenszel and Peto common-effect models, between-subgroup heterogeneity is handled as described above for random-effects models
 
