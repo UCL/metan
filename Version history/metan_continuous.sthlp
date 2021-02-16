@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 4.0  David Fisher  25nov2020}{...}
+{* *! version 4.01  David Fisher  12feb2021}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "metan_model" "help metan_model"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
@@ -10,6 +10,7 @@
 {vieweralsosee "ipdmetan" "help ipdmetan"}{...}
 {vieweralsosee "ipdover" "help ipdover"}{...}
 {vieweralsosee "metabias" "help metabias"}{...}
+{vieweralsosee "metatrim" "help metatrim"}{...}
 {vieweralsosee "metaan" "help metaan"}{...}
 {vieweralsosee "metandi" "help metandi"}{...}
 {vieweralsosee "metaprop_one" "help metaprop_one"}{...}
@@ -101,7 +102,7 @@ Ross J Harris, Roger M Harbord, Jonathan A C Sterne.
 Department of Social Medicine, University of Bristol, Bristol, UK
 
 {pstd}
-Current version, {cmd:metan} v4.00:
+Current version, {cmd:metan} v4.01:
 David Fisher, MRC Clinical Trials Unit at UCL, London, UK.
 
 {pstd}
@@ -118,7 +119,8 @@ Thanks to Patrick Royston (MRC Clinical Trials Unit at UCL, London, UK) for sugg
 Thanks to Vince Wiggins, Kit Baum and Jeff Pitblado of Statacorp who offered advice and helped facilitate the version 9 update.
 
 {pstd}
-Thanks to Julian Higgins and Jonathan A C Sterne (University of Bristol, Bristol, UK) who offered advice and helped facilitate this latest update.
+Thanks to Julian Higgins and Jonathan A C Sterne (University of Bristol, Bristol, UK) who offered advice and helped facilitate this latest update,
+and thanks to Daniel Klein (Universit{c a:}t Kassel, Germany) for assistance with testing under older Stata versions.
 
 {pstd}
 The "click to run" element of the examples in this document is handled using an idea originally developed by Robert Picard.

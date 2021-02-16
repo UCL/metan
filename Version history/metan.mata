@@ -1,7 +1,7 @@
 * metan.ado
 * Study-level (aka "aggregate-data" or "published data") meta-analysis
 
-*! version 4.0  25nov2020
+*! version 4.01  12feb2021
 *! Current version by David Fisher
 *! Previous versions by Ross Harris and Michael Bradburn
 

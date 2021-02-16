@@ -11,7 +11,7 @@
 * version 3.0  David Fisher  08nov2018
 * (N.B. only changed very slightly from v1.01 ... this is actually more v1.02!)
 
-*! version 4.0  David Fisher  25nov2020
+*! version 4.01  David Fisher  12feb2021
 * changed from -admetani- to -metani-
 * upversioned to match with the rest of -metan- package
 

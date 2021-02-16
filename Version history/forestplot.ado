@@ -46,7 +46,7 @@
 * _USE == 1  successfully estimated trial-level effects
 * _USE == 2  unsuccessfully estimated trial-level effects ("Insufficient data")
 * _USE == 3  subgroup effects
-* _USE == 4  between-subgroup heterogeneity info
+* _USE == 4  between-subgroup heterogeneity info and/or `hetinfo' placed on new line 
 * _USE == 5  overall effect
 * _USE == 6  blank lines/anything else
 * _USE == 9  titles (internal only)
@@ -75,7 +75,7 @@
 // some text in help file is updated
 // improved counting of rows in titles containing compound quotes
 
-*! version 4.0  David Fisher  25nov2020
+* version 4.00  David Fisher  25nov2020
 // changes to `xlabopts'
 // changes to `influence' plot (including "hide" option)
 // changes to fp() option
@@ -83,6 +83,11 @@
 // minor change to ProcessColumns to ensure "95% CI" (in _EFFECT varlabel) is not broken across lines
 // upversioned to match with -metan-
 
+*! version 4.01  David Fisher  12feb2021
+// minor change to behaviour of -extraline()- and -lcolscheck-
+// fixed bug in -favours()- which sometimes caused quotes to appear in plot
+// improvements to code so that earlier versions of Stata do not truncate plot macros
+//  (thanks to Daniel Klein for assistance with testing of earlier versions)
 
 
 program define forestplot, sortpreserve rclass
@@ -139,7 +144,7 @@ program define forestplot, sortpreserve rclass
 		SAVEDIms(name) USEDIms(name) ASText(real -9) noADJust ///
 		FP(string) /// 		/*(deprecated; now a favours() suboption)*/
 		KEEPXLabs * ]		/*(undocumented; colsonly option)*/
-		
+
 	marksample touse, novarlist				// do this immediately, so that -syntax- can be used again
 	local graphopts `"`options'"'			// "graph region" options (also includes plotopts for now)		
 	local _USE `use'
@@ -299,7 +304,7 @@ program define forestplot, sortpreserve rclass
 			label variable `dataid' "dataid"
 		}
 	}
-
+	
 	if `"`plotid'"'==`""' {
 		tempvar plotid
 		qui gen byte `plotid' = 1 if `touse'	// create plotid as constant if not specified; this makes BuildPlotCmds much easier
@@ -333,9 +338,9 @@ program define forestplot, sortpreserve rclass
 		* Create ordinal version of plotid...
 		tempvar touse2
 		qui gen byte `touse2' = `touse' * inlist(`_USE', 1, 2, 3, 5)
-		local plvar `plname'
+		// local plvar `plname'
 
-		// ...extra tweaking if passed through from admetan/ipdover (i.e. _STUDY, and possibly _OVER, exists)
+		// ...extra tweaking if passed through from (ad)metan/ipdmetan/ipdover (i.e. _STUDY, and possibly _OVER, exists)
 		if inlist("`plname'", "_STUDY", "_n", "_LEVEL", "_OVER") {
 			cap confirm var _STUDY
 			local study = cond(_rc, "_LEVEL", "_STUDY")
@@ -350,7 +355,10 @@ program define forestplot, sortpreserve rclass
 				tempvar plvar
 				qui bysort `touse2' `smiss' `by' (`over' `study') : gen long `plvar' = _n if `touse2' & !`smiss'
 			}
+			else local plvar `plname'
 		}
+		else local plvar `plname'
+		
 		tempvar plobs plotid
 		qui bysort `touse2' `smiss' `plvar' (`obs') : gen long `plobs' = `obs'[1] if `touse2'
 		qui bysort `touse2' `smiss' `plobs' : gen long `plotid' = (_n==1) if `touse2'
@@ -1586,9 +1594,10 @@ program define ProcessXLabs, rclass
 					numlist `"``xl''"', sort
 					local `xl' = r(numlist)
 					
-					nois disp as err _n `"Note: with {bf:metan} version 4 and above, the preferred syntax is for {bf:`xl'()}"'
-					nois disp as err `" to contain a standard Stata numlist, so e.g. {bf:`xl'(``xl'')}; see {help numlist:help numlist}"'					
-					
+					if !`done' {
+						nois disp as err _n `"Note: with {bf:metan} version 4 and above, the preferred syntax is for {bf:`xl'()}"'
+						nois disp as err `" to contain a standard Stata numlist, so e.g. {bf:`xl'(``xl'')}; see {help numlist:help numlist}"'
+					}
 					local done = 1
 					c_local twowaynote notwowaynote		// so that -metan- does not print an additional message regarding "force"
 				}
@@ -2298,7 +2307,7 @@ program define ProcessColumns, rclass
 				local leftWD`i' = cond(abs(`fmtlen') <= `maxlen', `maxwid', ///		// exact width of `maxlen' string
 					abs(`fmtlen')*`digitwid')										// approx. max width (based on `digitwid')
 			}
-			
+
 			
 			** Check whether title string is longer than the data itself
 			// If so, potentially allow spread over a suitable number of lines
@@ -2356,8 +2365,8 @@ program define ProcessColumns, rclass
 
 			drop `strlen' `strwid'
 		}		// end of forvalues i=1/`lcolsN'
+
 		
-			
 		** Right columns
 		local rightWDtot = 0
 		forvalues i=1/`rcolsN' {		// if `rcolsN'==0, loop will be skipped
@@ -2575,9 +2584,8 @@ program define ProcessColumns, rclass
 					local leftWDtotTi = `leftWDtotTi' + `leftWD`i''
 				}
 				local leftWDtotNoTi = `leftWDtotNoTi' + `leftWD`i'NoTi'
-				
 			}
-			
+		
 			// If appropriate, allow _USE=0,3,4,5 to extend into main plot by a factor of (lcimin-DXmin)/DXwidth
 			//  where `lcimin' is the left-most confidence limit among the "diamonds" (including prediction intervals)
 			// i.e. 1 + ((`lcimin'-`DXmin')/`DXwidth') * ((100-`astext')/`astext')) is the percentage increase
@@ -2955,7 +2963,9 @@ program define GetAspectRatio, rclass
 		* Parse text, and count how many rows of text there are (i.e. separated with pairs of quotes)
 		local rowsleftfav = 0
 		local rowsrightfav = 0
+
 		gettoken leftfav rest : anything, parse("#") quotes
+		
 		if `"`leftfav'"'!=`"#"' {
 			while `"`rest'"'!=`""' {
 				local ++rowsleftfav
@@ -2964,7 +2974,7 @@ program define GetAspectRatio, rclass
 				local leftfav `"`leftfav' `next'"'
 			}
 		}
-		else local leftfav `""'
+		else local leftfav `""'		
 		local rightfav = trim(`"`rest'"')
 		if `"`rightfav'"'!=`""' {
 			while `"`rest'"'!=`""' {
@@ -2973,6 +2983,16 @@ program define GetAspectRatio, rclass
 			}
 		}
 		local rowsfav = max(1, `rowsleftfav', `rowsrightfav')
+
+		// Feb 2021: Remove quotes if only a single line
+		if `rowsleftfav'==1 {
+		    gettoken new : leftfav, qed(qed)
+			if `qed' local leftfav : copy local new
+		}
+		if `rowsrightfav'==1 {
+		    gettoken new : rightfav, qed(qed)
+			if `qed' local rightfav : copy local new
+		}
 		
 		return local leftfav  `"`leftfav'"'
 		return local rightfav `"`rightfav'"'
@@ -3303,36 +3323,54 @@ program define BuildPlotCmds, sclass
 		args _rfLCI _rfUCI
 	
 		tokenize `rflist'
-		args tv1 tv2 tv3 tv4 rfLineLCI rfLineUCI rfLineX		// don't name tv1-tv4 yet, as they may not all be needed (see following code)
+		// args tv1 tv2 tv3 tv4 rfLineLCI rfLineUCI rfLineX		// don't name tv1-tv4 yet, as they may not all be needed (see following code)
+		args rfLoffscaleL rfRoffscaleR rfRoffscaleL rfLoffscaleR rfLineLCI rfLineUCI rfLineX
 
 		local touse3 `"`touse' & inlist(`_USE', 3, 5)"'
 		qui count if `touse3'
-		if r(N) > 1 {
-			gen byte `tv1' = `touse3' * (float(`_rfLCI') < float(`CXmin'))
-			gen byte `tv2' = `touse3' * (float(`_rfUCI') > float(`CXmax') & !missing(`_rfUCI'))
-			local rfLoffscaleL `tv1'
-			local rfRoffscaleR `tv2'
+		// if r(N) > 1 {
+		if r(N) {
+			// gen byte `tv1' = `touse3' * (float(`_rfLCI') < float(`CXmin'))
+			// gen byte `tv2' = `touse3' * (float(`_rfUCI') > float(`CXmax') & !missing(`_rfUCI'))
+			// local rfLoffscaleL `tv1'
+			// local rfRoffscaleR `tv2'
+			gen byte `rfLoffscaleL' = `touse3' * (float(`_rfLCI') < float(`CXmin'))
+			gen byte `rfRoffscaleR' = `touse3' * (float(`_rfUCI') > float(`CXmax') & !missing(`_rfUCI'))
 			
 			qui count if `touse3' & float(`_UCI') < float(`CXmin')
 			if r(N) {
-				gen byte `tv3' = `touse3' * (float(`_UCI') < float(`CXmin'))
-				local rfRoffscaleL `tv3'
+				// gen byte `tv3' = `touse3' * (float(`_UCI') < float(`CXmin'))
+				// local rfRoffscaleL `tv3'
+				gen byte `rfRoffscaleL' = `touse3' * (float(`_UCI') < float(`CXmin'))
 			}
-			else local rfRoffscaleL `"(`touse3' & float(`_LCI') > float(`CXmax') & !missing(`_LCI'))"'
+			// else local rfRoffscaleL `"(`touse3' & float(`_LCI') > float(`CXmax') & !missing(`_LCI'))"'
+			else {
+				// gen byte `tv3' = `touse3' * (float(`_LCI') > float(`CXmax') & !missing(`_LCI'))
+				// local rfRoffscaleL `tv3'
+				gen byte `rfRoffscaleL' = `touse3' * (float(`_LCI') > float(`CXmax') & !missing(`_LCI'))
+			}
 			
 			qui count if `touse3' & float(`_LCI') > float(`CXmax') & !missing(`_LCI')
 			if r(N) {
-				gen byte `tv4' = `touse3' * (float(`_LCI') > float(`CXmax') & !missing(`_LCI'))
-				local rfLoffscaleR `tv4'
+				// gen byte `tv4' = `touse3' * (float(`_LCI') > float(`CXmax') & !missing(`_LCI'))
+				// local rfLoffscaleR `tv4'
+				gen byte `rfLoffscaleR' = `touse3' * (float(`_LCI') > float(`CXmax') & !missing(`_LCI'))
 			}
-			else local rfLoffscaleR `"(`touse3' & float(`_UCI') < float(`CXmin'))"'
+			// else local rfLoffscaleR `"(`touse3' & float(`_UCI') < float(`CXmin'))"'
+			else {
+				// gen byte `tv4' = `touse3' * (float(`_UCI') < float(`CXmin'))
+				// local rfLoffscaleR `tv4'				
+				gen byte `rfLoffscaleR' = `touse3' * (float(`_UCI') < float(`CXmin'))
+			}
 		}
+		/*
 		else if r(N) {
 			local rfLoffscaleL `"(`touse3' & float(`_rfLCI') < float(`CXmin'))"'
 			local rfRoffscaleR `"(`touse3' & float(`_rfUCI') > float(`CXmax') & !missing(`_rfUCI'))"'
 			local rfRoffscaleL `"(`touse3' & float(`_LCI') > float(`CXmax') & !missing(`_LCI'))"'
 			local rfLoffscaleR `"(`touse3' & float(`_UCI') < float(`CXmin'))"'
 		}
+		*/
 	}
 
 	
@@ -3434,7 +3472,7 @@ program define BuildPlotCmds, sclass
 	
 	local defShape = cond("`interaction'"!="", "circle", "square")
 	local defColor = cond("`classic'"!="", "black", "180 180 180")
-	local defBoxOpts = `"mcolor("`defColor'") msymbol(`defShape') msize(`boxSize')"'
+	local defBoxOpts `"mcolor("`defColor'") msymbol(`defShape') msize(`boxSize')"'
 	if `"`oldbox'"'!=`""' local defBoxOpts `"msymbol(none)"'	// -metan- "nobox" option
 	local defCIOpts `"lcolor(black) mcolor(black)"'				// includes "mcolor" for arrows (doesn't affect rspike/rcap)
 	local defPointOpts `"msymbol(diamond) mcolor(black) msize(vsmall)"'
@@ -3549,9 +3587,12 @@ program define BuildPlotCmds, sclass
 		local rest `"`options'"'
 
 		* Check if any options were found specifically for this value of `p'
-		if trim(`"`box`p'opts'`diam`p'opts'`point`p'opts'`ci`p'opts'"') != `""' ///
-			| trim(`"`oline`p'opts'`ociline`p'opts'`rfciline`p'opts'"') != `""' ///
-			| trim(`"`ppoint`p'opts'`pci`p'opts'`rf`p'opts'"') != `""' {
+		local checkopt = 0
+		local optslist box diam point ci oline ociline rfciline ppoint pci rf
+		foreach op of local optslist {
+			if trim(`"``op'`p'opts'"') != `""' local checkopt = 1
+		}
+		if `checkopt' {
 			
 			local pplvals : list pplvals - p			// remove from list of "default" plotids
 			
@@ -3575,7 +3616,7 @@ program define BuildPlotCmds, sclass
 				local scPlotOpts `"`defBoxOpts' `boxopts' `box`p'opts'"'
 				summ `_WT' if `touse2', meanonly
 				if !r(N) nois disp as err `"No weights found for {bf:plotid}==`p'"'
-				else if `nd'==1 local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `tousePlotID' & `_USE'==1 & `plotid'==`p', `macval(scPlotOpts)' ||"'
+				else if `nd'==1 local scPlot`"`macval(scPlot)' scatter `id' `_ES' `awweight' if `tousePlotID' & `_USE'==1 & `plotid'==`p', `macval(scPlotOpts)' ||"'
 				else {
 					forvalues d=1/`nd' {
 						local scPlot `"`macval(scPlot)' scatter `id' `_ES' `awweight' if `tousePlotID' & `_USE'==1 & `plotid'==`p' & `dataid'==`d', `macval(scPlotOpts)' ||"'
@@ -3600,13 +3641,13 @@ program define BuildPlotCmds, sclass
 				*/
 				
 				// rebuild option list
-				if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""'  local local mcolor = subinstr(`"`lcolor'"', "l", "m", 1)	// for pc(b)arrow
-				if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' local mlwidth m`lwidth'										// for pc(b)arrow
+				if `"`lcolor'"'!=`""' & `"`mcolor'"'==`""'  local mcolor = subinstr(`"`lcolor'"', "l", "m", 1)	// for pc(b)arrow
+				if `"`lwidth'"'!=`""' & `"`mlwidth'"'==`""' local mlwidth m`lwidth'								// for pc(b)arrow
 				local CIPlot`p'Opts `"`defCIOpts' `ciopts' `mcolor' `lcolor' `mlwidth' `lwidth' `options'"'		// main options first, then options specific to plot `p'
 				local CIPlot`p'Type = cond("`rcap'"=="", "`CIPlotType'", "rcap")
 				
 				// default: both ends within scale (i.e. no arrows)
-				local CIPlot `"`macval(CIPlot)' `CIPlot`p'Type' `_LCI' `_UCI' `id' if `touse2' & !`offscaleL' & !`offscaleR', hor `macval(CIPlot`p'Opts)' ||"'
+				local CIPlot`"`macval(CIPlot)' `CIPlot`p'Type' `_LCI' `_UCI' `id' if `touse2' & !`offscaleL' & !`offscaleR', hor `macval(CIPlot`p'Opts)' ||"'
 
 				// if arrows required
 				qui count if `touse2' & `offscaleL' & `offscaleR'
@@ -3630,7 +3671,7 @@ program define BuildPlotCmds, sclass
 
 				* POINT PLOT (point estimates -- except if "classic")
 				if "`classic'" == "" {
-					local pointPlot `"`macval(pointPlot)' scatter `id' `_ES' if `touse2', `defPointOpts' `pointopts' `point`p'opts' ||"'
+					local pointPlot`"`macval(pointPlot)' scatter `id' `_ES' if `touse2', `defPointOpts' `pointopts' `point`p'opts' ||"'
 				}
 			}			// end if r(N) [i.e. if any obs with _USE==1 & plotid==`p']
 
@@ -3639,7 +3680,7 @@ program define BuildPlotCmds, sclass
 			summ `ovLine' if `plotid'==`p', meanonly
 			if r(N) {
 				local olinePlot `"`macval(olinePlot)' rspike `ovMin' `ovMax' `ovLine' if `touse' & `plotid'==`p', `defOlineOpts' `olineopts' `oline`p'opts' ||"'
-
+			
 			
 				* PREDICTIVE INTERVAL CI LINES (and/or areas)
 				// Do these before standard overall lines, in case of area plots
@@ -3937,7 +3978,7 @@ program define BuildPlotCmds, sclass
 	// Changed so that FOR WEIGHTED SCATTER each pplval is plotted separately (otherwise weights get messed up)
 	// Other (nonweighted) plots can continue to be plotted as before
 	if `"`pplvals'"'!=`""' {
-
+	
 		local pplvals2 : copy local pplvals						// copy; only needed for weighted scatter plots
 		local pplvals : subinstr local pplvals " " ",", all		// so that "inlist" may be used
 		local hide

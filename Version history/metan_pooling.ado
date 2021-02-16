@@ -8,7 +8,7 @@
 // - Content of subroutine metan_pooling.Heterogi is identical to that of subroutine metan.Heterogi
 // - Content of Mata subroutines is identical to that of compiled Mata library lmetan.mlib
 
-*! version 4.0  25nov2020
+*! version 4.01  12feb2021
 *! Current version by David Fisher
 *! Previous versions by Ross Harris and Michael Bradburn
 

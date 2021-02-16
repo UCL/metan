@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 4.0  David Fisher  25nov2020}{...}
+{* *! version 4.01  David Fisher  12feb2021}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
 {vieweralsosee "metan_continuous" "help metan_continuous"}{...}
@@ -338,9 +338,10 @@ then a set of heterogeneity information is displayed in brackets alongside the n
 {opt label(label_string)} specifies an alternative display label for a particular model.
 For example, the default label for the DerSimonian-Laird random-effects model is "DL",
 but the simpler label "Random" might be preferred if no other random-effects models are used.
+{cmd:label(}""{cmd:)} will suppress the label entirely.
 
 {pmore}
-If {it:user_spec} is used without {opt label()}, the default {it:label_string} is "User".
+If {it:user_spec} is used without {opt label(label_string)}, the default {it:label_string} is "User".
 
 {phang}
 {opt extralabel(extra_string)} optionally specifies further descriptive text
@@ -362,7 +363,7 @@ Ross J Harris, Roger M Harbord, Jonathan A C Sterne.
 Department of Social Medicine, University of Bristol, Bristol, UK
 
 {pstd}
-Current version, {cmd:metan} v4.00:
+Current version, {cmd:metan} v4.01:
 David Fisher, MRC Clinical Trials Unit at UCL, London, UK.
 
 {pstd}
@@ -379,7 +380,8 @@ Thanks to Patrick Royston (MRC Clinical Trials Unit at UCL, London, UK) for sugg
 Thanks to Vince Wiggins, Kit Baum and Jeff Pitblado of Statacorp who offered advice and helped facilitate the version 9 update.
 
 {pstd}
-Thanks to Julian Higgins and Jonathan A C Sterne (University of Bristol, Bristol, UK) who offered advice and helped facilitate this latest update.
+Thanks to Julian Higgins and Jonathan A C Sterne (University of Bristol, Bristol, UK) who offered advice and helped facilitate this latest update,
+and thanks to Daniel Klein (Universit{c a:}t Kassel, Germany) for assistance with testing under older Stata versions.
 
 {pstd}
 The "click to run" element of the examples in this document is handled using an idea originally developed by Robert Picard.
@@ -472,12 +474,6 @@ Sparky House Publishing, Baltimore, Maryland
 Morris TP, Fisher DJ, Kenward MG, Carpenter JR. 2018.
 Meta-analysis of quantitative individual patient data: two stage or not two stage?
 Statistics in Medicine. doi: 10.1002/sim.7589
-
-{phang}
-Schwarzer G, Chemaitelly H, Abu-Raddad LJ, R{c u:}cker G. 2019.
-Seriously misleading results using inverse of Freeman-Tukey double arcsine transformation
-in meta-analysis of single proportions.
-Research Synthesis Methods 10: 476–483. doi: 10.1002/jrsm.1348
 
 {phang}
 Sidik K, Jonkman JN. 2005.

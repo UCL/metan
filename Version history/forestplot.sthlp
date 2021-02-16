@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 4.0  David Fisher  25nov2020}{...}
+{* *! version 4.01  David Fisher  12feb2021}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "metani" "help metani"}{...}
@@ -813,7 +813,8 @@ Email {browse "mailto:d.fisher@ucl.ac.uk":d.fisher@ucl.ac.uk}
 {pstd}
 Thanks to the authors of {bf:{help metan9}}, upon which this code is based;
 particularly Ross Harris for his comments and good wishes.
-Also thanks to Vince Wiggins at Statacorp for advice.
+Also thanks to Vince Wiggins at Statacorp for advice, and to Daniel Klein (Universit{c a:}t Kassel, Germany)
+for assistance with testing under older Stata versions.
 
 {pstd}
 The "click to run" element of the examples in this document is handled using an idea originally developed by Robert Picard.
