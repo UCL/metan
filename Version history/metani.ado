@@ -3,17 +3,21 @@
 * for quick pooling of, say, 2 or 3 estimates
 
 * version 1.0  David Fisher  11may2017
-* (part of version 2.0 of -ipdmetan- package)
+// (part of version 2.0 of -ipdmetan- package)
 
 * version 1.01  David Fisher  14sep2017
-* (part of version 2.1 of -ipdmetan- package)
+// (part of version 2.1 of -ipdmetan- package)
 
 * version 3.0  David Fisher  08nov2018
-* (N.B. only changed very slightly from v1.01 ... this is actually more v1.02!)
+// (N.B. only changed very slightly from v1.01 ... this is actually more v1.02!)
 
-*! version 4.01  David Fisher  12feb2021
-* changed from -admetani- to -metani-
-* upversioned to match with the rest of -metan- package
+* version 4.0  David Fisher  25nov2020
+// changed from -admetani- to -metani-
+// upversioned to match with the rest of -metan- package
+
+* version 4.01  David Fisher  12feb2021
+*! version 4.02  David Fisher  23feb2021
+// No changes; upversioned to match with the rest of -metan- package
 
 
 program metani, rclass

@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 4.01  David Fisher  12feb2021}{...}
+{* *! version 4.02  David Fisher  23feb2021}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
 {vieweralsosee "metan_continuous" "help metan_continuous"}{...}
@@ -87,7 +87,7 @@ if not specifically referenced below.{p_end}
 {synopt :{opt bt:weedie}}Biggerstaff-Tweedie approximate Gamma model{p_end}
 {synopt :{opt hc:opas}}Henmi-Copas approximate Gamma model ({help metan_model##refs:Henmi and Copas 2010}){p_end}
 {synopt :{opt mu:lt}}Multiplicative heterogeneity model ({help metan_model##refs:Thompson and Sharp 1999}){p_end}
-{synopt :{opt ivh:et}}"Inverse-variance heterogeneity" (IVHet) model ({help metan_model##refs:Doi et al 2015a}){p_end}
+{synopt :{opt ivh:et}}"Inverse-variance heterogeneity" (IVhet) model ({help metan_model##refs:Doi et al 2015a}){p_end}
 {synopt :{opt qe} [, {help metan_model##options_model:{bf:qwt(}{it:varname}{bf:)}}]}Quality Effects model ({help metan_model##refs:Doi et al 2015b}){p_end}
 {synoptline}
 
@@ -363,7 +363,7 @@ Ross J Harris, Roger M Harbord, Jonathan A C Sterne.
 Department of Social Medicine, University of Bristol, Bristol, UK
 
 {pstd}
-Current version, {cmd:metan} v4.01:
+Current version, {cmd:metan} v4.02:
 David Fisher, MRC Clinical Trials Unit at UCL, London, UK.
 
 {pstd}

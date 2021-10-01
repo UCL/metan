@@ -8,7 +8,7 @@
 // - Content of subroutine metan_pooling.Heterogi is identical to that of subroutine metan.Heterogi
 // - Content of Mata subroutines is identical to that of compiled Mata library lmetan.mlib
 
-*! version 4.01  12feb2021
+*! version 4.02  23feb2021
 *! Current version by David Fisher
 *! Previous versions by Ross Harris and Michael Bradburn
 
@@ -308,7 +308,7 @@ program define metan_pooling, rclass
 				nois disp as err "Mata compile-time or run-time error"
 				exit _rc
 			}
-			else if _rc nois disp as err "Error(s) detected during running of Mata code; please check output"
+			else if _rc disp `"{error}Error(s) detected during running of Mata code; please check output"'
 		}
 
 		scalar `tausq' = r(tausq)
@@ -349,7 +349,7 @@ program define metan_pooling, rclass
 				nois disp as err "Mata compile-time or run-time error"
 				exit _rc
 			}
-			else if _rc nois disp as err "Error(s) detected during running of Mata code; please check output"
+			else if _rc disp `"{error}Error(s) detected during running of Mata code; please check output"'
 		}				
 	
 		tempname tsq_lci tsq_uci
@@ -418,7 +418,7 @@ program define metan_pooling, rclass
 	*********************************
 	// (not user-defined)
 	
-	// Quality effects (QE) model (extension of IVHet to incorporate quality scores)
+	// Quality effects (QE) model (extension of IVhet to incorporate quality scores)
 	// (Doi et al, Contemporary Clinical Trials 2015; 45: 123-9)
 	if "`model'"=="qe" {
 		tempvar newqe tauqe
@@ -456,7 +456,7 @@ program define metan_pooling, rclass
 				nois disp as err "Mata compile-time or run-time error"
 				exit _rc
 			}
-			else if _rc nois disp as err "Error(s) detected during running of Mata code; please check output"
+			else if _rc disp `"{error}Error(s) detected during running of Mata code; please check output"'
 		}
 		
 		// check tausq limits and set to missing if necessary
@@ -479,9 +479,9 @@ program define metan_pooling, rclass
 	
 	// Henmi and Copas method also belongs here
 	//  (Henmi and Copas, Stat Med 2010; DOI: 10.1002/sim.4029)
-	// Begins along the same lines as IVHet; that is, a RE model with inv-variance weighting
+	// Begins along the same lines as IVhet; that is, a RE model with inv-variance weighting
 	//   but goes on to estimate the distribution of pivotal quantity U using a Gamma distribution (c.f. Biggerstaff & Tweedie).
-	// `se_eff' is the same as IVHet, but conf. interval around `eff' is different.
+	// `se_eff' is the same as IVhet, but conf. interval around `eff' is different.
 	else if "`model'"=="hc" {
 		cap nois mata: HC("`_ES' `_seES'", "`touse'", `olevel', (`itol', `maxiter', `quadpts'))
 		if _rc {
@@ -490,7 +490,7 @@ program define metan_pooling, rclass
 				nois disp as err "Mata compile-time or run-time error"
 				exit _rc
 			}
-			else if _rc nois disp as err "Error(s) detected during running of Mata code; please check output"
+			else if _rc disp `"{error}Error(s) detected during running of Mata code; please check output"'
 		}
 		
 		return scalar u = r(u)
@@ -693,25 +693,47 @@ program define metan_pooling, rclass
 			if      "`tn'"=="arithmetic" scalar `hmean' = r(mean)				// Arithmetic mean
 			else if "`tn'"=="geometric"  scalar `hmean' = r(mean_g)				// Geometric mean
 			else if inlist("`tn'", "", "harmonic") scalar `hmean' = r(mean_h)	// Harmonic mean (Miller 1978; default)
+			else if "`tn'"=="ivariance"  scalar `hmean' = 1/`se_eff'^2			// Barendregt & Doi's suggestion: inverse of pooled variance
 			else {
 				confirm number `tn'
 				scalar `hmean' = `tn'
 			}
 			
-			scalar `mintes' = /*.5*asin(sqrt(0      /(`hmean' + 1))) + */           .5*asin(sqrt((0       + 1)/(`hmean' + 1 )))
-			scalar `maxtes' =   .5*asin(sqrt(`hmean'/(`hmean' + 1))) + .5*asin(1) /*.5*asin(sqrt((`hmean' + 1)/(`hmean' + 1 )))*/
+			// recall: transform is = asin(sqrt(`succ' / (`_NN' + 1 ))) + asin(sqrt((`succ' + 1 ) / (`_NN' + 1 )))
+			// so to get our limits `mintes' and `maxtes', we subsitute `hmean' for `_NN', and let `succ' vary from 0 to `hmean'.
+			scalar `mintes' = /*asin(sqrt(0      /(`hmean' + 1))) + */        asin(sqrt((0       + 1)/(`hmean' + 1 )))
+			scalar `maxtes' =   asin(sqrt(`hmean'/(`hmean' + 1))) + asin(1) /*asin(sqrt((`hmean' + 1)/(`hmean' + 1 )))*/
+
+			// Barendregt & Doi use s/v < 2 or (1-s)/v < 2
+			// where s = sin(eff/2)^2 ~= d/n
+			// and where v = se_eff ~= 1/n
+			// ==> s/v ~= d;  (1-s)/v ~= n-d
+			
+			// ... in order to avoid "blow up" when sin(eff) is near zero
+			// Personal communication:  "blow up" may result in confidence limits which do not include the point estimate
+			// Therefore, test for this; and use simplified formula sin(eff)^2 in those cases
 
 			if      `eff' < `mintes' scalar `prop_eff' = 0
 			else if `eff' > `maxtes' scalar `prop_eff' = 1
-			else scalar `prop_eff' = 0.5 * (1 - sign(cos(2*`eff')) * sqrt(1 - (sin(2*`eff') + (sin(2*`eff') - 1/sin(2*`eff')) / `hmean')^2 ) )
+			else scalar `prop_eff' = 0.5 * (1 - sign(cos(`eff')) * sqrt(1 - (sin(`eff') + (sin(`eff') - 1/sin(`eff')) / `hmean')^2 ) )
 			
 			if      `eff_lci' < `mintes' scalar `prop_lci' = 0
 			else if `eff_lci' > `maxtes' scalar `prop_lci' = 1
-			else scalar `prop_lci' = 0.5 * (1 - sign(cos(2*`eff_lci')) * sqrt(1 - (sin(2*`eff_lci') + (sin(2*`eff_lci') - 1/sin(2*`eff_lci')) / `hmean')^2 ) )
+			else scalar `prop_lci' = 0.5 * (1 - sign(cos(`eff_lci')) * sqrt(1 - (sin(`eff_lci') + (sin(`eff_lci') - 1/sin(`eff_lci')) / `hmean')^2 ) )
 
 			if      `eff_uci' < `mintes' scalar `prop_uci' = 0
 			else if `eff_uci' > `maxtes' scalar `prop_uci' = 1
-			else scalar `prop_uci' = 0.5 * (1 - sign(cos(2*`eff_uci')) * sqrt(1 - (sin(2*`eff_uci') + (sin(2*`eff_uci') - 1/sin(2*`eff_uci')) / `hmean')^2 ) )
+			else scalar `prop_uci' = 0.5 * (1 - sign(cos(`eff_uci')) * sqrt(1 - (sin(`eff_uci') + (sin(`eff_uci') - 1/sin(`eff_uci')) / `hmean')^2 ) )
+			
+			cap {
+			    assert `prop_lci' <= `prop_eff' & `prop_eff' <= `prop_uci'
+				assert !missing(`prop_eff', `prop_lci', `prop_uci')
+			}
+			if _rc {
+				scalar `prop_eff' = sin(`eff'    /2)^2
+				scalar `prop_lci' = sin(`eff_lci'/2)^2
+				scalar `prop_uci' = sin(`eff_uci'/2)^2
+			}
 			
 			scalar `z' = 0
 			if `eff' > `mintes' scalar `z' = abs(`eff' - `mintes') / `se_eff'
@@ -726,11 +748,16 @@ program define metan_pooling, rclass
 				
 				if      `rflci' < `mintes' scalar `prop_rflci' = 0
 				else if `rflci' > `maxtes' scalar `prop_rflci' = 1
-				else scalar `prop_rflci' = 0.5 * (1 - sign(cos(`rflci')) * sqrt(1 - (sin(2*`rflci') + (sin(2*`rflci') - 1/sin(2*`rflci')) / `hmean')^2 ) )
+				else scalar `prop_rflci' = 0.5 * (1 - sign(cos(`rflci')) * sqrt(1 - (sin(`rflci') + (sin(`rflci') - 1/sin(`rflci')) / `hmean')^2 ) )
 
 				if      `rfuci' < `mintes' scalar `prop_rfuci' = 0
 				else if `rfuci' > `maxtes' scalar `prop_rfuci' = 1
-				else scalar `prop_rfuci' = 0.5 * (1 - sign(cos(`rfuci')) * sqrt(1 - (sin(2*`rfuci') + (sin(2*`rfuci') - 1/sin(2*`rfuci')) / `hmean')^2 ) )
+				else scalar `prop_rfuci' = 0.5 * (1 - sign(cos(`rfuci')) * sqrt(1 - (sin(`rfuci') + (sin(`rfuci') - 1/sin(`rfuci')) / `hmean')^2 ) )
+
+				if _rc {		// from earlier "cap assert"
+					scalar `prop_rflci' = sin(`rflci'/2)^2
+					scalar `prop_rfuci' = sin(`rfuci'/2)^2
+				}
 				
 				return scalar prop_rflci = `prop_rflci'
 				return scalar prop_rfuci = `prop_rfuci'
@@ -788,7 +815,6 @@ program define metan_pooling, rclass
 			}
 		}
 		else {
-			// if "`oevlist'"!="" {
 			if "`teststat'"=="chi2" { 
 				scalar `crit' = invchi2(1, `olevel'/100)
 				scalar `pvalue' = chi2tail(1, `chi2')
@@ -856,20 +882,18 @@ program define metan_pooling, rclass
 		}
 		
 		// [Sep 2020] Also save values in matrix `hetstats', same as if `isqparam' (see subroutine -heterogi- )
-		if "`isqparam'"!="" {
-			local t2rownames tausq tsq_lci tsq_uci H H_lci H_uci Isq Isq_lci Isq_uci HsqM HsqM_lci HsqM_uci
-			tempname hetstats
-			local r : word count `t2rownames'
-			matrix define `hetstats' = J(`r', 1, .)
-			matrix rownames `hetstats' = `t2rownames'
-			
-			matrix `hetstats'[rownumb(`hetstats', "tausq"), 1] = `tausq'
-			matrix `hetstats'[rownumb(`hetstats', "H"),     1] = `H'
-			matrix `hetstats'[rownumb(`hetstats', "Isq"),   1] = `Isqval'
-			matrix `hetstats'[rownumb(`hetstats', "HsqM"),  1] = `HsqM'
-			
-			return matrix hetstats = `hetstats'
-		}
+		local t2rownames tausq tsq_lci tsq_uci H H_lci H_uci Isq Isq_lci Isq_uci HsqM HsqM_lci HsqM_uci
+		tempname hetstats
+		local r : word count `t2rownames'
+		matrix define `hetstats' = J(`r', 1, .)
+		matrix rownames `hetstats' = `t2rownames'
+		
+		matrix `hetstats'[rownumb(`hetstats', "tausq"), 1] = `tausq'
+		matrix `hetstats'[rownumb(`hetstats', "H"),     1] = `H'
+		matrix `hetstats'[rownumb(`hetstats', "Isq"),   1] = `Isqval'
+		matrix `hetstats'[rownumb(`hetstats', "HsqM"),  1] = `HsqM'
+		
+		return matrix hetstats = `hetstats'
 	}
 	
 	else {

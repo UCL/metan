@@ -1,7 +1,7 @@
 * metan.ado
 * Study-level (aka "aggregate-data" or "published data") meta-analysis
 
-*! version 4.01  12feb2021
+*! version 4.02  23feb2021
 *! Current version by David Fisher
 *! Previous versions by Ross Harris and Michael Bradburn
 
@@ -102,6 +102,8 @@
 // - improved user control over labelling of RE models
 // - fixed minor bug in display of SMD options (always said Cohen even if Glass/Hedges; pooled results were correct)
 
+* version 4.02
+// Bug fixes: for future reference, MUST ensure that metan_pooling.ado and metan.PerformPoolingIV are kept in sync!
 
 
 program define metan, rclass
@@ -113,7 +115,7 @@ program define metan, rclass
 	    local hidden hidden
 		local historical historical
 	}
-	return `hidden' local metan_version "4.01"
+	return `hidden' local metan_version "4.02"
 
 	// Clear historical global macros (see metan9.ado)
 	forvalues i = 1/15 {
@@ -3368,10 +3370,10 @@ program define ParseModel, sclass
 			if "`model'"=="bs" | "`gamma'`btweedie'"!="" local model bt				// Biggerstaff-Tweedie approx. Gamma-based model
 			else if "`hcopas'"!="" local model hc									// Henmi-Copas model
 			else if "`multiplicative'`fvariance'`fullvariance'"!="" local model mu	// Multiplicative heterogeneity (aka Sandercock's "full variance")
-			else if "`ivhet'"!="" local model ivhet									// Barendregt/Doi IVHet ("inverse-variance heterogeneity") model
+			else if "`ivhet'"!="" local model ivhet									// Doi's IVhet ("inverse-variance heterogeneity") model
 			else if "`hksj'`hknapp'`khartung'"!="" local model hksj					// Hartung-Knapp-Sidik-Jonkman variance correction
 			else if "`kroger'"!="" local model kr									// Kenward-Roger variance correction
-			else if "`qeffects'`quality'"!="" local model qe						// Barendregt/Doi Quality Effects model
+			else if "`qeffects'`quality'"!="" local model qe						// Doi's Quality Effects model
 		}
 		
 		// Hartung-Knapp-Sidik-Jonkman variance correction
@@ -3855,7 +3857,7 @@ program define ParseModel, sclass
 	// Model description to display on-screen (shorthand, in case of multiple models)
 	if !`islabel' {
 		if "`model'"=="peto" local label Peto
-		else if "`model'"=="ivhet" local label IVHet
+		else if "`model'"=="ivhet" local label IVhet
 		else if "`model'"=="dlb" local label DLb
 		else if "`model'"=="ev" local label "Emp. Var."
 		else if inlist("`model'", "bp", "b0") local label = "Rukhin " + upper("`model'")	
@@ -4882,9 +4884,9 @@ program define PrintDesc, sclass
 				disp as text `"using `the'"' as res `"`modeltext'"' as text " model"
 			}
 			
-			// Barendregt/Doi IVHet and Quality Effects models
+			// Doi's IVhet and Quality Effects models
 			else if "`model1'"!="peto" {
-				local modeltext = cond("`model1'"=="ivhet", "Barendregt-Doi IVHet", "Barendregt-Doi Quality Effects")
+				local modeltext = cond("`model1'"=="ivhet", "Doi's IVhet", "Doi's Quality Effects")
 				disp as text "using " as res `"`modeltext'"' as text " model"
 				local fpnote `"NOTE: Weights `insert'are from `modeltext' model"'				// for forestplot
 			}
@@ -5799,7 +5801,7 @@ program define DrawTableAD, rclass sortpreserve
 		
 		* Setup: How many unique (tsq + CI) random-effects models are specified?
 		local UniqModels : list uniq modellist		
-		local UniqREModels = subinword("`UniqModels'", "ivhet", "dl", .)	// tsq + CI for IVHet are the same as for D+L
+		local UniqREModels = subinword("`UniqModels'", "ivhet", "dl", .)	// tsq + CI for IVhet are the same as for D+L
 		local UniqREModels = subinword("`UniqREModels'", "qe", "dl", .)		// tsq + CI for QE are the same as for D+L
 		local UniqREModels = subinword("`UniqREModels'", "hc", "dl", .)		// tsq + CI for HC are the same as for D+L
 		local UniqREModels = subinword("`UniqREModels'", "pl", "ml", .)		// tsq + CI for PL are the same as for ML
@@ -5904,7 +5906,7 @@ program define DrawTableAD, rclass sortpreserve
 
 				if "`model1'"!="iv" {
 					if "`model1'"=="peto" local hetlabel Peto
-					else if "`model1'"=="ivhet" local hetlabel IVHet
+					else if "`model1'"=="ivhet" local hetlabel IVhet
 					else if "`model1'"=="dlb" local hetlabel DLb
 					else if "`model1'"=="ev" local hetlabel "Emp. Var."
 					else if inlist("`model1'", "bp", "b0") local hetlabel = "Rukhin " + upper("`model1'")
@@ -9033,7 +9035,7 @@ program define PerformPoolingIV, rclass
 	*********************************
 	// (not user-defined)
 	
-	// Quality effects (QE) model (extension of IVHet to incorporate quality scores)
+	// Quality effects (QE) model (extension of IVhet to incorporate quality scores)
 	// (Doi et al, Contemporary Clinical Trials 2015; 45: 123-9)
 	if "`model'"=="qe" {
 		tempvar newqe tauqe
@@ -9094,9 +9096,9 @@ program define PerformPoolingIV, rclass
 	
 	// Henmi and Copas method also belongs here
 	//  (Henmi and Copas, Stat Med 2010; DOI: 10.1002/sim.4029)
-	// Begins along the same lines as IVHet; that is, a RE model with inv-variance weighting
+	// Begins along the same lines as IVhet; that is, a RE model with inv-variance weighting
 	//   but goes on to estimate the distribution of pivotal quantity U using a Gamma distribution (c.f. Biggerstaff & Tweedie).
-	// `se_eff' is the same as IVHet, but conf. interval around `eff' is different.
+	// `se_eff' is the same as IVhet, but conf. interval around `eff' is different.
 	else if "`model'"=="hc" {
 		cap nois mata: HC("`_ES' `_seES'", "`touse'", `olevel', (`itol', `maxiter', `quadpts'))
 		if _rc {
@@ -9308,7 +9310,7 @@ program define PerformPoolingIV, rclass
 			if      "`tn'"=="arithmetic" scalar `hmean' = r(mean)				// Arithmetic mean
 			else if "`tn'"=="geometric"  scalar `hmean' = r(mean_g)				// Geometric mean
 			else if inlist("`tn'", "", "harmonic") scalar `hmean' = r(mean_h)	// Harmonic mean (Miller 1978; default)
-			else if "`tn'"=="ivariance"  scalar `hmean' = 1/`se_eff'^2			// Barendregt/Doi's suggestion: inverse of pooled variance
+			else if "`tn'"=="ivariance"  scalar `hmean' = 1/`se_eff'^2			// Barendregt & Doi's suggestion: inverse of pooled variance
 			else {
 				confirm number `tn'
 				scalar `hmean' = `tn'
@@ -9319,7 +9321,7 @@ program define PerformPoolingIV, rclass
 			scalar `mintes' = /*asin(sqrt(0      /(`hmean' + 1))) + */        asin(sqrt((0       + 1)/(`hmean' + 1 )))
 			scalar `maxtes' =   asin(sqrt(`hmean'/(`hmean' + 1))) + asin(1) /*asin(sqrt((`hmean' + 1)/(`hmean' + 1 )))*/
 
-			// Barendregt/Doi use s/v < 2 or (1-s)/v < 2
+			// Barendregt & Doi use s/v < 2 or (1-s)/v < 2
 			// where s = sin(eff/2)^2 ~= d/n
 			// and where v = se_eff ~= 1/n
 			// ==> s/v ~= d;  (1-s)/v ~= n-d

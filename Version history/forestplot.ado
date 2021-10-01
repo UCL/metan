@@ -83,11 +83,14 @@
 // minor change to ProcessColumns to ensure "95% CI" (in _EFFECT varlabel) is not broken across lines
 // upversioned to match with -metan-
 
-*! version 4.01  David Fisher  12feb2021
+* version 4.01  David Fisher  12feb2021
 // minor change to behaviour of -extraline()- and -lcolscheck-
 // fixed bug in -favours()- which sometimes caused quotes to appear in plot
 // improvements to code so that earlier versions of Stata do not truncate plot macros
 //  (thanks to Daniel Klein for assistance with testing of earlier versions)
+
+*! version 4.02  David Fisher  23feb2021
+// No changes to -forestplot- code; upversioned to match with -metan-
 
 
 program define forestplot, sortpreserve rclass
