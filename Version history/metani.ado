@@ -17,7 +17,8 @@
 
 * version 4.01  David Fisher  12feb2021
 * version 4.02  David Fisher  23feb2021
-*! version 4.03  David Fisher  28apr2021
+* version 4.03  David Fisher  28apr2021
+*! version 4.04  David Fisher  16aug2021
 // No changes; upversioned to match with the rest of -metan- package
 
 

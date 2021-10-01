@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 4.03  David Fisher  28apr2021}{...}
+{* *! version 4.04  David Fisher  16aug2021}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "metan_model" "help metan_model"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
@@ -90,9 +90,11 @@ Studies containing zero cells may be excluded from the analysis.
 This option acts independently of how confidence limits for {ul:pooled} results are constructed
 (which will depend upon {it:{help metan_model:model_spec}}). See also {bf:{help metan##options_main:level(#)}}
 
-{phang2}
+{pmore}
 For proportion data, the default {it:ci_type} is {opt wilson}, but can also be {opt exact} (a.k.a. Clopper-Pearson),
 or any of the alternatives listed under {bf:{help ci}} for proportions.
+If option {opt transform()} is specified, {it:ci_type} may also be {opt transform},
+meaning that individual study confidence limits should be derived via back-transformation as well as the pooled estimate.
 
 {phang2}
 If {opt nointeger} is specified, a Wald-type interval will be constructed and {opt citype()} may not be specified.

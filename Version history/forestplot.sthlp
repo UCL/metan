@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 4.03  David Fisher  28apr2021}{...}
+{* *! version 4.04  David Fisher  16aug2021}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "metani" "help metani"}{...}
@@ -34,6 +34,7 @@
 {synopt :{cmdab:fav:ours(}{it:favours_option}{cmd:)}}{it:x}-axis labelling specific to forest plots{p_end}
 {synopt :{opt lab:els(varname)}}variable containing labels e.g. subgroup headings, heterogeneity info, study names{p_end}
 {synopt :{opt lcol:s(varlist)} {opt rcol:s(varlist)}}display columns of additional data{p_end}
+{synopt :{opt prefix(prefix)}}specify that a prefix was previously added to default variable names; see {bf:{help metan}}{p_end}
 {synopt :{opt nona:mes}}suppress display of study names in left-hand column{p_end}
 {synopt :{opt nonu:ll} {opt nu:ll(#)}}suppress, or override default {it:x}-intercept of, null hypothesis line{p_end}
 {synopt :{opt noov:erall} {opt nosu:bgroup} {opt nohet}}suppress display of observations containing overall, subgroup,
@@ -108,6 +109,10 @@ If the dataset in memory was created by {bf:{help metan}}, {bf:{help ipdmetan}} 
  these variables should already exist (see {help metan##saved_datasets:saved datasets}).
 Otherwise (or if the user wishes not to use these variables), any of options {opt use(use)}, {opt wgt(wgt)} or {opt labels(labels)}
  may be supplied, containing alternative {it:varname}s.
+
+{pstd}
+If the option {opt prefix(prefix)} is specified, {cmd:forestplot} will instead check for variables named
+{it:prefix}{bf:_ES}, {it:prefix}{bf:_USE} and so on; see {bf:{help metan}}.
 
 {pstd}
 The meaning of these variables is as follows:

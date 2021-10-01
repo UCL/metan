@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 4.03  David Fisher  28apr2021}{...}
+{* *! version 4.04  David Fisher  16aug2021}{...}
 {vieweralsosee "metan_model" "help metan_model"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
 {vieweralsosee "metan_continuous" "help metan_continuous"}{...}
@@ -136,12 +136,13 @@ This incorporates all the functionalities of the previous version of {cmd:metan}
 {synopt :{opt keepo:rder}}display "no effect" studies in the order in which they would otherwise appear (by default these are moved to the end){p_end}
 {synopt :{opt nogr:aph}}suppress the forest plot{p_end}
 {synopt :{opt notab:le}}suppress printing the table of effect sizes to screen; see also {opt summaryonly}{p_end}
-{synopt :{opt nohet} {opt nobetween}suppress all heterogeneity statistics, or just between-subgroup heterogeneity statistics{p_end}
+{synopt :{opt nohet} {opt nobetween}}suppress all heterogeneity statistics, or just between-subgroup heterogeneity statistics{p_end}
 {synopt :{opt nokeep:vars}}do not add {help metan##saved_results:new variables} to the dataset{p_end}
 {synopt :{opt nors:ample}}do not even add new variable {bf:_rsample} recording which observations were used (cf. {help f_e:e(sample)}){p_end}
 {synopt :{opt noov:erall} {opt nosu:bgroup} {opt nosec:sub}}suppress overall pooling, or pooling within subgroups{p_end}
 {synopt :{opt ovwt sgwt}}override default choice of whether to display overall weights or subgroup weights{p_end}
-{synopt :{cmd:sortby(}{it:varname}|{cmd:_n)}}ordering of studies in table and forest plot, and for cumulative meta-analysis{p_end}
+{synopt :{opt prefix(prefix)}}defines a prefix to be added to the names of {help metan##saved_results:new variables} and/or standard variables in the {help metan##saved_datasets:saved dataset}{p_end}
+{synopt :{opt sortby(varname)}}ordering of studies in table and forest plot, and for cumulative meta-analysis{p_end}
 {synopt :{opt wgt(varname)}}specify a variable containing user-defined weights{p_end}
 
 {syntab :Forest plot and/or saved data}
@@ -149,6 +150,7 @@ This incorporates all the functionalities of the previous version of {cmd:metan}
 {synopt :{cmd:extraline(yes|no)}}override the default placement of heterogeneity information in the forest plot{p_end}
 {synopt :{opt rfdist}, {opt rflevel(#)}}display approximate predictive interval, with optional coverage level (default is {help creturn##output:c_level}; see {help set level}){p_end}
 {synopt :{opt lcol:s(varlist)}, {opt rcol:s(varlist)}}display (and/or save) columns of additional data{p_end}
+{synopt :{cmd:npts(}{it:{help metan##fplotopts:npts_option}}{cmd:)}}specify variable containing participant numbers (valid with generic/pre-calculated effect sizes only){p_end}
 {synopt :{opt plotid(varname)}}define groups of observations in which to apply specific plot rendition options{p_end}
 {synopt :{opt summaryonly}}show only summary estimates (diamonds) in the forest plot and on screen{p_end}
 {synopt :{cmdab:sa:ving(}{it:{help metan##fplotopts:saving_option}}{cmd:)}}save data in the form of a "forestplot results set" to {it:filename}{p_end}
@@ -410,6 +412,19 @@ Note: the first variable specified in {opt lcols()} is assumed to be the study i
 This may be of use for multiple subgroup analyses; see also {opt stacklabel}.
 
 {phang}
+{cmd:npts(}{it:varname} [{cmd:, nointeger} {cmd:noplot}]{cmd:)} identifies an existing variable which contains participant numbers
+to be displayed on-screen and in the forest plot and/or saved dataset.
+This option is valid only with generic (pre-calculated) effect sizes.
+In other cases, participant numbers are already known, and will be displayed and saved automatically; see e.g. {help metan_binary}.
+
+{pmore}
+{opt nointeger} allows the participant numbers in {it:varname} to contain non-integer values.
+
+{pmore}
+{opt noplot} requests that participant numbers are displayed on-screen and included in the saved dataset (if appropriate)
+but should {ul:not} appear in the forest plot.
+
+{phang}
 {cmd:saving(}{it:{help filename}} [{cmd:, replace} {cmd:stacklabel}]{cmd:)} saves the forestplot "results set" created by
 {cmd:ipdmetan} in a Stata data file for further use or manipulation; see {help metan##saved_datasets:saved datasets}.
 
@@ -451,6 +466,9 @@ The following new variables may be added:
 {p2col 7 32 36 2:{cmd:_NN}}Study sample size{p_end}
 {p2col 7 32 36 2:{cmd:_CC}}Marker of whether continuity correction was applied{p_end}
 {p2col 7 32 36 2:{cmd:_rsample}}Marker of which observations were used in the analysis{p_end}
+
+{pstd}
+If the {opt prefix(prefix)} option is specified, then the variable names above become {it:prefix}{cmd:_ES} and so on.
 
 
 {pstd}{cmd:metan} also saves the following in {cmd:r()}:{p_end}
@@ -574,6 +592,9 @@ of {cmd:r(ovstats)} not covered by the above lists, plus Q statistics and degree
 
 {pstd}
 Some of these variables have associated characteristics; type {bf:{help char:char list}} to see these.
+
+{pstd}
+If the {opt prefix(string)} option is specified, then the variable names above become {it:string}{cmd:_USE} and so on.
 
 
 {marker diffs_metan9}{...}

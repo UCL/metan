@@ -92,11 +92,14 @@
 * version 4.02  David Fisher  23feb2021
 // No changes to -forestplot- code; upversioned to match with -metan-
 
-*! version 4.03  David Fisher  28apr2021
+* version 4.03  David Fisher  28apr2021
 // fixed automated choice of x-axis with proportions with denominator(#)
 // now catches extreme cases where `DXmin' or `DXmax' are missing
 // only implement lalign() if 15.1+ , following user reports that fails with 15.0
 // corrected bug which failed to show diamonds correctly if off-scale
+
+*! version 4.04  David Fisher  16aug2021
+// added prefix() option
 
 
 program define forestplot, sortpreserve rclass
@@ -104,21 +107,21 @@ program define forestplot, sortpreserve rclass
 	version 11.0		// needs v11 for SMCL in graphs
 
 	// June 2018 [updated Oct 2018]: check for "useopts", which recreates previous -metan- (or ipdmetan/ipdover) call
-	syntax [varlist(numeric max=5 default=none)] [if] [in] [, USEOPTs *]
+	syntax [varlist(numeric max=5 default=none)] [if] [in] [, USEOPTs * ]
 	local graphopts `"`options'"'
 
 	local usevlist `varlist'
 	local useifin  `if' `in'
-	
+
 	if `"`useopts'"'!=`""' {
 		local orig_gropts : copy local graphopts
 	
 		local fpusevlist : char _dta[FPUseVarlist]
-		local fpuseifin  : char _dta[FPUseIfIn]
-		local fpuseopts  : char _dta[FPUseOpts]
+		local fpuseifin : char _dta[FPUseIfIn]
+		local fpuseopts : char _dta[FPUseOpts]
 
 		if `"`fpusevlist'`fpuseifin'`fpuseopts'"'==`""' {
-			disp as err `"No stored {bf:forestplot} options found"'
+			nois disp as err `"No stored {bf:forestplot} options found"'
 			exit 198
 		}
 	
@@ -128,15 +131,15 @@ program define forestplot, sortpreserve rclass
 
 		nois disp as text `"Full command line as defined by {bf:useopts} is as follows:"'
 		nois disp as res `"  forestplot `usevlist' `if' `in', `fpuseopts' `graphopts'"'
-		nois disp as text `"(Note: only the rightmost of any repeated options will be honoured"'
-		nois disp as text `"  with the exception of built in Stata graph options; see {help repeated_options}"'
+		nois disp as text `"(Note: any or all of this information may be over-ridden by other options;"'
+		nois disp as text `" in general only the rightmost of any repeated options will be honoured, but see {help repeated_options})"'
 	}
 
 	// Nov 2018: note that -syntax- is *leftmost*, not rightmost; so `graphopts' must come first to overrule `fpuseopts'
 	local 0 `"`usevlist' `useifin', `graphopts' `fpuseopts'"'
 	
 	// June 2018: main parse
-	syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varname numeric) ///
+	syntax [varlist(numeric max=5 default=none)] [if] [in] [, WGT(string) USE(varname numeric) PREfix(name local) ///
 		///
 		/// /* General user-specified -forestplot- options */
 		BY(varname) EFORM EFFect(string asis) LABels(varname string) DP(integer 2) KEEPAll USESTRICT /*(undocumented)*/ ///
@@ -156,12 +159,12 @@ program define forestplot, sortpreserve rclass
 
 	marksample touse, novarlist				// do this immediately, so that -syntax- can be used again
 	local graphopts `"`options'"'			// "graph region" options (also includes plotopts for now)		
-	local _USE `use'
+	if `"`use'"'!=`""' local _USE `prefix'`use'
 	
 	tokenize `varlist'
-	local _ES  `1'
-	local _LCI `2'
-	local _UCI `3'	
+	if `"`1'"'!=`""' local _ES  `prefix'`1'
+	if `"`2'"'!=`""' local _LCI `prefix'`2'
+	if `"`3'"'!=`""' local _UCI `prefix'`3'	
 	
 	
 	** N.B. Parts of this early setup may repeat work already done by calling program (e.g. -metan- )
@@ -169,10 +172,10 @@ program define forestplot, sortpreserve rclass
 
 	// Set up variable names
 	if `"`varlist'"'==`""' {		// if not specified, assume "standard" varnames			
-		local _ES  _ES
-		local _LCI _LCI
-		local _UCI _UCI
-		nois disp as text `"Note: no {it:varlist} specified; using default {it:varlist}"' as res `" {bf:_ES _LCI _UCI}"'
+		local _ES  `prefix'_ES
+		local _LCI `prefix'_LCI
+		local _UCI `prefix'_UCI
+		nois disp as text `"Note: no {it:varlist} specified; using default {it:varlist}"' as res `" {bf:`prefix'_ES `prefix'_LCI `prefix'_UCI}"'
 	}
 	else if `"`4'"'!=`""' {
 		nois disp as err `"Syntax has changed as of ipdmetan v2.0 09may2017"'
@@ -181,23 +184,23 @@ program define forestplot, sortpreserve rclass
 	}
 	foreach x in _ES _LCI _UCI {
 		confirm numeric var ``x''
-	}		
+	}
 
 	// Set up data sample to use
 	if `"`_USE'"'==`""' {
-		capture confirm numeric var _USE
+		capture confirm numeric var `prefix'_USE
 		if !_rc {
-			nois disp as text `"Note: option {bf:use(}{it:varname}{bf:)} not specified; using default {it:varname}"' as res `" {bf:_USE}"'
-			local _USE _USE
+			nois disp as text `"Note: option {bf:use(}{it:varname}{bf:)} not specified; using default {it:varname}"' as res `" {bf:`prefix'_USE}"'
+			local _USE `prefix'_USE
 		}
 		else {
 			if _rc!=7 {			// if _USE does not exist
 				tempvar _USE
 				qui gen byte `_USE' = cond(missing(`_ES', `_LCI', `_UCI'), 2, 1)
-				nois disp as text `"Note: default variable"' as res `" {bf:_USE} "' as text `"not found; all included observations will be assumed to contain study estimates"'
+				nois disp as text `"Note: default variable"' as res `" {bf:`prefix'_USE} "' as text `"not found; all included observations will be assumed to contain study estimates"'
 			}
 			else {
-				nois disp as err `"Default variable {bf:_USE} exists but is not numeric"'
+				nois disp as err `"Default variable {bf:`prefix'_USE} exists but is not numeric"'
 				exit 198
 			}
 		}
@@ -228,20 +231,20 @@ program define forestplot, sortpreserve rclass
 
 	// Weighting variable
 	if `"`wgt'"'==`""' {
-		capture confirm numeric var _WT
+		capture confirm numeric var `prefix'_WT
 		if !_rc {
-			nois disp as text `"Note: option {bf:wgt(}{it:varname}{bf:)} not specified; using default {it:varname}"' as res `" {bf:_WT}"'
-			local wgt _WT
+			nois disp as text `"Note: option {bf:wgt(}{it:varname}{bf:)} not specified; using default {it:varname}"' as res `" {bf:`prefix'_WT}"'
+			local wgt `prefix'_WT
 		}
 		else {
 			if _rc!=7 {			// if _WT does not exist
 				tempvar wgt
 				qui gen byte `wgt' = 1 if `touse' & inlist(`_USE', 1, 3, 5)		// generate as constant if doesn't exist
-				nois disp as text `"Note: default variable"' as res `" {bf:_WT} "' as text `"not found; all observations will have equal weights"'
+				nois disp as text `"Note: default variable"' as res `" {bf:`prefix'_WT} "' as text `"not found; all observations will have equal weights"'
 				local wt nowt						// don't display as text column
 			}
 			else {
-				nois disp as err `"Default variable {bf:_WT} exists but is not numeric"'
+				nois disp as err `"Default variable {bf:`prefix'_WT} exists but is not numeric"'
 				exit 198
 			}
 		}
@@ -251,18 +254,18 @@ program define forestplot, sortpreserve rclass
 	foreach x in labels by {
 		if `"``x''"'==`""' {
 			local X = upper("`x'")
-			cap confirm var _`X'
+			cap confirm var `prefix'_`X'
 			if !_rc {
-				local `x' "_`X'"			// use default varnames if they exist and option not explicitly given
+				local `x' `prefix'_`X'		// use default varnames if they exist and option not explicitly given
 				if "`x'"=="labels" {		// don't print message r.e. `by' as it is only used in a minor way by -forestplot-
 					confirm string var `labels'
-					nois disp as text `"Note: option {bf:labels(}{it:varname}{bf:)} not specified; using default {it:varname}"' as res `" {bf:_LABELS}"'
+					nois disp as text `"Note: option {bf:labels(}{it:varname}{bf:)} not specified; using default {it:varname}"' as res `" {bf:`prefix'_LABELS}"'
 				}
 			}
 			
 			// Jan 2019
 			else if "`x'"=="labels" {
-				nois disp as text `"Note: option {bf:labels(}{it:varname}{bf:)} not specified and default {it:varname} {bf:_LABELS} not found; observations will be unlabelled"'
+				nois disp as text `"Note: option {bf:labels(}{it:varname}{bf:)} not specified and default {it:varname} {bf:`prefix'_LABELS} not found; observations will be unlabelled"'
 				local names nonames
 			}
 		}
@@ -320,8 +323,8 @@ program define forestplot, sortpreserve rclass
 	}
 	else {
 		disp _n _c								// spacing, in case following on from ipdmetan (etc.)
-		cap confirm var _OVER
-		local over = cond(_rc, "", "_OVER")
+		cap confirm var `prefix'_OVER
+		local over = cond(_rc, `""', `"`prefix'_OVER"')
 		
 		local 0 `plotid'
 		syntax name(name=plname id="plotid") [, List noGRaph]
@@ -351,8 +354,8 @@ program define forestplot, sortpreserve rclass
 
 		// ...extra tweaking if passed through from (ad)metan/ipdmetan/ipdover (i.e. _STUDY, and possibly _OVER, exists)
 		if inlist("`plname'", "_STUDY", "_n", "_LEVEL", "_OVER") {
-			cap confirm var _STUDY
-			local study = cond(_rc, "_LEVEL", "_STUDY")
+			cap confirm var `prefix'_STUDY
+			local study = cond(_rc, `"`prefix'_LEVEL"', `"`prefix'_STUDY"')
 			tempvar smiss
 			qui gen byte `smiss' = missing(`study')
 			
@@ -364,7 +367,7 @@ program define forestplot, sortpreserve rclass
 				tempvar plvar
 				qui bysort `touse2' `smiss' `by' (`over' `study') : gen long `plvar' = _n if `touse2' & !`smiss'
 			}
-			else local plvar `plname'
+			else local plvar `prefix'_OVER
 		}
 		else local plvar `plname'
 		
@@ -439,8 +442,8 @@ program define forestplot, sortpreserve rclass
 	
 		if `"`keepvars'"'!=`""' tempvar _EFFECT
 		else {
-			cap drop _EFFECT
-			local _EFFECT _EFFECT
+			cap drop `prefix'_EFFECT
+			local _EFFECT `prefix'_EFFECT
 		}
 		qui gen str `_EFFECT' = string(`xexp'(`_ES'), `"%`fmtx'.`dp'f"') if !missing(`_ES')
 		qui replace `_EFFECT' = `_EFFECT' + " " if !missing(`_EFFECT')
