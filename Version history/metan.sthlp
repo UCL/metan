@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 4.04  David Fisher  16aug2021}{...}
+{* *! version 4.05  David Fisher  29nov2021}{...}
 {vieweralsosee "metan_model" "help metan_model"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
 {vieweralsosee "metan_continuous" "help metan_continuous"}{...}
@@ -275,7 +275,7 @@ By default, such studies are moved to the end.
 {phang}
 {opt nograph}, {opt notable} request the suppression of, respectively,
 construction of the forest plot and the table of effect sizes.
-Note also that the forest plot option {opt summaryonly} has a similar effect to {opt notable} on the printed output.
+See also the option {opt summaryonly}, which displays pooled effect sizes but suppresses the individual study estimates.
 
 {phang}
 {opt nohet} suppresses heterogeneity statistics in both table and forest plot.
@@ -408,8 +408,13 @@ Columns are titled with the variable label, or the variable name if a label is n
 Note: the first variable specified in {opt lcols()} is assumed to be the study identifier if neither {opt study()} nor {opt label()} are specified.
 
 {phang}
-{opt summaryonly} shows only summary estimates in the graph.
-This may be of use for multiple subgroup analyses; see also {opt stacklabel}.
+{opt summaryonly} shows only summary estimates on screen, in the forest plot, and in the saved dataset.
+That is, the pooled overall estimate(s) and subgroup-specific estimates are shown/saved, but without the individual study estimates.
+
+{phang2}
+When combined with {opt saving()} or {opt clear}, {opt summaryonly} saves {help metan##saved_datasets:additional variables}
+usually associated with {opt cumulative} or {opt influence} analysis; for example, Q statistics and degrees of freedom.
+This may be of use when running multiple analyses in a loop, where only the summary statistics are needed; see also {opt stacklabel}.
 
 {phang}
 {cmd:npts(}{it:varname} [{cmd:, nointeger} {cmd:noplot}]{cmd:)} identifies an existing variable which contains participant numbers
@@ -425,8 +430,8 @@ In other cases, participant numbers are already known, and will be displayed and
 but should {ul:not} appear in the forest plot.
 
 {phang}
-{cmd:saving(}{it:{help filename}} [{cmd:, replace} {cmd:stacklabel}]{cmd:)} saves the forestplot "results set" created by
-{cmd:ipdmetan} in a Stata data file for further use or manipulation; see {help metan##saved_datasets:saved datasets}.
+{cmd:saving(}{it:{help filename}} [{cmd:, replace} {cmd:stacklabel}]{cmd:)} saves a forestplot "results set" into a Stata data file
+for further use or manipulation; see {help metan##saved_datasets:saved datasets}.
 
 {pmore}
 {opt replace} overwrites {it:filename}

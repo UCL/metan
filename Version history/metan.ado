@@ -1,7 +1,7 @@
 * metan.ado
 * Study-level (aka "aggregate-data" or "published data") meta-analysis
 
-*! version 4.04  16aug2021
+*! version 4.05  29nov2021
 *! Current version by David Fisher
 *! Previous versions by Ross Harris and Michael Bradburn
 
@@ -119,6 +119,13 @@
 // - fixed bug which prevented saving when calling from -ipdmetan- under certain circumstances
 // - improvements to "clear" option to enable it to be used within ipdmetan/ipdover
 
+* version 4.05
+// - option "summaryonly" now saves the same (extended) set of variables as cumulative/influence
+// - fixed bug that meant "summaryonly" with "saving()/clear" and "nograph" saved the *full* results-set (i.e. as if ignoring "summaryonly")
+// - addition of prefix() option so that saved variables are `prefix'_ES etc.
+// - tweaked _rsample so that it takes on 0, 1, 2;  where 2 corresponds to "insufficient data"
+//   ... note that r(n), r(ovstats) and r(bystats) always give the counts for _USE/_rsample==1 *only*.
+
 
 program define metan, rclass
 
@@ -129,7 +136,7 @@ program define metan, rclass
 	    local hidden hidden
 		local historical historical
 	}
-	return `hidden' local metan_version "4.04"
+	return `hidden' local metan_version "4.05"
 
 	// Clear historical global macros (see metan9.ado)
 	forvalues i = 1/15 {
@@ -672,13 +679,26 @@ program define metan, rclass
 	//   (plus Q, tausq, sigmasq, df from each analysis.)
 	// Meanwhile `outvlist' contains effect sizes etc. for each individual *study*, as usual,
 	//   which will be left behind in the current dataset.
-	if `"`cumulative'`influence'"'!=`""' {
-		local npts_el npts
+	
+	// Nov 2021: a simplified version of `xoutvlist' is also needed if `summaryonly' and saving()/clear.
+	if `"`cumulative'`influence'"'!=`""' ///
+		| (`"`summaryonly'"'!=`""' & !(`"`saving'"'==`""' & `"`clear'"'==`""')) {
+		// local npts_el npts
+		// local xrownames : copy local rownames
+		// local xrownames : list xrownames - npts_el
+
+		// Nov 2021
+		local toremove npts
+		if `"`cumulative'`influence'"'==`""' {
+			local toremove `toremove' eff se_eff eff_lci eff_uci		
+		}
 		local xrownames : copy local rownames
-		local xrownames : list xrownames - npts_el
+		local xrownames : list xrownames - toremove
 		local xrownames `xrownames' Q Qdf Q_lci Q_uci
 		if `: list posof "tausq" in rownames' local xrownames `xrownames' sigmasq
-		local xrownames `xrownames' _WT2
+		if `"`cumulative'`influence'"'!=`""' {
+			local xrownames `xrownames' _WT2
+		}
 		
 		local nt = `: word count `xrownames''
 		forvalues i = 1 / `nt' {
@@ -703,7 +723,7 @@ program define metan, rclass
 	//  - with the same contents as the elements of `rownames'
 	//  - but *without* npts (as _NN is handled separately)
 	//  - and with the addition of Q, Qdf, Q_lci, Q_uci, [sigmasq]
-	//  - and with the addition of a separate weight variable (`_WT2')
+	//  - and with the addition of a separate weight variable (`_WT2') if cumulative/inflence
 
 	// Subsequently, `rownames' will be passed between subroutines
 	// and `xrownames' will be re-derived whenever needed
@@ -1193,7 +1213,7 @@ program define metan, rclass
 	//  so that the cumul/infl versions of _ES, _seES etc. are stored in `outvlist' (so overwriting the "standard" _ES, _seES etc.)
 	//  for display onscreen, in forest plot and in saved dataset.
 	// Then `xoutvlist' just contains the remaining "extra" tempvars _tausq, _Q, _Qdf etc.
-	if `"`xoutvlist'"'!=`""' {
+	if `"`cumulative'`influence'"'!=`""' {
 
 		// Firstly, tidy up: If nokeepvars *and* altwt not specified, then we can drop
 		//   any members of `outvlist' that didn't already exist in the dataset
@@ -1241,7 +1261,8 @@ program define metan, rclass
 		// Finally, we can separate off `xoutvlist', and thereby reset `outvlist'
 		local outvlist `eff' `se_eff' `eff_lci' `eff_uci' `_WT2' `_NN'
 		local xoutvlist : list xoutvlist - outvlist
-		local xv_opt xoutvlist(`xoutvlist')
+		// local xv_opt xoutvlist(`xoutvlist')
+		// Nov 2021: ^^ don't use `xv_opt'; instead *always* send `xoutvlist' to BuildResultsSet, because this now also may include `summaryonly'
 		
 		tokenize `outvlist'
 		args _ES _seES _LCI _UCI _WT _NN
@@ -1466,7 +1487,7 @@ program define metan, rclass
 			sortby(`sortby' `obs') study(`_STUDY') `byopts' mwt(`mwt') ovstats(`ovstats') ///
 			`cumulative' `influence' `proportion' `subgroup' `overall' `secsub' `het' `between' `wt' `summaryonly' ///
 			`ovwt' `sgwt' `altwt' effect(`effect') `eform' `logrank' `ccvaropt' `model1opts' `labelopts' `isqparam' ///
-			outvlist(`outvlist') `xv_opt' `prv_opt' `denominator' `nopr' `sfmtlen' ///
+			outvlist(`outvlist') xoutvlist(`xoutvlist') `prv_opt' `denominator' `nopr' `sfmtlen' ///
 			forestplot(`opts_fplot' `interaction') `fpnote' `graph' `saving' `clear' `clearstack' prefix(`prefix') ///
 			`keepall' `keeporder' `ilevel' `olevel' `tsqlevel' `rflevel' `useflag' `createdby' `opts_adm'
 		
@@ -1558,7 +1579,8 @@ program define metan, rclass
 		}
 		if `"`_rsample'"'==`""' {
 			cap drop _rsample
-			qui gen byte _rsample = `_USE'==1		// this shows which observations were used
+			qui gen byte _rsample = 0
+			qui replace _rsample = `_USE' if inlist(`_USE', 1, 2)		// this shows which observations were used
 			label variable _rsample "Sample included in most recent model"
 		}		
 	}	
@@ -1577,7 +1599,8 @@ program define metan, rclass
 
 			// create _rsample
 			cap drop _rsample
-			qui gen byte _rsample = `_USE'==1		// this shows which observations were used
+			qui gen byte _rsample = 0
+			qui replace _rsample = `_USE' if inlist(`_USE', 1, 2)		// this shows which observations were used
 			label variable _rsample "Sample included in most recent model"
 			
 			local warnlist
@@ -3098,7 +3121,7 @@ program define ProcessModelOpts, sclass
 	//  ... and "parametrically-defined Isq" -based heterogeneity if specified and appropriate [Sep 2020]
 	// (c.f. r(table) after regression)
 
-	local rownames eff se_eff eff_lci eff_uci 
+	local rownames eff se_eff eff_lci eff_uci
 	if "`proportion'"!="" {
 		local 0 `", `summstat'"'
 		syntax , [ SUMMSTAT(name) ]
@@ -6687,13 +6710,32 @@ program define BuildResultsSet, rclass
 	// To keep things simple, forbid any varnames:
 	//  - beginning with a single underscore followed by a capital letter
 	//  - beginning with "_counts" 
-	// (Oct 2018: N.B. was `badnames')
+	// (Oct 2018: N.B. was `badnames'; Nov 2021 new `badnames' code added below)
+	local badnames _USE _SOURCE _STUDY _LABELS _BY
+	local badnames `badnames' _ES _seES _LCI _UCI _WT _NN _rfLCI _rfUCI _OE _V _CC _VE
+	if `"`cumulative'`influence'"'!=`""' {
+		local badnames `badnames' _crit _chi2 _dfkr _pvalue _Q _Qdf _Qlci _Quci _H _Isq _HsqM _sigmasq _tausq _tsq_lci _tsq_uci
+	}
+	// also _Prop*, _counts* ; see below
+	
 	local lrcols `lcols' `rcols'
-	local check = 0	
+	local check = 0
 	if trim(`"`lrcols'"') != `""' {
-		local cALPHA `c(ALPHA)'
+		// local cALPHA `c(ALPHA)'
 
 		foreach el of local lrcols {
+		    foreach bad of local badnames {
+			    local el_len = length(`"`el'"')
+			    local badlen = length(`"`bad'"')
+				if (substr(`"`el'"', 1, `badlen')==`"`bad'"') | (substr(`"`bad'"', 1, `el_len')==`"`el'"') {
+					nois disp as err _n `"Error in option {bf:lcols()} or {bf:rcols()}:"'
+					nois disp as err `" Variable name {bf:`el'} is reserved for use by {bf:ipdmetan}, {bf:ipdover} and {bf:forestplot}."'
+					nois disp as err `"In order to save the results set, please rename this variable or use {bf:{help clonevar}}."'
+					exit 101
+				}
+			}
+			
+			/*
 			local el2 = substr(`"`el'"', 2, 1)
 			if substr(`"`el'"', 1, 1)==`"_"' & `: list el2 in cALPHA' {
 				nois disp as err _n `"Error in option {bf:lcols()} or {bf:rcols()}:  Variable names such as {bf:`el'}, beginning with an underscore followed by a capital letter,"'
@@ -6701,12 +6743,20 @@ program define BuildResultsSet, rclass
 				nois disp as err `"In order to save the results set, please rename this variable or use {bf:{help clonevar}}."'
 				exit 101
 			}
+			*/
+			
 			else if substr(`"`el'"', 1, 7)==`"_counts"' {
 				nois disp as err _n `"Error in option {bf:lcols()} or {bf:rcols()}:  Variable names beginning {bf:_counts} are reserved for use by {bf:ipdmetan}, {bf:ipdover} and {bf:forestplot}."'
 				nois disp as err `"In order to save the results set, please rename this variable or use {bf:{help clonevar}}."'
 				exit 101
 			}
 		
+			else if `"`proportion'"'!=`""' & substr(`"`el'"', 1, 5)==`"_Prop"' {
+				nois disp as err _n `"Error in option {bf:lcols()} or {bf:rcols()}:  Variable names beginning {bf:_Prop} are reserved for use by {bf:ipdmetan}, {bf:ipdover} and {bf:forestplot}."'
+				nois disp as err `"In order to save the results set, please rename this variable or use {bf:{help clonevar}}."'
+				exit 101
+			}
+
 			// `saving' / `clear' only:
 			// Test validity of (value) *label* names: just _BY, _STUDY, _SOURCE as applicable
 			// Value labels are unique within datasets. Hence, not a problem for a var in lcols/rcols to have same value label as the by() or study() variable.
@@ -6768,8 +6818,8 @@ program define BuildResultsSet, rclass
 	if `"`xoutvlist'"'!=`""' {
 		local rownames
 		cap local rownames : rownames `ovstats'
-		if _rc cap local rownames : rownames `bystatslist'	// if `xoutvlist', multiple models not allowed
-															// so `bystatslist' should contain (at most) a single element
+		if _rc cap local rownames : rownames `: word 1 of `bystatslist''
+
 		if `"`rownames'"'!=`""' {
 			// [DEC 2020:] re-form `xrownames' from `rownames'
 			local core eff se_eff eff_lci eff_uci npts
@@ -8003,16 +8053,15 @@ program define BuildResultsSet, rclass
 	char define _dta[FPUseOpts] `"`useopts'"'
 	char define _dta[FPUseVarlist] `fpvlist'
 
+	// If `summaryonly', limit observations to _USE==1 or 2
+	if `"`summaryonly'"'!=`""' {
+		qui replace `touse' = 0 if inlist(`_USE', 1, 2)
+	}
 
+	
 	** Pass to forestplot
 	if `"`graph'"'==`""' {
 	
-		// Where necessary, set certain obs to "`touse'==0"
-		//   note that they will still appear in the saved dataset!
-		if `"`summaryonly'"'!=`""' {
-			qui replace `touse' = 0 if inlist(`_USE', 1, 2)
-		}
-
 		cap nois forestplot `fpvlist' if `touse', `useopts'
 		
 		if _rc {
@@ -8050,8 +8099,6 @@ program define BuildResultsSet, rclass
 		
 		keep  `finalvars' `_EFFECT' `_WT' `lrcols'
 		order `finalvars' `_EFFECT' `_WT' `lrcols'
-			
-		// if `"`summaryonly'"'!=`""' qui drop if inlist(`_USE', 1, 2)
 			
 		if `"`createdby'"'==`""' local createdby metan
 		label data `"Results set created by `createdby'"'

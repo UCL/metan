@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 4.04  David Fisher  16aug2021}{...}
+{* *! version 4.05  David Fisher  29nov2021}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "" "--"}{...}
@@ -43,11 +43,14 @@ Using a previously-defined matrix:
 {synoptset 34 tabbed}{...}
 {synopthdr}
 {synoptline}
-{synopt :{bf:npts(}{it:{help numlist}}{bf:)}}specify participant numbers for each row of data (study){p_end}
-{synopt :{opt rown:ames}}use matrix {help matrix_rownames:{it:rownames}} to label studies in the table and forest plot{p_end}
-{synopt :{opt rowf:ullnames}}use matrix {help matmacfunc:{it:rowfullnames}} to label studies in the table and forest plot{p_end}
-{synopt :{opt rowe:q}}use matrix {help matrix_rownames:{it:roweqnames}} to label studies in the table and forest plot{p_end}
+{synopt :{cmd:npts(}{it:{help numlist}}{cmd:)}}specify participant numbers for each row of data (study){p_end}
+{synopt :{opt rown:ames} [{opt quoted}]}use matrix {help matrix_rownames:{it:rownames}} to label studies in the table and forest plot{p_end}
+{synopt :{opt rowf:ullnames} [{opt quoted}]}use matrix {help matmacfunc:{it:rowfullnames}} to label studies in the table and forest plot{p_end}
+{synopt :{opt rowe:q} [{opt quoted}]}use matrix {help matrix_rownames:{it:roweqnames}} to label studies in the table and forest plot{p_end}
 {synopt :{opt rowt:itle(string)}}specify {help label:variable label} for studies in the table and forest plot{p_end}
+{synopt :{opt studyt:itle(string)}}synonym for {opt rowtitle()}{p_end}
+{synopt :{opt rowl:abel(string)}}specify {help label:value label} for studies in the table and forest plot{p_end}
+{synopt :{opt studyl:abel(string)}}synonym for {opt rowlabel()}{p_end}
 {synopt :{opt var:iances}}specify that variances are supplied instead of standard errors{p_end}
 {synopt :{it:{help metan##options:metan_options}}}any {bf:{help metan}} options except {opt npts()}
 and others requiring a {it:varname}{p_end}
@@ -77,17 +80,27 @@ If two or three elements, participant numbers may be supplied in the form of a {
 {title:Options}
 
 {phang}
-{bf:npts(}{it:{help numlist}}{bf:)} specifies the number of participants associated with each study, for display in tables and forest plots.
+{cmd:npts(}{it:{help numlist}}{cmd:)} specifies the number of participants associated with each study, for display in tables and forest plots.
 
 {phang}
 {opt rownames}, {opt rowfullnames}, {opt roweq} extract the row names, {it:fullname}s (defined as {it:roweqname}{bf::}{it:rowname})
 or equation names from matrix {it:A} to form the study names (c.f. {opt study(varname)} in {bf:{help metan}}).
-In the absence of one of these options, or if row names are not set, the default names {bf:r1}, {bf:r2} etc. will be used.
+In the absence of one of these options, or if row names are not set,
+then observations (rows) will be labelled sequentially as "1", "2", etc.
+
+{pmore}
+{opt quoted}, used with any of the above, specifies that the contents of the {it:row}[{it:eq}]{it:name}s may contain spaces,
+and therefore should be {help matmacfunc:enclosed in double quotes} during manipulation.
+(Note that such quotes will {ul:not} appear on-screen or in the forest plot.)
 
 {phang}
-{opt rowtitle(string)} specifies a title for the study names extracted from matrix row names,
+{opt rowtitle(string)} (or its synonym, {opt studytitle(string)}) specifies a title for the observations extracted from the matrix,
 equivalent to the {help label:variable label} of {opt study(varname)} in {bf:{help metan}}.
 If not supplied, the default variable label "Matrix rowname" is used.
+
+{phang}
+{opt rowlabel(string)} (or its synonym, {opt studylabel(string)}) applies an existing {help label:value label} to numerical values
+stored in the {it:row}[{it:eq}]{it:name}s of the matrix, if applicable; or to the default sequential numbering (see above under {opt rownames}).
 
 {phang}
 {opt variances} specifies that the second of two columns supplied to {cmd:metani} contains variances rather than standard errors.

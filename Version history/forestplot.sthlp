@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 4.04  David Fisher  16aug2021}{...}
+{* *! version 4.05  David Fisher  29nov2021}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "forestplot" "help forestplot"}{...}
 {vieweralsosee "metani" "help metani"}{...}
@@ -69,6 +69,7 @@ to apply specific plot rendition options{p_end}
 {syntab: Plot rendition}
 {synopt :{it:plot}{cmd:{ul:op}ts(}{it:plot_options}{cmd:)}}affect rendition of all observations{p_end}
 {synopt :{it:plot{ul:#}}{cmd:opts(}{it:plot_options}{cmd:)}}affect rendition of observations in {it:#}th {cmd:plotid} group{p_end}
+{synopt :{cmdab:hlineop:ts(}{it:plot_options}{cmd:)}}affect rendition of horizontal line above data and below column headings{p_end}
 {synopt :{cmdab:nlineop:ts(}{it:plot_options}{cmd:)}}affect rendition of null line{p_end}
 {synopt :{opt nobox}}suppress weighted boxes; markers for point estimates only are shown{p_end}
 {synopt :{opt box:scale(#)}}box size scaling{p_end}
@@ -227,11 +228,10 @@ The smallest and largest values supplied to {opt xlabel()} then become the plott
 
 {phang}
 {cmd:dataid(}{it:varname} [{cmd:, newwt}]{cmd:)} define groups of observations making up a complete forest plot.
-It may be that the data in memory comes from multiple separate meta-analyses, whose forest plots
-it is desired to plot within the same {it:plot region} (see {it:{help region_options}}).
-Specifying {opt dataid()} tells {cmd:forestplot} where the data from one meta-analysis ends
-and the next begins, and results in correct placement of the overall effect line(s).
-This option should be unnecessary in most circumstances.
+It may be that the data in memory comes from multiple separate meta-analyses, to be plotted
+within the same {it:plot region} (see {it:{help region_options}}) and with the same axes, labels, headings etc.
+Specifying {opt dataid()} tells {cmd:forestplot} about this structure, resulting in correct placement of overall and/or subgroup effect lines.
+Note that {opt dataid()} does not alter the placement or ordering of data within the plot.
 
 {pmore}
 The {opt newwt} suboption requests that weighted box scaling is normalised within levels of {it:varname}.
@@ -275,14 +275,12 @@ This may be useful when the width of the column {ul:data} is small compared to t
 to form a series of groups of observations in which specific aspects of plot rendition may be affected
 using {cmd:box}{it:#}{cmd:opts}, {cmd:ci}{it:#}{cmd:opts} etc.
 The groups of observations will automatically be assigned ordinal labels (1, 2, ...) based on the ordering of {it:varlist}.
+Note that {opt plotid()} does not alter the placement or ordering of data within the plot.
 
 {pmore}
 The contents of each group may be inspected with the {cmd:list} option.
 In complex situations it may be helpful to view this list without creating the plot itself;
 this may be achieved using the {cmd:nograph} option.
-
-{pmore}
-Note that {opt plotid} does not alter the placement or ordering of data within the plot.
 
 {phang}
 {opt rfdist(varlist)} specifies two variables containing the lower and upper limits of prediction intervals
@@ -406,29 +404,38 @@ but not {opt horizontal} or {opt vertical}.
 As with any Stata {help twoway} command, default plot options will be taken from the current graph {help schemes:scheme}.
 
 {phang2}
+{cmd:hlineopts(}{it:{help line_options}}{cmd:)} affects the rendition of the horizontal line above the data and below the column headings.
+
+{phang2}
 {cmd:boxopts(}{it:{help marker_options}}{cmd:)} and {cmd:box}{it:#}{cmd:opts(}{it:{help marker_options}}{cmd:)}
 affect the rendition of weighted boxes representing point estimates
 and use options for a weighted marker (e.g., shape, colour; but not size).
 
 {phang2}
-{cmd:ciopts(}{it:{help line_options}} [{cmd:rcap}]{cmd:)} and {cmd:ci}{it:#}{cmd:opts(}{it:{help line_options}} [{cmd:rcap}]{cmd:)}
-affect the rendition of confidence intervals. The additional option {cmd:rcap} requests capped spikes.
+{cmd:ciopts(}{it:{help line_options}} [{cmd:nooverlay}] [{cmd:rcap}]{cmd:)} and {cmd:ci}{it:#}{cmd:opts(}{it:{help line_options}} [{cmd:rcap}]{cmd:)}
+affect the rendition of confidence intervals.
+The additional option {cmd:nooverlay} draws confidence interval lines {ul:behind} weighted boxes rather than overlaying them
+(note: cannot be specified with {cmd:ci}{it:#}{cmd:opts()}).
+The additional option {cmd:rcap} requests capped spikes.
 
 {phang2}
 {cmd:diamopts(}{it:{help area_options}}{cmd:)} and {cmd:diam}{it:#}{cmd:opts(}{it:{help area_options}}{cmd:)}
 affect the rendition of diamonds representing pooled estimates.
 
 {phang2}
-{cmd:nlineopts(}{it:{help line_options}}{cmd:)} affects the rendition of the null hypothesis line.
+{cmd:nlineopts(}{it:{help line_options}} [{cmd:nooverlay}]{cmd:)} affects the rendition of the null hypothesis line.
+The additional option {cmd:nooverlay} draws this line first, and places data features (e.g. weighted boxes, confidence interval lines) on top.
 
 {phang2}
-{cmd:olineopts(}{it:{help line_options}}{cmd:)} and {cmd:oline}{it:#}{cmd:opts(}{it:{help line_options}}{cmd:)}
+{cmd:olineopts(}{it:{help line_options}} [{cmd:nooverlay}]{cmd:)} and {cmd:oline}{it:#}{cmd:opts(}{it:{help line_options}}{cmd:)}
 affect the rendition of overall effect lines.
-For {cmd:oline}{it:#}{cmd:opts()} to take effect, {it:#} must be the value taken by {opt plotid}
-at the observation corresponding to the relevant pooled effect.
+The additional option {cmd:nooverlay} draws these lines first, and places data features (e.g. weighted boxes, confidence interval lines) on top
+(note: cannot be specified with {cmd:oline}{it:#}{cmd:opts()}).
 
 {pmore2}
-Note: If the pooled effect itself is {ul:not} plotted, e.g. for an {opt influence} meta-analysis (see {opt ocilineopts()}),
+Note: For {cmd:oline}{it:#}{cmd:opts()} to take effect, {it:#} must be the value taken by {opt plotid}
+at the observation corresponding to the relevant pooled effect.
+If the pooled effect itself is {ul:not} plotted, e.g. for an {opt influence} meta-analysis (see {opt ocilineopts()}),
 {it:#} must be the value taken by {opt plotid} at the observation where the overall effect line begins.
 
 {phang2}
