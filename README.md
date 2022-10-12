@@ -1,7 +1,7 @@
 <a href ="https://www.ctu.mrc.ac.uk/"><img src="MRCCTU_at_UCL_Logo.png" width="50%" /></a>
 
 # metan
-Current release: v4.05  29nov2021
+Current release: v4.06  22oct2022
 
 # A Stata package to perform meta-analysis of aggregate (summary) data
 
