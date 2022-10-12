@@ -3,8 +3,15 @@
 ***************************
 
 // Compiled by David Fisher
-// for validating  -metan- v3.8 (beta)  23sep2020
-// [and previously  -metan- v3.7 (beta)  04jul2020]
+// for validating  -metan- v4.05  29nov2021
+// [and previously -metan- v4.04  16aug2021
+// [and previously -metan- v4.03  28apr2021
+// [and previously -metan- v4.02  23feb2021
+// [and previously -metan- v4.01  10feb2021
+// [and previously -metan- v4.00  25nov2020
+// [and previously -metan- v3.9 (beta)  05nov2020
+// [and previously -metan- v3.8 (beta)  23sep2020
+// [and previously -metan- v3.7 (beta)  04jul2020]
 
 ** Validation file 2: Functionality (including advanced methods)
 // - comparison with -metaan-
@@ -16,7 +23,7 @@
 
 global Date = subinstr("$S_DATE", " ", "", .)
 
-global BaseDir2  `"S:/MRCCTU_Methodology/Software/ipdmetan/Validation/2. Functionality"'
+// global BaseDir2  `"S:/MRCCTU_Methodology/Software/Meta-analysis/metan/Validation/2. Functionality"'
 global Datasets `"$BaseDir2/Example datasets"'
 global Graphs   `"$BaseDir2/Graphs_${Date}"'
 
@@ -33,9 +40,7 @@ nois di _n(3)
 
 
 ** Check that we're using the correct version
-// [was -metan-  v3.7 (beta)  04jul2020]
-// should be -metan-  v3.8 (beta)  23sep2020  [will be 4.00 upon release]
-//       and -metan9- v3.04 (i.e. the version currently available via SSC)
+// should be -metan9- v3.04 (i.e. the version currently available via SSC)
 which metan
 which metan9
 
@@ -174,11 +179,17 @@ metan lnOR selnOR, study(id) re(reml, hksj) by(subgroup) nograph keepall keepord
 metan cdeath csample, proportion study(id)
 metan cdeath csample, proportion study(id) nograph ftt					// -metaprop- syntax, for backwards compatibility
 metan cdeath csample, proportion study(id) nograph transform(ftukey)	// new -metan- syntax
-metan cdeath csample, proportion study(id) nograph transform(arcsine)	// FAILS need to fix
+metan cdeath csample, proportion study(id) nograph transform(arcsine)
 metan cdeath csample, proportion study(id) nograph transform(logit)
 
+// with cumulative/influence
+metan cdeath csample, proportion study(id) cumulative
+metan cdeath csample, proportion study(id) influence
+metan cdeath csample, proportion study(id) transform(ftukey) cumulative
+metan cdeath csample, proportion study(id) transform(ftukey) influence
+
 // denominator
-metan cdeath csample, proportion study(id) denominator(1000)			// need to fix x-axis of graph
+metan cdeath csample, proportion study(id) denominator(1000)
 
 // continuity correction
 // (for proportions; more general cc testing below)
@@ -390,9 +401,15 @@ metan tevent tnoevent cevent cnoevent, or nograph iv cc(.005)				// IV with cc=0
 metan tevent tnoevent cevent cnoevent, or nograph iv cc(.005, opposite)		// IV with opposite trt-arm cc
 metan tevent tnoevent cevent cnoevent, or nograph iv cc(.005, empirical)	// IV with empirical cc
 
-keep if _rsample
+// original analysis
+keep if _rsample==1
 collapse (sum) tevent tnoevent cevent cnoevent
 metan tevent tnoevent cevent cnoevent, or nogr			// ??  can't recreate original analysis... obtain paper??
+
+// original analysis (2)
+use "$Datasets/sweeting_table7", clear
+collapse (sum) tevent tnoevent cevent cnoevent
+metan cevent cnoevent tevent tnoevent, or nogr			// need to keep *all* observations AND switch treatment and control!!  Sweeting et al must have missed this
 
 
 // Table VIII
@@ -414,6 +431,15 @@ metan tevent tnoevent cevent cnoevent, or nograph iv cc(.005, empirical)	// IV w
 
 
 *** More zero-cell testing
+
+use "$Datasets/sweeting_table7", clear
+gen byte subgroup=inlist(_n,2,12,14,19,21,23)
+metan tevent tnoevent cevent cnoevent, or nograph model(iv, cc(0) \ iv \ mh) by(subgroup)
+
+metan tevent tnoevent cevent cnoevent, by(subgroup) nogr iv cc(0) study(Study) cumulative study(Study)
+metan tevent tnoevent cevent cnoevent if subgroup==1, nogr iv cc(0) study(Study) cumulative study(Study)
+metan tevent tnoevent cevent cnoevent, by(subgroup) nogr keeporder iv cc(0) study(Study) cumulative study(Study)
+metan tevent tnoevent cevent cnoevent if subgroup==1, nogr keeporder iv cc(0) study(Study) cumulative study(Study)
 
 clear
 input str19 author byte(e1 f1 n1 e0 f0 n0)
@@ -493,6 +519,21 @@ metan events total, proportion study(id) counts transform(ftukey) denom(1000) mo
 // Figure 4
 metan events total, proportion study(id) counts transform(logit) denom(1000) model(fe \ dl) xlabel(0(5)15, force)
 
+
+*** NEW FEB 2021 ***
+
+// Barendregt-Doi back-transform
+metan events total, proportion study(id) nograph transform(ftukey, arithmetic) denom(1000)
+metan events total, proportion study(id) nograph transform(ftukey, arithmetic) denom(1000) model(dl)
+metan events total, proportion study(id) nograph transform(ftukey, arithmetic) denom(1000) model(reml)
+metan events total, proportion study(id) nograph transform(ftukey, arithmetic) denom(1000) model(ivhet)
+
+metan events total, proportion study(id) nograph transform(ftukey, ivariance) denom(1000)
+metan events total, proportion study(id) nograph transform(ftukey, ivariance) denom(1000) model(dl)
+metan events total, proportion study(id) nograph transform(ftukey, ivariance) denom(1000) model(reml)
+metan events total, proportion study(id) nograph transform(ftukey, ivariance) denom(1000) model(ivhet)
+
+metan events total, proportion study(id) counts transform(ftukey, ivariance) denom(1000) model(fe \ dl \ ivhet) xlabel(0(5)15, force)
 
 
 

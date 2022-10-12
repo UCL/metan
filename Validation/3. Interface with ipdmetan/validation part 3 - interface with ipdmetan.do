@@ -3,8 +3,15 @@
 ***************************
 
 // Compiled by David Fisher
-// for validating  -metan- v3.8 (beta)  23sep2020
-// [and previously  -metan- v3.7 (beta)  04jul2020]
+// for validating  -metan- v4.05  29nov2021
+// [and previously -metan- v4.04  16aug2021
+// [and previously -metan- v4.03  28apr2021
+// [and previously -metan- v4.02  23feb2021
+// [and previously -metan- v4.01  10feb2021
+// [and previously -metan- v4.00  25nov2020
+// [and previously -metan- v3.9 (beta)  05nov2020
+// [and previously -metan- v3.8 (beta)  23sep2020
+// [and previously -metan- v3.7 (beta)  04jul2020]
 
 ** Validation file 3: Interface with ipdmetan/ipdover
 // Testing of the internal workings of ipdmetan, and inter-communication with (ad)metan
@@ -14,7 +21,7 @@
 
 global Date = subinstr("$S_DATE", " ", "", .)
 
-// global BaseDir3  `"S:/MRCCTU_Methodology/Software/ipdmetan/Validation/3. Interface with ipdmetan"'
+// global BaseDir3  `"S:/MRCCTU_Methodology/Software/Meta-analysis/metan/Validation/3. Interface with ipdmetan"'
 global Datasets `"$BaseDir3/Example datasets"'
 global Graphs   `"$BaseDir3/Graphs_${Date}"'
 
@@ -31,10 +38,9 @@ nois di _n(3)
 
 
 ** Check that we're using the correct version
-// [was -metan-  v3.7 (beta)  04jul2020]
-// should be -metan-  v3.8 (beta)  23sep2020  [will be 4.00 upon release]
-//     and -ipdmetan- v3.3 (beta)  21jan2020  [will be 4.00 upon release]
-//       and -metan9- v3.04 (i.e. the version currently available via SSC)
+// should be -metan-  v4.5  29nov2021
+//     and -ipdmetan- v4.3  29nov2021
+//     and  -metan9-  v3.04 (i.e. the version currently available via SSC)
 which ipdmetan
 which metan
 which metan9
@@ -418,7 +424,54 @@ graph save "$Graphs/ipdm_gr26"
 	
 *****************************************************
 
+* Examples Nov 2021 with prefix commands and complex estimation command structures
 
+// use of weights (IPW weights in this instance, but doesn't really matter)
+// webuse cattaneo2, clear
+use "$Datasets/cattaneo2", clear
+quietly logit mbsmoke mmarried mage medu
+predict pscore, pr
+gen ipw = mbsmoke/pscore + (1-mbsmoke)/(1-pscore)
+logistic lbweight mbsmoke [pweight=ipw]
+ipdover, over(mmarried) nograph : logistic lbweight mbsmoke				// no weights
+ipdover, over(mmarried) nograph : logistic lbweight mbsmoke [pweight=ipw]	// IPW weights
+
+// use of teffects (non-standard syntax)
+teffects ipw (lbweight) (mbsmoke mage medu) if mmarried==0
+teffects ipw (lbweight) (mbsmoke mage medu) if mmarried==1
+ipdover, over(mmarried) or nograph : teffects ipw (lbweight) (mbsmoke mage medu)
+
+// use of "prefix"
+ipdover, over(mmarried) or prefix(foo) clear nograph : teffects ipw (lbweight) (mbsmoke mage medu)
+
+/*
+// multiple "if" statements
+ipdover if mrace==0, over(mmarried) or nograph : teffects ipw (lbweight) (mbsmoke mage medu)
+ipdover            , over(mmarried) or nograph : teffects ipw (lbweight) (mbsmoke mage medu) if mrace==1
+cap nois ipdover if mrace==0, over(mmarried) or nograph : teffects ipw (lbweight) (mbsmoke mage medu) if mrace==1
+*/
+
+// use of "mi estimate, post" with stcox, tvc
+// webuse mdrugtrs25, clear
+use "$Datasets/mdrugtrs25", clear
+mi describe
+gen byte study = mod(_mi_id, 3)
+mi stset studytime, failure(died)
+ipdmetan, study(study) nograph : mi estimate, post: stcox drug age, tvc(age)
+
+// use of "mi estimate, post" with xtset
+// webuse mjsps5, clear
+use "$Datasets/mjsps5", clear
+mi describe
+gen byte study = mod(_mi_id, 3)
+mi xtset school
+ipdmetan, study(study) nograph : mi estimate, post: xtreg math5 math3
+
+// use of "mi estimate, post" with mixed
+ipdmetan, study(study) nograph : mi estimate, post: mixed math5 math3 || school:, reml
+
+
+***********************************
 
 log close ipdmetan
 
