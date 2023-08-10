@@ -1,4 +1,4 @@
-<a href ="https://www.mrcctu.ucl.ac.uk/"><img src="../logo_ukri-mrc-ctu_transparent-background.png" width="50%" /></a>
+<a href ="https://www.mrcctu.ucl.ac.uk/"><img src="../logo_ukri-mrc-ctu_transparent-background.png" width="75%" /></a>
 
 # Example 2
 Fixed- and random-effects results displayed simultaneously, with predictive interval.
