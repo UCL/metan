@@ -3,7 +3,7 @@
 # Example 1
 An "umbrella" meta-analysis, where multiple related pooled results are presented in the same forest plot
 
-Data taken from Supplementary Table 3 of Neuenschwander et al BMJ 2019 doi: 10.1136/bmj.l2368
+Data taken from Supplementary Table 3 of Neuenschwander et al BMJ 2019 doi: 10.1136/bmj.l2368  
 "Role of diet in type 2 diabetes incidence: umbrella review of meta-analyses of prospective observational studies"
 
 <a href ="https://github.com/UCL/metan/blob/main/Examples"><img src="Example1_Neuenschwander.png" width="50%" /></a>
