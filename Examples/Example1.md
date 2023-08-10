@@ -1,4 +1,4 @@
-<a href ="https://www.mrcctu.ucl.ac.uk/"><img src="logo_ukri-mrc-ctu_transparent-background.png" width="50%" /></a>
+<a href ="https://www.mrcctu.ucl.ac.uk/"><img src="../logo_ukri-mrc-ctu_transparent-background.png" width="50%" /></a>
 
 # Example 1
 An "umbrella" meta-analysis, where multiple related pooled results are presented in the same forest plot
