@@ -60,6 +60,7 @@ label values PDL1 PDL1_
 drop if inlist(_USE, 0, 6) & PDL1==1
 replace PDL1 = . if inlist(_USE, 0, 6)
 
+replace _LABELS = "{bf:" + _LABELS + "}" if _USE==0
 replace _LABELS = "{bf:Pooled estimate in PD-L1 positive at 5% cut-off}" if _USE==5 & PDL1==1
 replace _LABELS = "{bf:Pooled estimate in PD-L1 negative at 5% cut-off}" if _USE==5 & PDL1==2
 
@@ -77,6 +78,6 @@ forestplot, hr nowt plotid(PDL1) dataid(PDL1) lcols(IntString ControlString) xla
     astext(70) textsize(90) boxsca(80) favours(Favours intervention # Favours control, fp(3)) ///
     box1opts(mcolor(edkblue)) box2opts(mcolor(orange)) ciopts(lcolor(black) lw(thin)) ///
     diam1opts(lc(edkblue)) diam2opts(lc(orange)) oline1opts(lp(dash) lc(edkblue)) oline2opts(lp(dash) lc(orange)) graphregion(color(white)) ///
-	legend(order(1 "PDL-1 positive" 3 "PDL-1 negative") size(1.216) region(lstyle(none)) position(7) ring(0)) spacing(1.4)
+	legend(order(1 "PDL-1 positive" 3 "PDL-1 negative") size(1.635) region(lstyle(none)) position(7) ring(0)) spacing(1.4)
 ```
 
