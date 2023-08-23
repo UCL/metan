@@ -1,0 +1,64 @@
+v 3
+d {bf:metan: A comprehensive user-written meta-analysis module.}
+d
+d Meta-analysis is a statistical technique for combining results
+d from multiple independent studies, with the aim of estimating a
+d single overall effect.  The routines in this package provide
+d facilities to conduct meta-analyses of binary (event) or
+d continuous data from two groups, or intervention effect estimates
+d with corresponding standard errors or confidence intervals.
+d This is an updated version of metan as published in Stata Journal
+d Issue 8, and prior to that in STB-44, authored by Michael J
+d Bradburn, Jonathan J Deeks and Douglas G Altman.  Updates include
+d a wide range of random-effects models; cumulative and influence
+d analysis; meta-analysis of proportions; and better handling of
+d heterogeneity, continuity correction and returned values. The
+d routine for constructing forest plots has been separated off
+d (‘forestplot’ command) and hugely extended; extremely flexible
+d and generalised forest plots may now be produced.  Also included
+d is an “immediate” command ‘metani’, which accepts numlists or
+d matrices as input rather than variables in memory; the ‘metannt’
+d program for binary data, which displays estimated intervention
+d effects in terms of the absolute reduction in risk and number
+d needed to treat; and the ‘labbe’ program which produces L'Abbe
+d plots to examine whether the assumption of a common odds ratio,
+d risk ratio or risk difference is reasonable.
+d
+d Requires: Stata version 9 (version 9 for metan9, or version 7 for metan7)
+d
+d Distribution-Date: 20221012 
+d
+d Author: David Fisher, MRC Clinical Trials Unit at UCL
+d Support: email d.fisher@ucl.ac.uk
+d Co-authors / authors of previous versions:      
+d Ross Harris, Mike Bradburn, Jon Deeks, Roger Harbord, Doug Altman,
+d Thomas Steichen, Jonathan Sterne, Julian Higgins
+
+f metan.ado
+f metan_analysis.ado
+f metan_pooling.ado
+f metan_output.ado
+f metan.mata
+f forestplot.ado
+f metan_hlp_run.ado
+f labbe.ado
+f metan7.ado
+f metan9.ado
+f metani.ado
+f metannt.ado
+f metan_examples.ado
+f lmetan.mlib
+
+f metan.sthlp
+f metan_binary.sthlp
+f metan_continuous.sthlp
+f metan_model.sthlp
+f metan_proportion.sthlp
+f forestplot.sthlp
+f labbe.sthlp
+f metan7.sthlp
+f metan9.sthlp
+f metani.sthlp
+
+f metan_example_data.dta
+f forestplot_fisher2017.dta
