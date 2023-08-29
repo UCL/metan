@@ -90,7 +90,12 @@ Finally, note that there is an important difference in the way that **metan** an
 
 # Examples
 
-Examples may be found in the documentation files within Stata.  Additional examples may be added here in the future.
+Basic examples of **metan** syntax and usage may be found in the documentation files within Stata.  Some examples of the scope and flexibility of the **forestplot** routine are given below.  Additional examples may be added here in the future.
+
+* [Example 1](Examples/Example1.md): An "umbrella" meta-analysis, where multiple related pooled results are presented in the same forest plot
+* [Example 2](Examples/Example2.md): Fixed- and random-effects results displayed simultaneously, with predictive interval.
+* [Example 3](Examples/Example3.md): Two sets of pooled results, colour-coded by subgroup
+* [Example 4](Examples/Example4.md): Confidence and predictive intervals represented by overlaid shading
 
 # Credits and Acknowledgments
 
