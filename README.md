@@ -96,6 +96,7 @@ Basic examples of **metan** syntax and usage may be found in the documentation f
 * [Example 2](Examples/Example2.md): Fixed- and random-effects results displayed simultaneously, with predictive interval.
 * [Example 3](Examples/Example3.md): Two sets of pooled results, colour-coded by subgroup
 * [Example 4](Examples/Example4.md): Confidence and predictive intervals represented by overlaid shading
+* [Example 5](Examples/Example5.md): "Two-panel" subgroup and interaction plot
 
 # Credits and Acknowledgments
 
