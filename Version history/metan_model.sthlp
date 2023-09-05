@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 4.06  David Fisher  12oct2022}{...}
+{* *! version 4.07  David Fisher  05sep2023}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
 {vieweralsosee "metan_continuous" "help metan_continuous"}{...}
@@ -72,6 +72,7 @@ if not specifically referenced below.{p_end}
 {synopt :{opt bdl} | {opt dlb}}Bootstrap DerSimonian-Laird estimator{p_end}
 {synopt :{opt he:dges}}Hedges estimator aka "Cochran ANOVA-like" aka "variance component" estimator{p_end}
 {synopt :{opt mp:aule} | {opt eb:ayes}}Mandel-Paule aka "empirical Bayes" estimator{p_end}
+{synopt :{opt pmm}}"Median-unbiased" estimator ({help metan_model##refs:Viechtbauer 2021}){p_end}
 {synopt :{opt ml:e}}Maximum likelihood (ML) estimator{p_end}
 {synopt :{opt reml}}Restricted maximum likelihood (REML) estimator{p_end}
 {synopt :{opt hm:akambi}}Hartung-Makambi estimator ({help metan_model##refs:Hartung and Makambi 2003}){p_end}
@@ -394,6 +395,10 @@ The "click to run" element of the examples in this document is handled using an 
 
 {marker refs}{...}
 {title:References}
+
+{phang}
+Borenstein M, Hedges LV, Higgins JPT, Rothstein HR. 2009. Introduction to Meta-Analysis.
+Chichester: Wiley.
 
 {phang}
 Breslow NE, Day NE. 1980. Statistical Methods in Cancer Research: Vol. I - The Analysis of Case-Control Studies.

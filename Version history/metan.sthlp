@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 4.06  David Fisher  12oct2022}{...}
+{* *! version 4.07  David Fisher  05sep2023}{...}
 {vieweralsosee "metan_model" "help metan_model"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}
 {vieweralsosee "metan_continuous" "help metan_continuous"}{...}
@@ -147,6 +147,7 @@ This incorporates all the functionalities of the previous version of {cmd:metan}
 {synopt :{opt wgt(varname)}}specify a variable containing user-defined weights{p_end}
 
 {syntab :Forest plot and/or saved data}
+{synopt :{opt allw:eights}}display study-specific weights associated with all requested models on the forest plot{p_end}
 {synopt :{opt hetinfo(het_spec)}}specify heterogeneity information to display on the forest plot{p_end}
 {synopt :{cmd:extraline(yes|no)}}override the default placement of heterogeneity information in the forest plot{p_end}
 {synopt :{opt rfdist}, {opt rflevel(#)}}display approximate predictive interval, with optional coverage level (default is {help creturn##output:c_level}; see {help set level}){p_end}

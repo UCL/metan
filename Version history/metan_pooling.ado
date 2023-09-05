@@ -8,8 +8,7 @@
 // - Content of subroutine metan_pooling.Heterogi is identical to that of subroutine metan.Heterogi
 // - Content of Mata subroutines is identical to that of compiled Mata library lmetan.mlib
 
-*  version 4.05  29nov2021
-*! version 4.06  12oct2022
+*! version 4.07  05sep2023
 *! Current version by David Fisher
 *! Previous versions by Ross Harris and Michael Bradburn
 
@@ -21,7 +20,7 @@ program define metan_pooling, rclass
 		OEVLIST(varlist numeric min=2 max=2) INVLIST(varlist numeric min=2 max=6) ///
 		NPTS(varname numeric) WGT(varname numeric) WTVAR(varname numeric) ///
 		HKsj KRoger BArtlett SKovgaard RObust LOGRank PRoportion TN(string) POVERV(real 2) /*noTRUNCate*/ TRUNCate(string) EIM OIM ///
-		ISQSA(real 80) TSQSA(real -99) QWT(varname numeric) INIT(name) OLevel(cilevel) HLevel(cilevel) RFLevel(cilevel) CItype(passthru) ///
+		ISQSA(real 80) TSQSA(real -99) DLC /*Added May 2023*/ QWT(varname numeric) INIT(name) OLevel(cilevel) HLevel(cilevel) RFLevel(cilevel) CItype(passthru) ///
 		ITOL(real 1.0x-1a) MAXTausq(real -9) REPS(real 1000) MAXITer(real 1000) QUADPTS(real 100) DIFficult TECHnique(string) * ]
 
 	// N.B. extra options should just be those allowed for PerformPoolingMH
@@ -115,7 +114,11 @@ program define metan_pooling, rclass
 	scalar `sigmasq' = `Qdf'/`c'						// [general note: can this be generalised to other (non-IV) methods?]
 	scalar `tausq' = max(0, (`Q' - `Qdf')/`c')			// default: D+L estimator
 
-
+	// May 2023: DL with common tausq across subgroups
+	if "`dlc'"!="" {
+		scalar `tausq' = `tsqsa'
+	}
+	
 
 	**********************************
 	* Non-iterative tausq estimators *
@@ -252,7 +255,7 @@ program define metan_pooling, rclass
 	local maxtausq = cond(`maxtausq'==-9, max(10*`tausq', 100), `maxtausq')
 		
 	// Iterative, using Mata
-	if inlist("`model'", "dlb", "mp", "ml", "pl", "reml") {
+	if inlist("`model'", "dlb", "mp", "pmm", "ml", "pl", "reml") {
 	
 		// Bootstrap D+L
 		// (Kontopantelis PLoS ONE 2013)
@@ -268,12 +271,12 @@ program define metan_pooling, rclass
 			cap nois mata: DLb("`_ES' `_seES'", "`touse'", `olevel', `reps')
 		}
 		
-		// Mandel-Paule aka empirical Bayes
-		// (DerSimonian and Kacker CCT 2007)
+		// Mandel-Paule aka empirical Bayes (DerSimonian and Kacker CCT 2007)
+		// or median-unbiased estimator suggested by Viechtbauer (2021)
 		// N.B. Mata routine also performs the Viechtbauer Q-profiling routine for tausq CI
 		// (Viechtbauer Stat Med 2007; 26: 37-52)
-		else if "`model'"=="mp" {
-			cap nois mata: GenQ("`_ES' `_seES'", "`touse'", `hlevel', (`maxtausq', `itol', `maxiter'))
+		else if inlist("`model'", "mp", "pmm") {
+			cap nois mata: GenQ("`_ES' `_seES'", "`touse'", `hlevel', (`maxtausq', `itol', `maxiter'), "`model'")
 		}
 		
 		// REML
@@ -299,7 +302,7 @@ program define metan_pooling, rclass
 			else if "`skovgaard'"!="" local mlpl plskov
 			local hmethod = cond("`difficult'"!="", "hybrid", "m-marquardt")	// default = m-marquardt
 			if "`technique'"=="" local technique nr								// default = nr
-			cap nois mata: MLPL("`_ES' `_seES'", "`touse'", (`olevel', `hlevel'), (`maxtausq', `itol', `maxiter'), "`hmethod'", "`technique'", "`mlpl'")			
+			cap nois mata: MLPL("`_ES' `_seES'", "`touse'", (`olevel', `hlevel'), (`maxtausq', `itol', `maxiter'), "`hmethod'", "`technique'", "`mlpl'")
 			if `"`r(ll_negtsq)'"'!=`""' {
 			    disp `"{error}tau-squared value from last iteration was negative, so has been set to zero"'
 			}			
@@ -352,7 +355,7 @@ program define metan_pooling, rclass
 		return scalar rc_tsq_lci = r(rc_tsq_lci)
 		return scalar rc_tsq_uci = r(rc_tsq_uci)
 		
-	}	// end if inlist("`model'", "dlb", "mp", "ml", "pl", "reml")
+	}	// end if inlist("`model'", "dlb", "mp", "pmm", "ml", "pl", "reml")
 		// [i.e. iterative tausq estimators]
 	
 	// end of "Iterative, using Mata" section
@@ -694,7 +697,13 @@ program define metan_pooling, rclass
 		** Back-transforms: special case
 		// if k = 1, pass to GenConfIntsPr
 		if `k'==1 {
-			GenConfIntsPr `invlist' if `touse', `citype' level(`olevel')
+			cap nois GenConfIntsPr `invlist' if `touse', `citype' level(`olevel')
+			if _rc {
+				if _rc==1 nois disp as err `"User break in {bf:metan_analysis.GenConfIntsPr}"'
+				else nois disp as err `"Error in {bf:metan_analysis.GenConfIntsPr}"'
+				c_local err noerr		// tell -metan- not to also report an "error in metan_analysis.PerformMetaAnalysis"
+				exit _rc
+			}			
 			return scalar prop_eff = r(es)
 			return scalar prop_lci = r(lb)
 			return scalar prop_uci = r(ub)
@@ -706,7 +715,7 @@ program define metan_pooling, rclass
 		}
 		else {
 			tokenize `invlist'
-			args succ _NN   
+			args succ _NN
 		
 			** Perform standard back-transforms
 			// first, truncate intervals at `mintes' and `maxtes'
@@ -971,25 +980,21 @@ program define metan_pooling, rclass
 	// Sensitivity analysis
 	// (Note: tausq has already been established, whether `tsqsa' or `Isqsa')
 	if "`model'"=="sa" {
+		local tsqlist sa		// [May 2023] for -heterogi- ;  see below
+		
 		tempname H Isqval HsqM
 		if `tsqsa' == -99 {
 			scalar `H' = sqrt(100 / (100 - `isqsa'))
 			scalar `Isqval' = `isqsa'
 			scalar `HsqM' = `isqsa'/(100 - `isqsa')
-			return scalar H = `H'
-			return scalar Isq = `Isqval'
-			return scalar HsqM = float(`HsqM')			// If user-defined I^2 is a round(ish) number, so should H^2 be
 		}
 		else {
 			scalar `H' = sqrt((`tsqsa' + `sigmasq') / `sigmasq')
 			scalar `Isqval' = 100*`tsqsa'/(`tsqsa' + `sigmasq')
 			scalar `HsqM' = `tsqsa'/`sigmasq'
-			return scalar H = `H'
-			return scalar Isq = `Isqval'
-			return scalar HsqM = `HsqM'
 		}
 		
-		// [Sep 2020] Also save values in matrix `hetstats', same as if `isqparam' (see subroutine -heterogi- )
+		// [Sep 2020] Save values in matrix `hetstats', same as if `isqparam' (see subroutine -heterogi- )
 		local t2rownames tausq tsq_lci tsq_uci H H_lci H_uci Isq Isq_lci Isq_uci HsqM HsqM_lci HsqM_uci
 		tempname hetstats
 		local r : word count `t2rownames'
@@ -1004,28 +1009,26 @@ program define metan_pooling, rclass
 		return matrix hetstats = `hetstats'
 	}
 	
-	else {
-		if !inlist("`model'", "iv", "peto", "mu") {
-			local tausqlist `tausq' `tsq_lci' `tsq_uci'
-			cap assert "`tausqlist'"!="" if "`isqparam'"!=""
-			if _rc {
-				nois disp as err "Heterogeneity confidence interval not valid"
-				exit 198
-			}
-		}
-		
-		cap nois Heterogi `Q' `Qdf' if `touse', `testbased' `isqparam' ///
-			stderr(`_seES') tausqlist(`tausqlist') level(`hlevel')
-
+	if !inlist("`model'", "iv", "peto", "mu") {
+		local tausqlist `tausq' `tsq_lci' `tsq_uci'
+		cap assert "`tausqlist'"!="" if "`isqparam'"!=""
 		if _rc {
-			if _rc==1 nois disp as err `"User break in {bf:metan_pooling.Heterogi}"'
-			else nois disp as err `"Error in {bf:metan_pooling.Heterogi}"'
-			c_local err noerr		// tell -metan- not to also report an "error in metan_analysis.PerformPoolingIV"
-			exit _rc
+			nois disp as err "Heterogeneity confidence interval not valid"
+			exit 198
 		}
-		
-		return add
 	}
+		
+	cap nois Heterogi `Q' `Qdf' if `touse', `testbased' `isqparam' ///
+		stderr(`_seES') tausqlist(`tausqlist') level(`hlevel')
+
+	if _rc {
+		if _rc==1 nois disp as err `"User break in {bf:metan_pooling.Heterogi}"'
+		else nois disp as err `"Error in {bf:metan_pooling.Heterogi}"'
+		c_local err noerr		// tell -metan- not to also report an "error in metan_analysis.PerformPooling"
+		exit _rc
+	}
+	
+	return add
 	
 	// Return scalars
 	return scalar eff = `eff'
@@ -1239,6 +1242,82 @@ program define Heterogi, rclass
 end
 
 
+* Program to generate confidence intervals for individual studies (NOT pooled estimates)
+// SPECIFICALLY FOR PROPORTIONS
+// run if either:
+//  - nointeger; i.e. some non-integer n, N so that -cii- fails; or
+//  - `"`citype'"'==`"transform"', so back-transformed LCI, UCI is required, which cannot be done by -cii-
+// subroutine of GenConfInts
+
+program define GenConfIntsPr, rclass
+	version 11.0
+
+	syntax varlist(numeric min=2 max=2 default=none) [if] [in], CItype(name) ///
+		[ OUTVLIST(varlist numeric min=3 max=3) Level(cilevel) SCALAR ]
+
+	marksample touse, novarlist
+	tokenize `varlist'
+	args n N
+	
+	if `"`outvlist'"'!=`""' {	
+		tokenize `outvlist'
+		args es lb ub
+	}
+	else {
+		tempvar es lb ub
+		qui gen `es' =  `n' / `N' if `touse'
+		qui gen `lb' = .
+		qui gen `ub' = .
+	}
+
+	tempname alpha crit
+	scalar `alpha' = .5 + `level'/200
+	scalar `crit' = invnormal(`alpha')
+
+	if "`citype'"=="exact" {
+		qui replace `lb' = cond(float(`n')==0,   0, invbinomialtail(`N', `n', 1-`alpha')) if `touse'
+		qui replace `ub' = cond(float(`n')==`N', 1, invbinomial(    `N', `n', 1-`alpha')) if `touse'
+	}
+	else if "`citype'"=="wald" {
+		qui replace `lb' = cond(inlist(float(`es'), 0, 1), `es', `es' - `crit' * sqrt(`es' * (1 - `es') / `N')) if `touse'
+		qui replace `ub' = cond(inlist(float(`es'), 0, 1), `es', `es' + `crit' * sqrt(`es' * (1 - `es') / `N')) if `touse'
+	}
+	else if inlist("`citype'", "wilson", "agresti") {
+		tempvar n_tilde N_tilde p_tilde
+		qui gen double `n_tilde' = `n' + (`crit'^2) / 2
+		qui gen double `N_tilde' = `N' + (`crit'^2)
+		qui gen double `p_tilde' = `n_tilde' / `N_tilde'
+		
+		if "`citype'"=="wilson" {
+			qui replace `lb' = cond(float(`n'==0), 0,                   `p_tilde' - (`crit' * sqrt(`N') / `N_tilde') * sqrt(`es'*(1 - `es') + (`crit'^2)/(4*`N') )) if `touse'
+			qui replace `ub' = cond(float(`n'==0), min(1, 2*`p_tilde'), `p_tilde' + (`crit' * sqrt(`N') / `N_tilde') * sqrt(`es'*(1 - `es') + (`crit'^2)/(4*`N') )) if `touse'
+		} 
+		else {		// Agresti-Coull
+			qui replace `lb' = max(0, `p_tilde' - `crit' * sqrt(`p_tilde' * (1 - `p_tilde') / `N_tilde')) if `touse'
+			qui replace `ub' = min(1, `p_tilde' + `crit' * sqrt(`p_tilde' * (1 - `p_tilde') / `N_tilde')) if `touse'
+		}
+	}
+	else if "`citype'"=="jeffreys" {
+		qui replace `lb' = invibeta(`n' + .5, `N' - `n' + .5, 1-`alpha') if `touse'
+		qui replace `ub' = invibeta(`n' + .5, `N' - `n' + .5,   `alpha') if `touse'
+	}
+	else {
+		nois disp as err "invalid {bf:citype()}"
+		exit 198
+	}
+	
+	// Return mean values -- but note these are meaningless unless there is only a single observation in the sample
+	// This is for use if called from within PerformPoolingIV in the special case of pooling where there is only one valid study
+	summ `es' if `touse', meanonly
+	if r(N)==1 {
+		return scalar es = r(mean)
+		summ `lb' if `touse', meanonly
+		return scalar lb = r(mean)
+		summ `ub' if `touse', meanonly
+		return scalar ub = r(mean)
+	}
+	
+end
 
 
 
@@ -1305,7 +1384,7 @@ real scalar ftausq(real matrix coeffs, real colvector weight, real scalar eff) {
 
 
 /* "Generalised Q" methods */
-void GenQ(string scalar varlist, string scalar touse, real scalar hlevel, real rowvector iteropts)
+void GenQ(string scalar varlist, string scalar touse, real scalar hlevel, real rowvector iteropts, string scalar model)
 {
 	// setup
 	real colvector yi, se, vi, wi
@@ -1322,18 +1401,7 @@ void GenQ(string scalar varlist, string scalar touse, real scalar hlevel, real r
 	maxiter = iteropts[3]
 	
 	real scalar k
-	k = length(yi)
-	
-	/* Mandel-Paule estimator of tausq (J Res Natl Bur Stand 1982; 87: 377-85) */
-	// (also DerSimonian & Kacker, Contemporary Clinical Trials 2007; 28: 105-114)
-	// ... can be shown to be equivalent to the "empirical Bayes" estimator
-	// (e.g. Sidik & Jonkman Stat Med 2007; 26: 1964-81)
-	// and converges more quickly
-	real scalar rc_tausq, tausq
-	rc_tausq = mm_root(tausq=., &Q_crit(), 0, maxtausq, itol, maxiter, yi, vi, k, k-1)
-	st_numscalar("r(tausq)", tausq)
-	st_numscalar("r(rc_tausq)", rc_tausq)
-	
+	k = length(yi)	
 
 	/* Confidence interval for tausq by generalised Q-profiling */
 	// Viechtbauer Stat Med 2007; 26: 37-52
@@ -1349,7 +1417,7 @@ void GenQ(string scalar varlist, string scalar touse, real scalar hlevel, real r
 	real scalar Q_crit_hi, Q_crit_lo, tsq_lci, rc_tsq_lci, tsq_uci, rc_tsq_uci
 	Q_crit_hi = invchi2(k-1, .5 + hlevel/200)		// higher critical value (0.975) to compare GenQ against (for *lower* bound of tausq)
 	Q_crit_lo = invchi2(k-1, .5 - hlevel/200)		//  lower critical value (0.025) to compare GenQ against (for *upper* bound of tausq)
-	
+		
 	if (Qmin < Q_crit_lo) {			// if Q(0) is less the lower critical value, interval is set to null
 		rc_tsq_lci = 2
 		rc_tsq_uci = 2
@@ -1381,7 +1449,24 @@ void GenQ(string scalar varlist, string scalar touse, real scalar hlevel, real r
 		}
 	}
 	
-	// return confidence limits and rc codes
+	/* Mandel-Paule estimator of tausq (J Res Natl Bur Stand 1982; 87: 377-85) */
+	// (also DerSimonian & Kacker, Contemporary Clinical Trials 2007; 28: 105-114)
+	// ... can be shown to be equivalent to the "empirical Bayes" estimator
+	// (e.g. Sidik & Jonkman Stat Med 2007; 26: 1964-81)
+	// and converges more quickly
+	real scalar rc_tausq, tausq
+	if (model=="mp") {
+		rc_tausq = mm_root(tausq=., &Q_crit(), 0, maxtausq, itol, maxiter, yi, vi, k, k-1)
+	}
+	else {
+		real scalar Q_median
+		Q_median = invchi2(k-1, .5)		// median of distribution (for median-unbiased estimator suggested by Viechtbauer 2021)
+		rc_tausq = mm_root(tausq=., &Q_crit(), 0, maxtausq, itol, maxiter, yi, vi, k, Q_median)
+	}
+	
+	// return scalars and rc codes
+	st_numscalar("r(tausq)", tausq)
+	st_numscalar("r(rc_tausq)", rc_tausq)
 	st_numscalar("r(tsq_lci)", tsq_lci)
 	st_numscalar("r(tsq_uci)", tsq_uci)
 	st_numscalar("r(rc_tsq_lci)", rc_tsq_lci)
