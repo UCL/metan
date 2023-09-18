@@ -115,7 +115,7 @@ ipdmetan, study(_STUDY) hr ad(`testAD', vars(_ES _seES) npts(_NN) byad) nooveral
 ipdmetan, study(_STUDY) hr ad(`testAD', vars(_ES _seES) npts(_NN)) by(region) nograph : stcox trt if region==2, strata(sex)
 ipdmetan, study(_STUDY) hr ad(`testAD', vars(_ES _seES) npts(_NN) byad) nooverall ///
 	plotid(_BYAD) forest(ci1opt(lcolor(red)) ci2opt(lcolor(green))) : stcox trt if region==2, strata(sex)
-graph save "$Graphs/ipdm_gr1"
+graph save "$Graphs/ipdm_gr1.gph"
 drop _STUDY
 
 * some subgroups only appear in aggregate data
@@ -207,23 +207,23 @@ cap nois ipdmetan, study(trialid) interaction eform keepall nograph poolvar(1.tr
 
 * graphics
 ipdmetan, study(trialid) hr lcols((e(N_fail)) "N failures") rcols((e(cmd)) "Command") forestplot(usestrict) : stcox trt
-graph save "$Graphs/ipdm_gr2"
+graph save "$Graphs/ipdm_gr2.gph"
 cap nois ipdmetan, study(trialid) hr lcols((e(N_fail)) "N failures") nototal poolvar(trt) forestplot(usestrict) : stcox trt		// should give error (e() with nototal)
 ipdmetan, study(trialid) hr lcols((e(N_fail)) "N failures") rcols(age %5.2f "Mean age") forestplot(usestrict) : stcox trt
-graph save "$Graphs/ipdm_gr3"
+graph save "$Graphs/ipdm_gr3.gph"
 
 * numeric vars with value labels must be decoded before being used with lcols! (this is a feature, not a bug)
 decode region, gen(regionstr)
 ipdmetan, study(trialid) hr lcols(region) forestplot(usestrict) : stcox trt		// value label not used; spurious "overall" statistic calculated (correctly!)
-graph save "$Graphs/ipdm_gr4"
+graph save "$Graphs/ipdm_gr4.gph"
 ipdmetan, study(trialid) hr lcols(regionstr) forestplot(usestrict ) : stcox trt		// works; no need for het info to be on new line (correct)
-graph save "$Graphs/ipdm_gr5"
+graph save "$Graphs/ipdm_gr5.gph"
 
 * use of plotid and plot`i'opts
 ipdmetan, study(trialid) hr by(region) plotid(region) forestplot(usestrict box1opt(mcolor(red))) : stcox trt
-graph save "$Graphs/ipdm_gr6"
+graph save "$Graphs/ipdm_gr6.gph"
 ipdmetan, study(trialid) hr by(region) plotid(trialid) forestplot(usestrict box3opt(mcolor(green))) : stcox trt
-graph save "$Graphs/ipdm_gr7"
+graph save "$Graphs/ipdm_gr7.gph"
 
 * appending two datasets before calling forestplot
 tempfile testfp1 testfp2
@@ -235,7 +235,7 @@ preserve
 	replace _USE=4 if missing(_USE)
 	append using `testfp2', gen(subgp)
 	forestplot, usestrict hr plotid(subgp) box1opt(mcolor(red)) box2opt(mcolor(green))
-	graph save "$Graphs/ipdm_gr8"
+	graph save "$Graphs/ipdm_gr8.gph"
 restore
 	
 * use of "stacklabel" option
@@ -252,7 +252,7 @@ preserve
 	append using `testfp2', gen(subgp)
 	label var _LABELS "Study"
 	forestplot, usestrict plotid(subgp) box1opt(mcolor(red)) box2opt(mcolor(green))
-	graph save "$Graphs/ipdm_gr9"
+	graph save "$Graphs/ipdm_gr9.gph"
 restore
 // "stacklabel" is necessary, as "append" does not preserve variable labels in the "new" dataset
 // (that is, the dataset being appended to the existing one).
@@ -271,9 +271,9 @@ preserve
 	replace _LCI = newLCI if inlist(plotid, 1, 4)
 	replace _UCI = newUCI if inlist(plotid, 1, 4)
 	forestplot, usestrict hr nooverall plotid(plotid) box1opt(mcolor(red)) box2opt(mcolor(green))
-	graph save "$Graphs/ipdm_gr10"
+	graph save "$Graphs/ipdm_gr10.gph"
 	forestplot, usestrict hr nooverall plotid(plotid) box1opt(mcolor(red)) box2opt(mcolor(green)) noadjust	// correct for diamond/text overlap
-	graph save "$Graphs/ipdm_gr11"
+	graph save "$Graphs/ipdm_gr11.gph"
 restore
 // no gap between heterogeneity line in first plot and trial data in second plot!!
 
@@ -289,7 +289,7 @@ preserve
 	replace _LCI = newLCI if inlist(plotid, 1, 4)
 	replace _UCI = newUCI if inlist(plotid, 1, 4)
 	forestplot, usestrict plotid(plotid) box1opt(mcolor(red)) box2opt(mcolor(green)) diam1opt(lcolor(red)) diam2opt(lcolor(green)) noadjust
-	graph save "$Graphs/ipdm_gr12"
+	graph save "$Graphs/ipdm_gr12.gph"
 restore
 
 * Look at overall pooled estimates
@@ -308,19 +308,19 @@ preserve
 	replace plotid=3 if plotid==0 & _USE==5
 	replace plotid=4 if plotid==1 & _USE==5
 	forestplot, usestrict plotid(plotid) box1opt(mcolor(red)) box3opt(mcolor(green)) diam1opt(lcolor(red)) diam3opt(lcolor(green))
-	graph save "$Graphs/ipdm_gr13"
+	graph save "$Graphs/ipdm_gr13.gph"
 	
 	* Test whether `p'opts really do overwrite global opts
 	forestplot, usestrict plotid(plotid) boxopt(mcolor(green)) diamopt(lpattern(dash)) box1opt(mcolor(red))
-	graph save "$Graphs/ipdm_gr14"
+	graph save "$Graphs/ipdm_gr14.gph"
 	forestplot, usestrict plotid(plotid) diam1opt(lcolor(red)) diam2opt(lcolor(blue)) diam3opt(lcolor(green)) diam4opt(lcolor(yellow))
-	graph save "$Graphs/ipdm_gr15"
+	graph save "$Graphs/ipdm_gr15.gph"
 	forestplot, usestrict plotid(plotid) oline1opt(lcolor(red)) oline2opt(lcolor(blue)) oline3opt(lcolor(green)) oline4opt(lcolor(yellow)) 
-	graph save "$Graphs/ipdm_gr16"
+	graph save "$Graphs/ipdm_gr16.gph"
 
 	* rcap option
 	forestplot, usestrict plotid(plotid) ci1opt(rcap msize(huge))
-	graph save "$Graphs/ipdm_gr17"
+	graph save "$Graphs/ipdm_gr17.gph"
 
 	* plots that (correctly) give errors
 	cap nois forestplot, plotid(plotid) boxopt(mcolor(blue)) box1opt(mcolor(red)) box1opt(mcolor(green))	// correctly gives error (repeated option)
@@ -330,7 +330,7 @@ restore
 
 * rcap/rcapsym
 ipdmetan, study(trialid) forestplot(usestrict ciopt(rcap)) : stcox trt
-graph save "$Graphs/ipdm_gr18"
+graph save "$Graphs/ipdm_gr18.gph"
 
 
 
@@ -380,24 +380,24 @@ stset tcens, fail(fail)
 
 // Test "influence" forestplot options
 qui ipdmetan tcens trt, study(trialid) by(region) influence smd
-graph save "$Graphs/ipdm_gr19"
+graph save "$Graphs/ipdm_gr19.gph"
 qui ipdmetan tcens trt, study(trialid) by(region) influence smd ///
 	forestplot(ocilineopts(color(gs8)))
-graph save "$Graphs/ipdm_gr20"
+graph save "$Graphs/ipdm_gr20.gph"
 cap nois ipdmetan tcens trt, study(trialid) by(region) influence smd re rfdist ///
 	forestplot(ocilineopts(color(gs8)) rfcilineopts(color(gs12)))
 qui ipdmetan tcens trt, study(trialid) by(region) smd re rfdist ///
 	forestplot(ocilineopts(color(gs8)) rfcilineopts(color(gs12)))
-graph save "$Graphs/ipdm_gr21"
+graph save "$Graphs/ipdm_gr21.gph"
 qui ipdmetan tcens trt, study(trialid) by(region) smd re rfdist ///
 	forestplot(ocilineopts(color(gs8)) rfcilineopts(color(gs12) hide))
-graph save "$Graphs/ipdm_gr22"
+graph save "$Graphs/ipdm_gr22.gph"
 
 // "influence" with single-study subgroup
 clonevar region2 = region
 replace region2 = 3 if trialid==1
 qui ipdmetan tcens trt, study(trialid) by(region2) influence smd sgwt
-graph save "$Graphs/ipdm_gr23"
+graph save "$Graphs/ipdm_gr23.gph"
 
 
 
@@ -407,17 +407,17 @@ graph save "$Graphs/ipdm_gr23"
 * ipdover
 sysuse auto, clear
 ipdover, over(foreign rep78) forest(nonull xlabel(10(5)40, force)) : mean mpg
-graph save "$Graphs/ipdm_gr24"
+graph save "$Graphs/ipdm_gr24.gph"
 
 * use of plotid with ipdover
 ipdover, over(foreign rep78) forest(nonull xlabel(10(5)40, force) box1opt(mcolor(red)) ci2opt(lcolor(green)) diam3opt(lpattern(dash))) ///
 	plotid(_OVER, list) : mean mpg
-graph save "$Graphs/ipdm_gr25"
+graph save "$Graphs/ipdm_gr25.gph"
 
 use "$Datasets/ipdmetan_example", clear
 stset tcens, fail(fail)
 ipdover, over(stage) over(trialid) hr nosubgroup nooverall forestplot(usestrict favours(Favours treatment # Favours control) notruncate) : stcox trt
-graph save "$Graphs/ipdm_gr26"
+graph save "$Graphs/ipdm_gr26.gph"
 // N.B. "notruncate" needed because "study" names (i.e. I, II, III) are so much shorter than the title string
 
 

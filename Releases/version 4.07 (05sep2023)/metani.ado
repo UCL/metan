@@ -32,7 +32,7 @@
 * version 4.06  David Fisher  12oct2022
 // No changes; upversioned to match with the rest of -metan- package
 
-*! version 4.07  David Fisher  05sep2023
+*! version 4.07  David Fisher  15sep2023
 // No changes; upversioned to match with the rest of -metan- package
 
 

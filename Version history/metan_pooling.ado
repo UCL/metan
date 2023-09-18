@@ -8,7 +8,7 @@
 // - Content of subroutine metan_pooling.Heterogi is identical to that of subroutine metan.Heterogi
 // - Content of Mata subroutines is identical to that of compiled Mata library lmetan.mlib
 
-*! version 4.07  05sep2023
+*! version 4.07  15sep2023
 *! Current version by David Fisher
 *! Previous versions by Ross Harris and Michael Bradburn
 
@@ -20,7 +20,8 @@ program define metan_pooling, rclass
 		OEVLIST(varlist numeric min=2 max=2) INVLIST(varlist numeric min=2 max=6) ///
 		NPTS(varname numeric) WGT(varname numeric) WTVAR(varname numeric) ///
 		HKsj KRoger BArtlett SKovgaard RObust LOGRank PRoportion TN(string) POVERV(real 2) /*noTRUNCate*/ TRUNCate(string) EIM OIM ///
-		ISQSA(real 80) TSQSA(real -99) DLC /*Added May 2023*/ QWT(varname numeric) INIT(name) OLevel(cilevel) HLevel(cilevel) RFLevel(cilevel) CItype(passthru) ///
+		ISQSA(real -99) TSQSA(real -99) PHISA(real -99) POOLed /*Added Sep 2023*/ QWT(varname numeric) INIT(name) ///
+		OLevel(cilevel) HLevel(cilevel) RFLevel(cilevel) CItype(passthru) ///
 		ITOL(real 1.0x-1a) MAXTausq(real -9) REPS(real 1000) MAXITer(real 1000) QUADPTS(real 100) DIFficult TECHnique(string) * ]
 
 	// N.B. extra options should just be those allowed for PerformPoolingMH
@@ -29,7 +30,7 @@ program define metan_pooling, rclass
 	if `"`wtvar'"'==`""' {
 		local wtvar
 		tempvar wtvar
-		qui gen `wtvar' = .
+		qui gen double `wtvar' = .
 	}	
 	else {
 		marksample touse, novarlist		// June 2022: temporary marksample, consistent across models (c.f. I-V and no CC; see elsewhere)
@@ -114,10 +115,6 @@ program define metan_pooling, rclass
 	scalar `sigmasq' = `Qdf'/`c'						// [general note: can this be generalised to other (non-IV) methods?]
 	scalar `tausq' = max(0, (`Q' - `Qdf')/`c')			// default: D+L estimator
 
-	// May 2023: DL with common tausq across subgroups
-	if "`dlc'"!="" {
-		scalar `tausq' = `tsqsa'
-	}
 	
 
 	**********************************
@@ -125,103 +122,108 @@ program define metan_pooling, rclass
 	**********************************
 	// (other than D+L, already derived above)
 	
-	** Setup two-stage estimators sj2s and dk2s
-	// consider *initial* estimate of tsq
-	if inlist("`model'", "sj2s", "dk2s") {
-		local final `model'
-		local model `"`init'"'
+	if "`pooled'"=="" {
+
+		** Setup two-stage estimators sj2s and dk2s
+		// consider *initial* estimate of tsq
+		if inlist("`model'", "sj2s", "dk2s") {
+			local final `model'
+			local model `"`init'"'
 		
-		if substr(trim(`"`model'"'), 1, 2)==`"sa"' {
-			tempname tausq0
-			scalar `tausq0' = `tausq'
-		
-			_parse comma model 0 : model
-			syntax [, ISQ(string) TAUSQ(string)]
+			/*
+			if substr(trim(`"`model'"'), 1, 2)==`"sa"' {
+				tempname tausq0
+				scalar `tausq0' = `tausq'
 			
-			if `"`tausq'"'!=`""' & `"`isq'"'==`""' {
-				nois disp as err `"Only one of {bf:isq()} or {bf:tausq()} may be supplied as suboptions to {bf:sa()}"'
-				exit 184
-			}
-		
-			else if `"`tausq'"'!=`""' {
-				cap confirm number `tausq'
-				if _rc {
-					nois disp as err `"Error in {bf:tausq()} suboption to {bf:sa()}; a single number was expected"'
-					exit _rc
+				_parse comma model 0 : model
+				syntax [, ISQ(string) TAUSQ(string)]
+				
+				if `"`tausq'"'!=`""' & `"`isq'"'==`""' {
+					nois disp as err `"Only one of {bf:isq()} or {bf:tausq()} may be supplied as suboptions to {bf:sa()}"'
+					exit 184
 				}
-				if `tausq' < 0 {
-					nois disp as err `"tau{c 178} value for sensitivity analysis cannot be negative"'
-					exit 198
-				}
-				local tsqsa = `tausq'
-				local isqsa
-			}
-			else {
-				if `"`isq'"'==`""' local isq = 80
-				else {
-					cap confirm number `isq'
+			
+				else if `"`tausq'"'!=`""' {
+					cap confirm number `tausq'
 					if _rc {
-						nois disp as err `"Error in {bf:isq()} suboption to {bf:sa()}; a single number was expected"'
+						nois disp as err `"Error in {bf:tausq()} suboption to {bf:sa()}; a single number was expected"'
 						exit _rc
 					}
-					if `isq'<0 | `isq'>=100 {
-						nois disp as err `"I{c 178} value for sensitivity analysis must be at least 0% and less than 100%"'
+					if `tausq' < 0 {
+						nois disp as err `"tau{c 178} value for sensitivity analysis cannot be negative"'
 						exit 198
 					}
+					local tsqsa = `tausq'
+					local isqsa
 				}
-				local isqsa = `isq'
-				local tsqsa = -99
-			}
+				else {
+					if `"`isq'"'==`""' local isq = 80
+					else {
+						cap confirm number `isq'
+						if _rc {
+							nois disp as err `"Error in {bf:isq()} suboption to {bf:sa()}; a single number was expected"'
+							exit _rc
+						}
+						if `isq'<0 | `isq'>=100 {
+							nois disp as err `"I{c 178} value for sensitivity analysis must be at least 0% and less than 100%"'
+							exit 198
+						}
+					}
+					local isqsa = `isq'
+					local tsqsa = -99
+				}
 
-			scalar `tausq' = `tausq0'
-		}
-	}
-	
-	** Hartung-Makambi estimator (>0)
-	if "`model'"=="hm" {
-		scalar `tausq' = `Q'^2 / (`c'*(`Q' + 2*`Qdf'))
-	}
-	
-	** Non-iterative, making use of the sampling variance of _ES
-	else if inlist("`model'", "ev", "he", "b0", "bp") {
-		tempname var_eff meanv
-		qui summ `_ES' if `touse'
-		scalar `var_eff' = r(Var)
-
-		tempvar v
-		qui gen double `v' = `_seES'^2
-		summ `v' if `touse', meanonly
-		scalar `meanv' = r(mean)
-		
-		// empirical variance (>0)
-		if "`model'"=="ev" {
-			tempvar residsq
-			qui gen double `residsq' = (`_ES' - r(mean))^2
-			summ `residsq', meanonly
-			scalar `tausq' = r(mean)
-		}
-		
-		// Hedges aka "variance component" aka Cochran ANOVA-type estimator
-		else if "`model'"=="he" {
-			scalar `tausq' = `var_eff' - `meanv'
-		}
-		
-		// Rukhin Bayes estimators
-		else if inlist("`model'", "b0", "bp") {
-			scalar `tausq' = `var_eff'*(`k' - 1)/(`k' + 1)
-			if "`model'"=="b0" {
-				confirm numeric var `npts'
-				summ `npts' if `touse', meanonly	
-				scalar `tausq' = `tausq' - ( (`r(sum)' - `k')*`Qdf'*`meanv'/((`k' + 1)*(`r(sum)' - `k' + 2)) )
+				scalar `tausq' = `tausq0'
 			}
+			*/
 		}
-		scalar `tausq' = max(0, `tausq')			// truncate at zero
+	
+		** Hartung-Makambi estimator (>0)
+		else if "`model'"=="hm" {
+			scalar `tausq' = `Q'^2 / (`c'*(`Q' + 2*`Qdf'))
+		}
+	
+		** Non-iterative, making use of the sampling variance of _ES
+		else if inlist("`model'", "ev", "he", "b0", "bp") {
+			tempname var_eff meanv
+			qui summ `_ES' if `touse'
+			scalar `var_eff' = r(Var)
+
+			tempvar v
+			qui gen double `v' = `_seES'^2
+			summ `v' if `touse', meanonly
+			scalar `meanv' = r(mean)
+			
+			// empirical variance (>0)
+			if "`model'"=="ev" {
+				tempvar residsq
+				qui gen double `residsq' = (`_ES' - r(mean))^2
+				summ `residsq', meanonly
+				scalar `tausq' = r(mean)
+			}
+			
+			// Hedges aka "variance component" aka Cochran ANOVA-type estimator
+			else if "`model'"=="he" {
+				scalar `tausq' = `var_eff' - `meanv'
+			}
+			
+			// Rukhin Bayes estimators
+			else if inlist("`model'", "b0", "bp") {
+				scalar `tausq' = `var_eff'*(`k' - 1)/(`k' + 1)
+				if "`model'"=="b0" {
+					confirm numeric var `npts'
+					summ `npts' if `touse', meanonly	
+					scalar `tausq' = `tausq' - ( (`r(sum)' - `k')*`Qdf'*`meanv'/((`k' + 1)*(`r(sum)' - `k' + 2)) )
+				}
+			}
+			scalar `tausq' = max(0, `tausq')	// truncate at zero
+		}
 	}
 	
 	// Sensitivity analysis: use given Isq/tausq and sigmasq to generate tausq/Isq
-	else if "`model'"=="sa" {
+	if "`model'"=="sa" | "`pooled'"!="" {		// modified Sep 2023
 		if `tsqsa'==-99 scalar `tausq' = `isqsa'*`sigmasq'/(100 - `isqsa')
-		else scalar `tausq' = `tsqsa'
+		else if `phisa'==-99 scalar `tausq' = `tsqsa'
 	}
 
 
@@ -255,7 +257,7 @@ program define metan_pooling, rclass
 	local maxtausq = cond(`maxtausq'==-9, max(10*`tausq', 100), `maxtausq')
 		
 	// Iterative, using Mata
-	if inlist("`model'", "dlb", "mp", "pmm", "ml", "pl", "reml") {
+	if "`pooled'"=="" & inlist("`model'", "dlb", "mp", "pmm", "ml", "pl", "reml") {
 	
 		// Bootstrap D+L
 		// (Kontopantelis PLoS ONE 2013)
@@ -443,11 +445,10 @@ program define metan_pooling, rclass
 		qui replace `tauqe' = `wtvar' * (1 - `newqe') if `newqe' < 1
 		summ `tauqe' if `touse', meanonly
 		
-		// Point estimate uses weights = qi/vi + tauhati
+		// Point estimate uses weights = qi/vi + tauhati
 		// ...but expressions presented in CCT 2015 involve addition & subtraction of very similar quantities with risk of rounding error.
-		// Instead, we use the expression below, which can be shown to be equivalent to Equation 7 of CCT 2015
+		// Instead, we use the expression below, which can be shown to be equivalent to Equation 7 of CCT 2015
 		qui replace `wtvar' = `newqe' * (`wtvar' + (r(sum) / `sumnewqe')) if `touse'
-		
 		summ `wtvar' if `touse', meanonly
 		cap assert float(r(sum))==float(`sumwt')	// compare sum of new weights with sum of original weights
 		if _rc {
@@ -545,7 +546,7 @@ program define metan_pooling, rclass
 	
 	// Standard weighting based on additive tau-squared
 	// (N.B. if iv or mu, eff and se_eff have already been calculated)
-	else if !inlist("`model'", "iv", "peto", "mu") {		
+	else if !inlist("`model'", "iv", "peto", "mu") & `phisa'==-99 {
 		qui replace `wtvar' = 1/(`_seES'^2 + `tausq') if `touse'
 		summ `_ES' [aw=`wtvar'] if `touse', meanonly
 		scalar `eff' = r(mean)
@@ -571,7 +572,6 @@ program define metan_pooling, rclass
 		qui replace `qhet' = `wtvar'*((`_ES' - `eff')^2)
 		summ `qhet' if `touse', meanonly
 		scalar `Qr' = cond(r(N), r(sum), .)
-		return scalar Qr = `Qr'
 	}
 	scalar `Hstar' = sqrt(`Qr'/`Qdf')
 	
@@ -584,7 +584,14 @@ program define metan_pooling, rclass
 	// (Roever et al, BMC Med Res Methodol 2015; Jackson et al, Stat Med 2017; van Aert & Jackson, Stat Med 2019)
 
 	local nzt = 0
-	if "`model'"=="mu" | "`hksj'"!="" {
+	if "`model'"=="sa" | "`pooled'"!="" {	// added Sep 2023
+		if `phisa'!=-99 {
+			scalar `Hstar' = sqrt(`phisa')
+			scalar `se_eff' = `se_eff' * `Hstar'
+			scalar `Qr' = `Qr'/`phisa'
+		}
+	}
+	else if "`model'"=="mu" | "`hksj'"!="" {
 		tempname tcrit zcrit
 		scalar `zcrit' = invnormal(.5 + `olevel'/200)
 		scalar `tcrit' = invttail(`Qdf', .5 - `olevel'/200)
@@ -602,9 +609,8 @@ program define metan_pooling, rclass
 			if "`hksj'"!="" & `Hstar' < `zcrit'/`tcrit' local nzt = 1		// setup error display for later
 		}
 		scalar `se_eff' = `se_eff' * `Hstar'
+		if "`model'"=="mu" scalar `Qr' = `Qr'/(`Hstar'^2)
 	}
-	return scalar Hstar = `Hstar'
-	return scalar nzt = `nzt'
 
 	// Sidik-Jonkman robust ("sandwich-like") variance estimator
 	// (Sidik and Jonkman, Comp Stat Data Analysis 2006)
@@ -668,6 +674,15 @@ program define metan_pooling, rclass
 	// check for successful pooling
 	if missing(`eff', `se_eff') exit 2002
 
+	return scalar Hstar = `Hstar'
+	return scalar nzt = `nzt'
+	if "`model'"=="mu" | ("`pooled'"!="" & `phisa'!=99) {
+		return scalar phi = `Hstar'^2
+	}
+	if !inlist("`model'", "iv", "peto") {
+		nois disp `Qr'
+		return scalar Qr = `Qr'
+	}
 
 
 	**********************************************
@@ -1333,7 +1348,7 @@ mata:
 
 
 /* Kontopantelis's bootstrap DerSimonian-Laird estimator */
-// (PLoS ONE 2013; 8(7): e69930, and also implemented in metaan)
+// (PLoS ONE 2013; 8(7): e69930, and also implemented in -metaan- )
 // N.B. using originally estimated ES within the re-samples, as in Kontopantelis's paper */
 void DLb(string scalar varlist, string scalar touse, real scalar level, real scalar reps)
 {
@@ -1530,7 +1545,7 @@ void MLPL(string scalar varlist, string scalar touse, real rowvector levels, rea
 	if(tausq < 0) {
 		tausq = 0
 		eff = eff0
-		st_numscalar("r(ll_negtsq)", ll)		
+		st_numscalar("r(ll_negtsq)", ll)
 		ll = sum(lnnormalden(yi, eff, sqrt(vi)))
 	}
 	wi = 1:/(vi:+tausq)
@@ -1594,7 +1609,7 @@ void MLPL(string scalar varlist, string scalar touse, real rowvector levels, rea
 		tausq0 = optimize(S)
 		rc_ll0  = optimize_result_returncode(S)
 		if(rc_ll0) exit(error(rc_ll0))
-		ll0 = optimize_result_value(S)		
+		ll0 = optimize_result_value(S)
 		if(tausq0 < 0) {
 			tausq0 = 0
 			ll0 = sum(lnnormalden(yi, 0, sqrt(vi)))
@@ -1849,7 +1864,7 @@ void REML(string scalar varlist, string scalar touse, real scalar hlevel, real r
 	ll = optimize_result_value(S)
 	if(tausq < 0) {
 		tausq = 0
-		st_numscalar("r(ll_negtsq)", ll)		
+		st_numscalar("r(ll_negtsq)", ll)
 		ll = sum(lnnormalden(yi, eff0, sqrt(vi))) - 0.5*ln(sum(wi))
 	}
 	

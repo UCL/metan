@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 4.07  David Fisher  05sep2023}{...}
+{* *! version 4.07  David Fisher  15sep2023}{...}
 {vieweralsosee "metan" "help metan"}{...}
 {vieweralsosee "metan_model" "help metan_model"}{...}
 {vieweralsosee "metan_binary" "help metan_binary"}{...}

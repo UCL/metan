@@ -111,7 +111,7 @@
 * version 4.06  David Fisher  12oct2022
 // new option "sepline" for drawing prediction interval lines separately (below) confidence interval lines instead of straddling them
 
-*! version 4.07  David Fisher  05sep2023
+*! version 4.07  David Fisher  15sep2023
 // Q heterogeneity p-value now shows in forestplot as "< 0.001" rather than "= 0.000"
 // right-alignment of columns in -forestplot- now done via mlabpos() rather than explicit indentation
 // works with metan v4.07: new value _USE==7 defining prediction intervals

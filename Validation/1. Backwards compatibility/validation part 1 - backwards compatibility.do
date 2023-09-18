@@ -3,7 +3,13 @@
 ***************************
 
 // Compiled by David Fisher
-// for validating  -metan- v3.9 (beta)  05nov2020
+// for validating  -metan- v4.05  29nov2021
+// [and previously -metan- v4.04  16aug2021
+// [and previously -metan- v4.03  28apr2021
+// [and previously -metan- v4.02  23feb2021
+// [and previously -metan- v4.01  10feb2021
+// [and previously -metan- v4.00  25nov2020
+// [and previously -metan- v3.9 (beta)  05nov2020
 // [and previosuly -metan- v3.8 (beta)  19oct2020
 // [and previously -metan- v3.8 (beta)  09oct2020
 // [and previously -metan- v3.7 (beta)  04jul2020]
@@ -21,7 +27,7 @@
 
 global Date = subinstr("$S_DATE", " ", "", .)
 
-// global BaseDir1  `"S:/MRCCTU_Methodology/Software/ipdmetan/Validation/1. Backwards compatibility"'
+// global BaseDir1  `"S:/MRCCTU_Methodology/Software/Meta-analysis/metan/Validation/1. Backwards compatibility"'
 global Datasets `"$BaseDir1/Example datasets"'
 global Graphs   `"$BaseDir1/Graphs_${Date}"'
 
@@ -40,9 +46,7 @@ nois di _n(3)
 
 
 ** Check that we're using the correct version
-// [was -metan-  v3.7 (beta)  04jul2020]
-// should be -metan-  v3.8 (beta)  23sep2020  [will be 4.00 upon release]
-//       and -metan9- v3.04 (i.e. the version currently available via SSC)
+// should be -metan9- v3.04 (i.e. the version currently available via SSC)
 which metan
 which metan9
 
@@ -523,63 +527,63 @@ cap drop _*
 // Note warning messages with -metan- r.e. placing these options in forestplot()
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) xlabel(.5,1,2) xtick(.75,1.5) force
-graph save "$Graphs/graph1_metan9"
+graph save "$Graphs/graph1_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) xlabel(.5,1,2) xtick(.75,1.5) force
-graph save "$Graphs/graph1_metan"
+graph save "$Graphs/graph1_metan.gph"
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nobox
-graph save "$Graphs/graph2_metan9"
+graph save "$Graphs/graph2_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nobox
-graph save "$Graphs/graph2_metan"
+graph save "$Graphs/graph2_metan.gph"
 
 log on  log2
 metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nooverall
 log off log2
-graph save "$Graphs/graph3_metan9"
+graph save "$Graphs/graph3_metan9.gph"
 log on  log3
 metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nooverall
 log off log3
-graph save "$Graphs/graph3_metan"
+graph save "$Graphs/graph3_metan.gph"
 
 log on  log2
 metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nowt
 log off log2
-graph save "$Graphs/graph4_metan9"
+graph save "$Graphs/graph4_metan9.gph"
 log on  log3
 metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nowt
 log off log3
-graph save "$Graphs/graph4_metan"
+graph save "$Graphs/graph4_metan.gph"
 
 log on  log2
 metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nostats
 log off log2
-graph save "$Graphs/graph5_metan9"
+graph save "$Graphs/graph5_metan9.gph"
 log on  log3
 metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nostats
 log off log3
-graph save "$Graphs/graph5_metan"
+graph save "$Graphs/graph5_metan.gph"
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) group1(treat) group2(control) counts		// appears on the right
-graph save "$Graphs/graph6_metan9"
+graph save "$Graphs/graph6_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) group1(treat) group2(control) counts		// appears on the left, c.f. RevMan
-graph save "$Graphs/graph6_metan"
+graph save "$Graphs/graph6_metan.gph"
 
 log on  log2
 metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) effect(effect size)
 log off log2
-graph save "$Graphs/graph7_metan9"
+graph save "$Graphs/graph7_metan9.gph"
 log on  log3
 metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) effect(effect size)	// appears in the table as well as the forest plot
 log off log3
-graph save "$Graphs/graph7_metan"
+graph save "$Graphs/graph7_metan.gph"
 
 
 
 *** forest_plot_options: lcols(varlist) rcols(varlist) astext(#) double nohet summaryonly rfdist rflevel(#) null(#) nulloff favours(string # string)
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) lcols(n_pos) rcols(population) double		// ignores label()
-graph save "$Graphs/graph8_metan9"
+graph save "$Graphs/graph8_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) lcols(n_pos) rcols(population) double		// includes label() within lcols()
-graph save "$Graphs/graph8_metan"
+graph save "$Graphs/graph8_metan.gph"
 
 log on  log2
 cap nois metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) astext(0)		// exits with error
@@ -589,14 +593,14 @@ cap nois metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) 
 log off log3
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) astext(10)
-graph save "$Graphs/graph9_metan9"
+graph save "$Graphs/graph9_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) astext(10)
-graph save "$Graphs/graph9_metan"
+graph save "$Graphs/graph9_metan.gph"
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) astext(90)
-graph save "$Graphs/graph10_metan9"
+graph save "$Graphs/graph10_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) astext(90)
-graph save "$Graphs/graph10_metan"
+graph save "$Graphs/graph10_metan.gph"
 
 log on  log2
 cap nois metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) astext(100)		// exits with error
@@ -608,45 +612,45 @@ log off log3
 log on  log2
 metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nohet
 log off log2
-graph save "$Graphs/graph11_metan9"
+graph save "$Graphs/graph11_metan9.gph"
 log on  log3
 metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nohet		// nohet suppresses any on-screen het info, in addition to forest plot
 log off log3
-graph save "$Graphs/graph11_metan"
+graph save "$Graphs/graph11_metan.gph"
 
 log on  log2
 metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) summaryonly by(type_study)
 log off log2
-graph save "$Graphs/graph12_metan9"
+graph save "$Graphs/graph12_metan9.gph"
 log on  log3
 metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) summaryonly by(type_study)	// again: affects on-screen as well as forest plot
 log off log3
-graph save "$Graphs/graph12_metan"
+graph save "$Graphs/graph12_metan.gph"
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) rfdist by(type_study)
-graph save "$Graphs/graph13_metan9"
+graph save "$Graphs/graph13_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) rfdist by(type_study)	// prints message that rfdist will be ignored (common effect)
-graph save "$Graphs/graph13_metan"
+graph save "$Graphs/graph13_metan.gph"
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) rfdist by(type_study) random rflevel(80)
-graph save "$Graphs/graph14_metan9"
+graph save "$Graphs/graph14_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) rfdist by(type_study) random rflevel(80)		// corrects the error in -metan9-; see comparison with -metafor- in R
-graph save "$Graphs/graph14_metan"
+graph save "$Graphs/graph14_metan.gph"
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) null(1.5)	// no idea what this is doing
-graph save "$Graphs/graph15_metan9"
+graph save "$Graphs/graph15_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) null(1.5)	// works on the exp scale, same as xlabel() and fp()
-graph save "$Graphs/graph15_metan"
+graph save "$Graphs/graph15_metan.gph"
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nulloff
-graph save "$Graphs/graph16_metan9"
+graph save "$Graphs/graph16_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nulloff
-graph save "$Graphs/graph16_metan"
+graph save "$Graphs/graph16_metan.gph"
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) favours(left hand side string # right hand side string)
-graph save "$Graphs/graph17_metan9"
+graph save "$Graphs/graph17_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) favours(left hand side string # right hand side string)
-graph save "$Graphs/graph17_metan"
+graph save "$Graphs/graph17_metan.gph"
 
 
 
@@ -659,15 +663,15 @@ graph save "$Graphs/graph17_metan"
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) boxopt(mcolor(red)) diamopt(lcolor(orange)) pointopt(mcolor(blue)) ///
 	ciopt(lcolor(orange)) olineopt(lpattern(dash) lcolor(blue))
-graph save "$Graphs/graph18_metan9"
+graph save "$Graphs/graph18_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) boxopt(mcolor(red)) diamopt(lcolor(orange)) pointopt(mcolor(blue)) ///
 	ciopt(lcolor(orange)) olineopt(lpattern(dash) lcolor(blue))
-graph save "$Graphs/graph18_metan"
+graph save "$Graphs/graph18_metan.gph"
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) classic nowarning
-graph save "$Graphs/graph19_metan9"
+graph save "$Graphs/graph19_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) classic nowarning
-graph save "$Graphs/graph19_metan"
+graph save "$Graphs/graph19_metan.gph"
 
 
 
@@ -699,10 +703,10 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph20_metan9"
+graph save "$Graphs/graph20_metan9.gph"
 // Note: the current metan help file gives the label() syntax as (namevar=... , yearvar=... )
 // but the *example* has "yearid=..." and this indeed is how the command is actually coded.
-// The new v4.00 is documented as "namevar, yearvar" BUT yearid is still valid.
+// The new v4.0x is documented as "namevar, yearvar" BUT yearid is still valid.
 
 log on  log3
 forvalues i = 1/15 {
@@ -716,20 +720,20 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph20_metan"
+graph save "$Graphs/graph20_metan.gph"
 
 // Note: new version does not automatically present a p-value for heterogeneity on the forest plot
 // to avoid confusion with significance test of overall effect
 // Hence, to *exactly* recreate the example, we need to add the option "hetinfo(isq p)"
 metan  tdeath tnodeath cdeath cnodeath, rd random label(namevar=id, yearvar=year) counts hetinfo(isq p)
-graph save "$Graphs/graph20_metan_v2"
+graph save "$Graphs/graph20_metan_v2.gph"
 
 // Stata 16
 gen id_year = id + " (" + string(year) + ")"
 meta esize tdeath tnodeath cdeath cnodeath, esize(rd) studylab(id_year) random(dl)
 meta summ
 meta forest _id year _plot _data1 _data2 _esci _weight, noohet noohom noosig
-graph save "$Graphs/graph20_meta16"
+graph save "$Graphs/graph20_meta16.gph"
 
 
 
@@ -749,7 +753,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph21_metan9"
+graph save "$Graphs/graph21_metan9.gph"
 
 log on  log3
 forvalues i = 1/15 {
@@ -764,18 +768,18 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph21_metan"
+graph save "$Graphs/graph21_metan.gph"
 // Note slight differences in syntax here, e.g. forestplot() option and "leftjustify"
 
 // ...Also, text size is handled differently/better by new version, so textsize(110) may not be necessary.
 metan  tdeath tnodeath cdeath cnodeath, sortby(year) lcols(id year country) rcols(population) ///
 	forestplot(astext(60) double leftjustify) nostats nowt nohet notable
-graph save "$Graphs/graph21_metan_v2"
+graph save "$Graphs/graph21_metan_v2.gph"
 
 // Stata 16
 meta esize tdeath tnodeath cdeath cnodeath, esize(lnrr) studylab(id_year) common(mh)
 meta forest _id year country _plot population, eform sort(year)
-graph save "$Graphs/graph21_meta16"
+graph save "$Graphs/graph21_meta16.gph"
 
 
 
@@ -795,7 +799,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph22_metan9"
+graph save "$Graphs/graph22_metan9.gph"
 log on  log3
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -809,16 +813,20 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph22_metan"
+graph save "$Graphs/graph22_metan.gph"
 
 // Stata 16
-meta esize tsample tmean tsd csample cmean csd, studylab(id_year) random(dl)
+meta esize tsample tmean tsd csample cmean csd, studylab(id_year) esize(cohend, holkinse) common
+meta summ, subgroup(type_study)
+// ^^ -metan- calculations agree with "cohend, holkinse" (see -meta esize- documentation)
+
+meta esize tsample tmean tsd csample cmean csd, studylab(id_year) esize(cohend, holkinse) random(dl)
 meta summ, subgroup(type_study)
 meta summ, predinterval
 meta forest, subgroup(type_study) xtitle(Treatment reduces blood pressure   Treatment increases blood pressure)
-graph save "$Graphs/graph22_meta16_part1"
+graph save "$Graphs/graph22_meta16_part1.gph"
 meta forest, predinterval xtitle(Treatment reduces blood pressure   Treatment increases blood pressure)
-graph save "$Graphs/graph22_meta16_part2"
+graph save "$Graphs/graph22_meta16_part2.gph"
 // Cannot specify multiple models (fixed + random) with meta
 // Cannot combine prediction intervals with subgroups with meta
 
@@ -842,7 +850,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph23_metan9"
+graph save "$Graphs/graph23_metan9.gph"
 log on  log3
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -855,7 +863,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph23_metan"
+graph save "$Graphs/graph23_metan.gph"
 
 // Note that xlabel() and xtick() now expect a standard Stata -numlist-  (i.e. not comma-separated)
 // ...and "force" is now a sub-option of xlabel() rather than a stand-alone option.
@@ -865,13 +873,13 @@ graph save "$Graphs/graph23_metan"
 // to avoid confusion with significance test of overall effect
 // Hence, to *exactly* recreate the example, we need to add the option "hetinfo(isq p)"
 metan  logor selogor, eform effect(Odds ratio) forestplot(xlabel(0.5 1 1.5 2 2.5, force) xtick(0.75 1.25 1.75 2.25) hetinfo(isq p))
-graph save "$Graphs/graph23_metan_v2"
+graph save "$Graphs/graph23_metan_v2.gph"
 
 // Stata 16
 meta set logor selogor, studylab(id_year) random(dl)
 meta summ, eform(Odds ratio)
 meta forest, eform(Odds ratio) xtick(0.75 1.25 1.75 2.25) crop(.5 2.5)
-graph save "$Graphs/graph23_meta16"
+graph save "$Graphs/graph23_meta16.gph"
 
 
 
@@ -892,7 +900,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph24_metan9"
+graph save "$Graphs/graph24_metan9.gph"
 log on  log3
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -906,14 +914,14 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph24_metan"
+graph save "$Graphs/graph24_metan.gph"
 
 // Note that xlabel() now expects a standard Stata -numlist-
 // ...and "force" is now a sub-option of xlabel() rather than a stand-alone option
 // However, the older syntax remains valid.
 metan  percent lowerci upperci, wgt(n_positives) label(namevar=id) nooverall notable ///
 	forestplot(xlabel(0(10)100, force) null(50) title(Sensitivity, position(6)))
-graph save "$Graphs/graph24_metan_v2"
+graph save "$Graphs/graph24_metan_v2.gph"
 
 // Stata 16
 // Cannot easily do this, as percent confidence limits are asymmetrical by definition, but meta will not accept them.
@@ -938,7 +946,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph25_metan9"
+graph save "$Graphs/graph25_metan9.gph"
 log on  log3
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -952,7 +960,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph25_metan"
+graph save "$Graphs/graph25_metan.gph"
 // N.B. last forestplot option is needed because scheme(economist) treats lines differently from areas
 // so default widths are different;  so need to override the scheme default for the diamond.
 // (see scheme-economist.scheme)
@@ -962,7 +970,7 @@ graph save "$Graphs/graph25_metan"
 // However, the older syntax remains valid.
 metan  OR ORlci ORuci, wgt(bweight) first(0.924 0.753 1.095 Bayesian) firststats(param V=3.86, p=0.012) label(namevar=id) ///
 	forestplot(xlabel(0.25 0.5 1 2 4, force) null(1) aspect(1.2) scheme(economist))
-graph save "$Graphs/graph25_metan_v2"
+graph save "$Graphs/graph25_metan_v2.gph"
 
 // Stata 16:
 // Need to transform the OR and CI limits to make them symmetrical
@@ -973,7 +981,7 @@ gen lnORuci = ln(ORuci)
 meta set lnOR lnORlci lnORuci, studylab(id)
 meta summ, eform(Odds ratio)
 meta forest, eform(Odds ratio) customoverall(`=ln(.924)' `=ln(.753)' `=ln(1.095)', label("Bayesian, param V=3.86 p=0.012")) 
-graph save "$Graphs/graph25_meta16"
+graph save "$Graphs/graph25_meta16.gph"
 // N.B. Cannot use user-specified weights with meta
 
 
@@ -999,7 +1007,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph26_metan9"
+graph save "$Graphs/graph26_metan9.gph"
 log on  log3
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -1015,7 +1023,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph26_metan"
+graph save "$Graphs/graph26_metan.gph"
 
 // Note: new version does not automatically present a p-value for heterogeneity on the forest plot
 // to avoid confusion with significance test of overall effect.
@@ -1026,7 +1034,7 @@ metan  tdeath tnodeath cdeath cnodeath, lcols(id year) notable hetinfo(isq p) //
 		pointopt( msymbol(triangle) mcolor(gold) msize(tiny) mlabel(counts) mlabsize(vsmall) mlabcolor(forest_green) mlabposition(1) ) ///
 		ciopt( lcolor(sienna) lwidth(medium) ) ///
 	)
-graph save "$Graphs/graph26_metan_v2"
+graph save "$Graphs/graph26_metan_v2.gph"
 
 // Stata 16
 meta esize tdeath tnodeath cdeath cnodeath, studylab(id)
@@ -1035,7 +1043,7 @@ meta forestplot _id year _plot _esci _weight, ///
 	insidemarker( msymbol(triangle) mcolor(gold) msize(tiny) ) ///
 	ciopts( lcolor(sienna) lwidth(medium) ) ///
 	omarkeropts( mcolor(blue) )
-graph save "$Graphs/graph26_meta16"
+graph save "$Graphs/graph26_meta16.gph"
 // Cannot use "mlabel" options within markeropts()
 
 
@@ -1063,7 +1071,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph27_metan9"
+graph save "$Graphs/graph27_metan9.gph"
 log on  log3
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -1077,21 +1085,21 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph27_metan"
+graph save "$Graphs/graph27_metan.gph"
 
 // Note: new version does not automatically present a p-value for heterogeneity on the forest plot
 // to avoid confusion with significance test of overall effect
 // Hence, to *exactly* recreate the example, we need to add the option "hetinfo(isq p)"
 metan  tcases tnoncases ccases cnoncases, rr fixedi lcols(trialnam startyr) ///
 	forestplot(xlabel(0.1 10) favours(BCG reduces risk of TB # BCG increases risk of TB) hetinfo(isq p))
-graph save "$Graphs/graph27_metan_v2"
+graph save "$Graphs/graph27_metan_v2.gph"
 
 // Stata 16
 meta esize tcases tnoncases ccases cnoncases, esize(lnrr) studylab(trialnam) fixed(iv)
 meta summ, eform(Risk ratio)
 meta forestplot _id startyr _plot _esci _weight, eform(Risk ratio) ///
 	nullrefline(favorsleft(BCG reduces risk of TB) favorsright(BCG increases risk of TB))
-graph save "$Graphs/graph27_meta16"
+graph save "$Graphs/graph27_meta16.gph"
 	
 
 
@@ -1148,7 +1156,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph29_metan9"
+graph save "$Graphs/graph29_metan9.gph"
 log on  log3
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -1162,18 +1170,18 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph29_metan"
+graph save "$Graphs/graph29_metan.gph"
 
 // Note that automatic sizing of text and graph dimensions is better in the new version,
 // so options such as textsize(), boxsca(), xlabel(), xsize() and ysize() may not be necessary
 metan  tcases tnoncases ccases cnoncases, rr fixedi second(random) lcols(trialnam authors startyr alloc latitude) counts notable ///
 	forestplot(astext(70))
-graph save "$Graphs/graph29_metan_v2"
+graph save "$Graphs/graph29_metan_v2.gph"
 
 // Stata 16
 meta esize tcases tnoncases ccases cnoncases, esize(lnrr) studylab(trialnam) fixed(iv)
 meta forest _id authors startyr alloc latitude _plot _data1 _data2 _esci _weight, eform(Risk ratio)
-graph save "$Graphs/graph29_meta16"
+graph save "$Graphs/graph29_meta16.gph"
 // Cannot specify multiple models (fixed + random) with meta
 
 
@@ -1200,7 +1208,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph30_metan9"
+graph save "$Graphs/graph30_metan9.gph"
 log on  log3
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -1214,17 +1222,17 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph30_metan"
+graph save "$Graphs/graph30_metan.gph"
 
 // Note that automatic sizing of graph dimensions is better in the new version,
 // so options such as xlabel(), xsize() and ysize() may not be necessary
 metan  tcases tnoncases ccases cnoncases, rr fixedi second(random) nosecsub lcols(trialnam startyr latitude) by(lat_cat) ///
 	forestplot(astext(60))
-graph save "$Graphs/graph30_metan_v2"
+graph save "$Graphs/graph30_metan_v2.gph"
 
 // Stata 16
 meta forest _id authors startyr latitude _plot _data1 _data2 _esci _weight, eform(Risk ratio) subgroup(lat_cat)
-graph save "$Graphs/graph30_meta16"
+graph save "$Graphs/graph30_meta16.gph"
 // Cannot specify multiple models (fixed + random) with meta
 // Not sure if/how you can specify the sort order of the categories
 
@@ -1245,7 +1253,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph31_metan9"
+graph save "$Graphs/graph31_metan9.gph"
 log on  log3
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -1259,12 +1267,12 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph31_metan"
+graph save "$Graphs/graph31_metan.gph"
 
 // Note that text size is handled differently/better by new version, so textsize(130) and xlabel() may not be necessary.
 metan logRR selogRR, random second(-.6587 -1.205 -.1937 Bayes) secondstats(Noninformative prior: d~dnorm(0.0, 0.001)) ///
 	lcols(trialnam startyr latitude) eform notable forestplot(astext(60))
-graph save "$Graphs/graph31_metan_v2"
+graph save "$Graphs/graph31_metan_v2.gph"
 
 // Stata 16
 meta set logRR selogRR, random(dl) studylab(trialnam)
@@ -1287,7 +1295,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph32_metan9"
+graph save "$Graphs/graph32_metan9.gph"
 log on  log3
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -1301,7 +1309,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph32_metan"
+graph save "$Graphs/graph32_metan.gph"
 // Note that automatic sizing of graph dimensions is better in the new version,
 // so options such as xsize() and ysize() may not be necessary
 
@@ -1310,7 +1318,7 @@ graph save "$Graphs/graph32_metan"
 // Hence, to *exactly* recreate the example, we need to add the option "hetinfo(isq p)"
 metan  tcases tnoncases ccases cnoncases, rr random rfdist lcols(trialnam startyr latitude) by(lat_cat) notable ///
 	forestplot(astext(60) xlabel(0.1 1 10) hetinfo(isq p))
-graph save "$Graphs/graph32_metan_v2"
+graph save "$Graphs/graph32_metan_v2.gph"
 
 // Note: Slightly different results are seen here in the 2nd or 3rd decimal place
 // I think this is due to metan9 using "float" where (new) metan uses "double" throughout.
@@ -1318,9 +1326,9 @@ graph save "$Graphs/graph32_metan_v2"
 // Stata 16
 meta esize tcases tnoncases ccases cnoncases, esize(lnrr) random(dl) studylab(trialnam)
 meta forest _id startyr latitude _plot _esci _weight, subgroup(lat_cat) eform
-graph save "$Graphs/graph32_meta16_part1"
+graph save "$Graphs/graph32_meta16_part1.gph"
 meta forest _id startyr latitude _plot _esci _weight, predinterval eform
-graph save "$Graphs/graph32_meta16_part2"
+graph save "$Graphs/graph32_meta16_part2.gph"
 // Cannot combine prediction intervals with subgroups with meta
 
 
@@ -1340,7 +1348,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph33_metan9"
+graph save "$Graphs/graph33_metan9.gph"
 log on  log3
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -1354,7 +1362,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph33_metan"
+graph save "$Graphs/graph33_metan.gph"
 // Note that text size is handled differently/better by new version, so textsize(150) may not be necessary.
 // Similarly, xlabel(0.1 1 10) may not be necessary, as sensible x-axis value labels are chosen automatically
 
@@ -1364,7 +1372,7 @@ graph save "$Graphs/graph33_metan"
 //  plus extraline(no) to prevent -forestplot- from showing it on a new line
 metan  tcases tnoncases ccases cnoncases, rr random efficacy lcols(trialnam startyr) notable ///
 	forestplot(hetinfo(isq p) extraline(no))
-graph save "$Graphs/graph33_metan_v2"
+graph save "$Graphs/graph33_metan_v2.gph"
 
 // Stata 16:  Vaccine efficacy is not automatically calculated
 qui gen VacEff = string(100*(1 - exp(_ES)), "%4.0f") + " (" ///
@@ -1372,7 +1380,7 @@ qui gen VacEff = string(100*(1 - exp(_ES)), "%4.0f") + " (" ///
 			+ string(100*(1 - exp(_UCI)), "%4.0f") + ")" if !missing(_ES)
 label variable VacEff "Vaccine efficacy (%)"
 meta forest _id startyr _plot _esci _weight VacEff, eform
-graph save "$Graphs/graph33_meta16"
+graph save "$Graphs/graph33_meta16.gph"
 
 
 	
@@ -1395,7 +1403,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph34_metan9"
+graph save "$Graphs/graph34_metan9.gph"
 log on  log3
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -1413,14 +1421,14 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph34_metan"
+graph save "$Graphs/graph34_metan.gph"
 
 // Stata 16
 meta forest _id _plot _esci _weight, eform fixed(iv) ///
 	esrefline( lwidth(thick) lcolor(navy) lpattern(dot) ) ///
 	markeropts( msymbol(triangle) mcolor(dkgreen) ) ///
 	omarkeropts( mcolor(red) )
-graph save "$Graphs/graph34_meta16"
+graph save "$Graphs/graph34_meta16.gph"
 // Cannot specify multiple models (fixed + random) with meta
 // Cannot use "mlabel" options within markeropts()
 
@@ -1448,7 +1456,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log2
-graph save "$Graphs/graph35_metan9"
+graph save "$Graphs/graph35_metan9.gph"
 
 // due to xlabel() now accepting a standard Stata numlist, need to redefine this global macro
 global metaopts astext(60) favours(decreases TB # increases TB) xlabel(0.1 0.2 0.5 1 2 5 10) xsize(10) ysize(8)
@@ -1465,7 +1473,7 @@ forvalues i=1/15 {
 }
 cap nois macro list S_51
 log off log3
-graph save "$Graphs/graph35_metan"
+graph save "$Graphs/graph35_metan.gph"
 
 // Stata 16
 // Need to completely redefine global macros!!
@@ -1476,7 +1484,7 @@ global metastyle markeropts(mcolor(forest_green) msymbol(triangle) ) ///
 global metanull nullrefline(favorsleft(decreases TB) favorsright(increases TB))
 	
 meta forest _id startyr latitude _plot _esci _weight, eform fixed(iv) subgroup(lat_cat) $metastyle $metanull
-graph save "$Graphs/graph35_meta16"
+graph save "$Graphs/graph35_meta16.gph"
 // Cannot specify multiple models (fixed + random) with meta
 // Cannot use "mlabel" options within markeropts()
 
@@ -1509,11 +1517,11 @@ log off log3
 log on  log2
 metabias9 tdeath tnodeath cdeath cnodeath, or harbord graph mlabel(id)
 log off log2
-graph save "$Graphs/graph36_metan9"
+graph save "$Graphs/graph36_metan9.gph"
 log on  log3
 metabias  tdeath tnodeath cdeath cnodeath, or harbord graph mlabel(id)
 log off log3
-graph save "$Graphs/graph36_metan"
+graph save "$Graphs/graph36_metan.gph"
 
 log on  log2
 metabias9 tdeath tnodeath cdeath cnodeath, or peters
@@ -1557,12 +1565,12 @@ log on  log2
 metacum logor selogor, eform xlabel(0.6, 0.8, 1, 1.2, 1.4, 1.6) ///
 	force xtick(0.7, 0.9, 1.1, 1.3, 1.5) lcols(id year country) effect(Odds ratio)
 log off log2
-graph save "$Graphs/graph37_metan9"
+graph save "$Graphs/graph37_metan9.gph"
 log on  log3
 metan logor selogor, cumulative eform xlabel(0.6, 0.8, 1, 1.2, 1.4, 1.6) ///
 	force xtick(0.7, 0.9, 1.1, 1.3, 1.5) lcols(id year country) effect(Odds ratio)
 log off log3
-graph save "$Graphs/graph37_metan"
+graph save "$Graphs/graph37_metan.gph"
 
 
 
@@ -1607,11 +1615,11 @@ macro drop S_51
 log on  log2
 metaninf logor selogor, random eform label(namevar=id, yearid=year)
 log off log2
-graph save "$Graphs/graph38_metan9"
+graph save "$Graphs/graph38_metan9.gph"
 log on  log3
 metan    logor selogor, random eform label(namevar=id, yearid=year) influence
 log off log3
-graph save "$Graphs/graph38_metan"
+graph save "$Graphs/graph38_metan.gph"
 
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -1620,11 +1628,11 @@ macro drop S_51
 log on  log2
 metaninf tdeath tnodeath cdeath cnodeath, fixedi or label(namevar=id, yearid=year)
 log off log2
-graph save "$Graphs/graph39_metan9"
+graph save "$Graphs/graph39_metan9.gph"
 log on  log3
 metan    tdeath tnodeath cdeath cnodeath, fixedi or label(namevar=id, yearid=year) influence
 log off log3
-graph save "$Graphs/graph39_metan"
+graph save "$Graphs/graph39_metan.gph"
 
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -1633,11 +1641,11 @@ macro drop S_51
 log on  log2
 metaninf tsample tmean tsd csample cmean csd, cohen notable 
 log off log2
-graph save "$Graphs/graph40_metan9"
+graph save "$Graphs/graph40_metan9.gph"
 log on  log3
 metan    tsample tmean tsd csample cmean csd, cohen notable influence
 log off log3
-graph save "$Graphs/graph40_metan"
+graph save "$Graphs/graph40_metan.gph"
 
 
 
@@ -1667,7 +1675,7 @@ metaprop num denom, random by(tgroup) cimethod(exact) ///
 	pointopt(msymbol(x) msize(0)) boxopt(msymbol(S) mcolor(black)) ///
 	astext(70) texts(150)
 log off log2
-graph save "$Graphs/graph41_metan9"
+graph save "$Graphs/graph41_metan9.gph"
 log on  log3
 metan num denom, proportion random by(tgroup) cimethod(exact) ///
 	label(namevar=author, yearvar=year) ///
@@ -1678,7 +1686,7 @@ metan num denom, proportion random by(tgroup) cimethod(exact) ///
 	plotregion(icolor(ltbluishgray)) ///
 	diamopt(lcolor(red)) classic boxsca(50))
 log off log3
-graph save "$Graphs/graph41_metan"
+graph save "$Graphs/graph41_metan.gph"
 
 	
 * Example 2
@@ -1701,7 +1709,7 @@ metaprop p16p p16tot, random ftt cimethod(exact) ///
 	pointopt(msymbol(x) msize(0)) boxopt(msymbol(S) mcolor(black)) ///
 	astext(70) texts(100)
 log off log2
-graph save "$Graphs/graph42_metan9"
+graph save "$Graphs/graph42_metan9.gph"
 log on  log3
 metan p16p p16tot, proportion random ftt cimethod(exact) ///
 	label(namevar=author, yearvar=year) sortby(year author) ///
@@ -1712,7 +1720,7 @@ metan p16p p16tot, proportion random ftt cimethod(exact) ///
 	olineopt(lcolor(red) lpattern(shortdash)) ///
 	diamopt(lcolor(black)) classic)
 log off log3
-graph save "$Graphs/graph42_metan"
+graph save "$Graphs/graph42_metan.gph"
 	
 
 * Example 3
@@ -1732,8 +1740,8 @@ metaprop p16p p16tot, random ftt cimethod(exact) ///
 	pointopt(msymbol(x) msize(0)) boxopt(msymbol(S) mcolor(black)) ///
 	astext(70) texts(100)
 log off log2
-graph save "$Graphs/graph43_metan9"
-log on log3
+graph save "$Graphs/graph43_metan9.gph"
+log on  log3
 metan p16p p16tot, proportion random ftt cimethod(exact) ///
 	label(namevar=author, yearvar=year) sortby(year author) ///
 	forestplot(xlab(0.1(0.1)1) xline(0, lcolor(black)) ///
@@ -1743,7 +1751,7 @@ metan p16p p16tot, proportion random ftt cimethod(exact) ///
 	olineopt(lcolor(red) lpattern(shortdash)) ///
 	diamopt(lcolor(black)) classic)
 log off log3
-graph save "$Graphs/graph43_metan"
+graph save "$Graphs/graph43_metan.gph"
 
 
 

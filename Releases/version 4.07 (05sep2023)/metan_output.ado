@@ -3,7 +3,7 @@
 *   principally on-screen table and saved dataset (with optional call to -forestplot-)
 * Called by metan.ado; do not run directly
 
-*! version 4.07  David Fisher 05sep2023
+*! version 4.07  David Fisher 15sep2023
 
 
 program define metan_output, rclass
@@ -1254,7 +1254,7 @@ program define PrintDesc, sclass
 	// Extract model options (from first model if multiple)
 	// Plus user-defined weights
 	local opts_adm `"`macval(options)'"'	
-	local toparse1 CC(string) ISQSA(real 80) TSQSA(real -99) INIT(name) BArtlett HKsj KRoger RObust SKovgaard TRUNCate(string)
+	local toparse1 CC(string) ISQSA(real -99) TSQSA(real -99) PHISA(real -99) POOLED INIT(name) BArtlett HKsj KRoger RObust SKovgaard TRUNCate(string)
 	local udw = 0
 	forvalues j = 1 / `m' {
 		local 0 `", `opts_adm'"'
@@ -1358,19 +1358,31 @@ program define PrintDesc, sclass
 					local modeltext "common-effect inverse-variance"
 					if `m' > 1 local fpnote "NOTE: Weights are from common-effect model"		// for forestplot, if multiple models
 				}
-				else {	
-					local modeltext "random-effects inverse-variance"
-					if "`model1'"!="sa" local fpnote "NOTE: Weights `insert'are from random-effects model"		// for forestplot
+				else {
+					if "`model1'"=="mu" local modeltext "inverse-variance"
+					else {
+						local modeltext "random-effects inverse-variance"
+						if "`model1'"!="sa" local fpnote "NOTE: Weights `insert'are from random-effects model"		// for forestplot
+					}
 				}
 				local the = cond("`model1'"=="qe", "", "the ")
 				disp as text `"using `the'"' as res `"`modeltext'"' as text " model"
 			}
 			
 			// Doi's IVhet and Quality Effects models
-			else if "`model1'"!="peto" {
+			else if inlist("`model1'", "ivhet", "qe") {
 				local modeltext = cond("`model1'"=="ivhet", "Doi's IVhet", "Doi's Quality Effects")
 				disp as text "using " as res `"`modeltext'"' as text " model"
 				local fpnote `"NOTE: Weights `insert'are from `modeltext' model"'				// for forestplot
+			}
+			else {
+				cap assert "`model1'"=="peto"
+				if _rc {
+					disp as err "Error identifying model"
+					nois disp as err _n `"Error in {bf:metan_output.PrintDesc}"'
+					c_local err noerr		// tell -metan- not to also report an "error in metan_output.DrawTableAD"
+					exit _rc
+				}					
 			}
 			
 			// Profile likelihood
@@ -1410,7 +1422,8 @@ program define PrintDesc, sclass
 			
 			// Multiplicative heterogeneity model
 			else if "`model1'"=="mu" {
-				disp as text "with " as res `"multiplicative heterogeneity"'
+				if "`pooled'"!="" local pooledtext ", pooled across subgroups"
+				disp as text "with " as res `"multiplicative heterogeneity`pooledtext'"'
 			}
 			
 			// Two-step estimators
@@ -1437,21 +1450,25 @@ program define PrintDesc, sclass
 			
 				local linktext = cond(`"`hksj'`kroger'`robust'"'!=`""' | inlist("`model1'", "pl", "bt", "ivhet", "qe", "hc"), "based on", "with")
 				
-				// Added May 2023
-				if "`model1'"=="dlc" {
-					local endtext " common across subgroups" 
+				// Added May 2023, modified Sep 2023
+				if "`pooled'"!="" {
+					if "`pooled'"!="" local pooledtext ", pooled across subgroups"
 				}
 				
 				// Sensitivity analysis
 				if "`model1'"=="sa" {
 					disp as text "Sensitivity analysis with user-defined " _c
-					if `tsqsa'==-99 {
+					if `isqsa'!=-99 {
 						disp "I{c 178} = " as res "`isqsa'%"
 						local fpnote `"Sensitivity analysis with user-defined I{c 178}"'
 					}
-					else {
+					else if `tsqsa'!=-99 {
 						disp `"tau{c 178} = "' as res `"`=strofreal(`tsqsa', "%05.3f")'"'
 						local fpnote `"Sensitivity analysis with user-defined tau{c 178}"'
+					}
+					else if `phisa'!=-99 {
+						disp `"phi = "' as res `"`=strofreal(`phisa', "%05.3f")'"'
+						local fpnote `"Sensitivity analysis with user-defined multiplicative heterogeneity"'
 					}
 				}
 				
@@ -1463,7 +1480,7 @@ program define PrintDesc, sclass
 				}
 				
 				// Default
-				else disp as text `"`linktext' "' as res `"`tsqtext'"' as text `" estimate of tau{c 178}`endtext'"'
+				else disp as text `"`linktext' "' as res `"`tsqtext'"' as text `" estimate of tau{c 178}`pooledtext'"'
 			}
 		}
 	}		// end if `"`pool'"'==`""' 
@@ -2422,7 +2439,8 @@ program define BuildResultsSet, rclass
 				gettoken wtname allwtnames2 : allwtnames2
 				format `wtname' %6.2f
 				label variable `wtname' `"`"% Weight,"' `"`label`j'opt'"'"'
-				local newwtnames `newwtnames' _WT_`label`j'opt'
+				local newwtnamej = strtoname(`"_WT_`label`j'opt'"')
+				local newwtnames `newwtnames' `newwtnamej'
 			}
 			tokenize `allwtnames'
 			args `newwtnames'		// for `tosave' below
@@ -3062,8 +3080,8 @@ program define BuildResultsSet, rclass
 			if strpos(`"`labstr'"', `"{sup:2}"') qui replace `strlen' = `strlen' - 6 in `i'
 			if strpos(`"`labstr'"', `"{sub:M}"') qui replace `strlen' = `strlen' - 6 in `i'
 		}
-		summ `strlen' if `touse' & inlist(`_USE', 1, 2, 3, 5) /*& `useModel'<2*/, meanonly
-		local sfmtlen = r(max)
+		summ `strlen' if `touse' & inlist(`_USE', 1, 2, 3, 5) & `useModel'<2, meanonly
+		local newsfmtlen = r(max)
 		drop `strlen'
 	    
 		// Format as left-justified; default length equal to longest study name
@@ -3071,9 +3089,10 @@ program define BuildResultsSet, rclass
 		// If user really wants ultra-short width, they can convert to string and specify %-s format
 		tokenize `"`: variable label `_LABELS''"'
 		while `"`1'"'!=`""' {
-			local sfmtlen = max(`sfmtlen', length(`"`1'"'))
+			local newsfmtlen = max(`newsfmtlen', length(`"`1'"'))
 			macro shift
 		}
+		local sfmtlen = max(`sfmtlen', `newsfmtlen')	// Sep 2023
 	}
 	else local sfmtlen = abs(`sfmtlen')
 	format `_LABELS' %-`sfmtlen's		// left justify _LABELS
@@ -3160,7 +3179,7 @@ program define BuildResultsSet, rclass
 	local useopts  = trim(itrim(`"`macval(useopts)' use(`fp_USE') labels(`fp_LABELS') wgt(`fp_WT') `cumulative' `influence' `denom_opt' `eform'"'))
 	local useopts2 = trim(itrim(`"`interaction' `keepall' `overall' `subgroup' `het' `wt' `stats' `warning' `plotid'"'))
 	
-	if `"`effect'"'!=`""'     local useopts `"`macval(useopts)' effect(`effect')"'
+	if `"`effect'"'!=`""' local useopts `"`macval(useopts)' effect(`effect')"'
 	local useopts `"`macval(useopts)' `macval(useopts2)'"'
 
 	// lcols() option [tweaked AUG 2021]
