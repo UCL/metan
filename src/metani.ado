@@ -1,18 +1,42 @@
-* -admetani- 
-* "Immediate" form of admetan
+* -metani- 
+* "Immediate" form of -metan-
 * for quick pooling of, say, 2 or 3 estimates
 
 * version 1.0  David Fisher  11may2017
-* (part of version 2.0 of -ipdmetan- package)
+// (part of version 2.0 of -ipdmetan- package)
 
 * version 1.01  David Fisher  14sep2017
-* (part of version 2.1 of -ipdmetan- package)
+// (part of version 2.1 of -ipdmetan- package)
 
-*! version 3.0  David Fisher  08nov2018
-* (N.B. only changed very slightly from v1.01 ... this is actually more v1.02!)
+* version 3.0  David Fisher  08nov2018
+// (N.B. only changed very slightly from v1.01 ... this is actually more v1.02!)
+
+* version 4.0  David Fisher  25nov2020
+// changed from -admetani- to -metani-
+// upversioned to match with the rest of -metan- package
+
+* version 4.01  David Fisher  12feb2021
+* version 4.02  David Fisher  23feb2021
+* version 4.03  David Fisher  28apr2021
+* version 4.04  David Fisher  16aug2021
+// No changes; upversioned to match with the rest of -metan- package
+
+* version 4.05 David Fisher  29nov2021
+// added ability to specify a value label for studies, instead of rownames
+// syntax notes:
+// - studylabel() on its own = apply label to studies labelled "naturally" i.e. 1, 2, ...
+// - studylabel() + rownames = label studies with (numeric) rownames; then apply label to those values
+// - rowfullnames, roweq work the same way.
+// If row[eq|[full]names] are non-numeric with studylabel(), exit with error.
+
+* version 4.06  David Fisher  12oct2022
+// No changes; upversioned to match with the rest of -metan- package
+
+*! version 4.07  David Fisher  15sep2023
+// No changes; upversioned to match with the rest of -metan- package
 
 
-program admetani, rclass
+program metani, rclass
 
 	version 11.0
 	
@@ -21,8 +45,11 @@ program admetani, rclass
 	// a matrix inputted by hand, e.g. (1, 2 \ 3, 4); see help matrix define
 	// the syntax of tabi, e.g. 1 2 \ 3 4; see help tabi
 	cap syntax anything [, NPTS(string) noKEEPVars noRSample ///
-		ROWNames ROWFullnames ROWEq Quoted ROWTitle(string) VARiances * ]
+		ROWNames ROWFullnames ROWEq Quoted ROWTitle(string) ROWLabel(name) ///
+		STUDYTitle(string) STUDYLabel(name) VARiances * ]
 	// (these last options are just needed to decide what to do with extra obs, if relevant)
+
+	local metan_opts : copy local options
 	
 	* If -syntax- didn't work, assume due to commas but no brackets
 	if _rc {
@@ -95,27 +122,85 @@ program admetani, rclass
 	}
 	cap compress `tv1'-`tv`nc''
 	
-	// extract rownames; pass to admetan as study names
+	// labelling of rownames; pass to -metan- as study names
+	opts_exclusive `"`rownames' `rowfullnames' `roweq'"' `""' 184
+	if `"`rowlabel'"'!=`""' | `"`studylabel'"'!=`""' {
+		if `"`rowlabel'"'!=`""' & `"`studylabel'"'!=`""' {
+			nois disp as err `"only one of {bf:rowlabel()} and {bf:studylabel()} is allowed"'
+			exit 184
+		}
+		if `"`rowlabel'"'!=`""' local labelopt rowlabel
+		else local labelopt studylabel
+	}
+	if `"`rowtitle'"'!=`""' & `"`studytitle'"'!=`""' {
+	    nois disp as err `"only one of {bf:rowtitle()} and {bf:studytitle()} is allowed"'
+		exit 184
+	}
+
+	// matrix rownames/equation names
 	if `"`rownames'`rowfullnames'`roweq'"'!=`""' {
-		opts_exclusive `"`rownames' `rowfullnames' `roweq'"' `""' 184
-		local rownames `rownames'`rowfullnames'`roweq'
-	
+	    local rc = 0
 		tempvar study
 		qui gen `study' = ""
-		local names : `rownames' `A', `quoted'
-		tokenize `names'
-		local i = 1
+		local names : `rownames'`rowfullnames'`roweq' `A', `quoted'
+		tokenize `"`names'"'
+		local i = 0
 		while `"`1'"' != `""' {
+			local ++i
+		    if `i' > `nr' {
+			    local rc = 9
+				continue, break
+			}
 			qui replace `study' = `"`1'"' in `i'
 			mac shift
-			local ++i
 		}
-		if `"`rowtitle'"'!=`""' {
-			label variable `study' `"`rowtitle'"'
+		cap assert `i'==`nr'
+		local rc = max(`rc', _rc)
+		if `rc' {
+		    nois disp as err `"Number of elements in list of matrix row[eq]names does not match with matrix size"'
+			exit `rc'
+		}		
+	}
+	
+	// value label
+	if `"`rowlabel'`studylabel'"'!=`""' {
+		
+		// try to apply to rownames
+		if `"`rownames'`rowfullnames'`roweq'"'!=`""' {
+			qui destring `study', replace
+			cap {
+				confirm numeric variable `study'
+				label values `study' `rowlabel'`studylabel'
+			}
+			if _rc {
+				nois disp as err `"Error when applying value label {bf:`rowlabel'`studylabel'}"'
+				nois disp as err `"Check that values stored in matrix row[eq]names are integers"'
+				exit _rc
+			}
+		}
+		
+		// else, generate study as 1, 2, ... and apply there
+		else {
+			nois disp `"{error}Note: value label {bf:`rowlabel'`studylabel'} will be applied to studies numbered sequentially from 1"'
+			tempvar study
+			qui gen `study' = _n in 1 / `nr'
+			cap label values `study' `rowlabel'`studylabel'
+			if _rc {
+				nois disp as err `"Error when applying value label {bf:`rowlabel'`studylabel'}"'
+				exit _rc
+			}
+		}
+	}
+
+	// variable label ("title")
+	cap confirm variable `study'
+	if !_rc {
+		if `"`rowtitle'`studytitle'"'!=`""' {
+			label variable `study' `"`rowtitle'`studytitle'"'
 		}
 		else label variable `study' `"Matrix rowname"'
-		
-		local options `"study(`study') `options'"'
+
+		local metan_opts `"study(`study') `metan_opts'"'
 	}
 	
 	// extract npts
@@ -175,7 +260,7 @@ program admetani, rclass
 			}
 		}
 		
-		local options `"npts(`nptsvar') `options'"'
+		local metan_opts `"npts(`nptsvar') `metan_opts'"'
 	}	
 	
 	// convert variances to standard errors if necessary
@@ -186,12 +271,12 @@ program admetani, rclass
 		else qui replace `tv2' = sqrt(`tv2')
 	}
 	
-	// pass to admetan
-	cap nois admetan `tv1'-`tv`nc'', `keepvars' `rsample' `options'
+	// pass to -metan-
+	cap nois metan `tv1'-`tv`nc'', `keepvars' `rsample' `metan_opts'
 	if _rc {
 		if `"`err'"'==`""' {
-			if _rc==1 nois disp as err `"User break in {bf:admetan}"'
-			else nois disp as err `"Error in {bf:admetan}"'
+			if _rc==1 nois disp as err `"User break in {bf:metan}"'
+			else nois disp as err `"Error in {bf:metan}"'
 		}
 		qui drop if _n > `old_N'
 		exit _rc

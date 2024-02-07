@@ -24,7 +24,7 @@ d needed to treat; and the ‘labbe’ program which produces L'Abbe
 d plots to examine whether the assumption of a common odds ratio,
 d risk ratio or risk difference is reasonable.
 d
-d Requires: Stata version 9 (version 9 for metan9, or version 7 for metan7)
+d Requires: Stata version 11 (or version 9 for metan9; version 7 for metan7)
 d
 d Distribution-Date: 20221012 
 d

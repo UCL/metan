@@ -1,8 +1,10 @@
 * version 1.0  07feb2018  David Fisher
-*! version 1.1  08nov2018  David Fisher
+* version 1.1  08nov2018  David Fisher
+*! version 1.2  03dec2019  David Fisher
+*! (amended to work with -metan- v4.00)
 *! based on geo2xy_run.ado by Robert Picard, picard@netbox.com
 
-program define admetan_hlp_run
+program define metan_hlp_run
 
 	version 11
 	
@@ -14,12 +16,12 @@ program define admetan_hlp_run
 	// 2. Specifying -restnot- cancels -preserve- once the contents of the help file have been run.
 	// 3. Specifying -restpres- preserves the data originally in memory as above,
 	//      but restores and *re-preserves* that data before running the code.
-	//      Hence, the code is intended to apply to the data in memory at the time admetan_hlp_run was called.
+	//      Hence, the code is intended to apply to the data in memory at the time metan_hlp_run was called.
 	// 4. Specifying -restpresnot- is equivalent to specifying -restnot- and -restpres- together;
 	//      which leaves behind the data originally in memory, but "damaged" by the contents of the help file.
 	
 	syntax anything(name=example_name id="example name") using/ ///
-		, [RESTNOT RESTPRES RESTPRESNOT LIST]
+		, [RESTNOT RESTPRES RESTPRESNOT LIST DEBUG]
 	
 	quietly {
 		findfile `"`using'"'
@@ -63,18 +65,19 @@ program define admetan_hlp_run
 		//     exception is {c output} or {char output}; these need conversion back to their original characters (see below)
 
 		// Problem 1: what if SMCL tags {} are used for other purposes, e.g. loops within Stata commands?
-		// Solution: onus is on help-file authors to replace such characters with {c -(} and {c -)} respectively.
+		// Solution: onus is on help-file authors to replace such characters with {c -(} and {c )-} respectively.
 		// These can then be converted back to {} before the final do-file is run.
 		
 		// Problem 2: how to deal with "{* ...}" ??  "..." could be either SMCL or Stata; no way to know in advance.
 		// Solution: onus is on help-file authors not to use the syntax "{* [SMCL directive]}" within "example limits".
 	
 		gen str newtxt = ""
+		gen str txt_noc = ""
 		gen str content = ""
 		gen int strpos = .
 		count if regexm(txt, "{")
 		while r(N) {
-			
+		
 			// identify anything before the next {
 			replace strpos = cond(strpos(txt, "{"), strpos(txt, "{"), .)
 			replace newtxt = newtxt + substr(txt, 1, strpos-1)
@@ -99,15 +102,15 @@ program define admetan_hlp_run
 			
 			// analyse content; look for {c ...} or {char ...}; add these wholesale to newtxt
 			replace newtxt = newtxt + content if regexm(trim(content), "^{c (.*)}$") | regexm(trim(content), "^{char (.*)}$")
-
+			
 			// reset
 			replace strpos = .
 			replace content = ""
 			
 			// check for further tags in original text string;
 			//   if yes, loop again
-			// otherwise, add anything from the end, then check for *nested* tags in newtxt
-			//   this must be done eventually; and from then on the useful code is stored in txt, not newtxt
+			// otherwise, add anything from the end, then check for *nested* tags in newtxt EXCLUDING {c ...}
+			//   this must finish eventually; and from then on the useful code is stored in txt, not newtxt
 			//   (hence:  drop if txt=="" )
 			count if regexm(txt, "{")
 			if !r(N) {
@@ -115,7 +118,20 @@ program define admetan_hlp_run
 				drop txt
 				rename newtxt txt
 				gen str newtxt = ""
-				count if regexm(txt, "{")
+				
+				// REMOVE {c -(} and {c )-} BEFORE CHECKING!
+				replace txt_noc = txt
+				replace txt_noc = subinstr(txt_noc, "{c -(}", "", .)
+				replace txt_noc = subinstr(txt_noc, "{c )-}", "", .)
+				if "`debug'"!="" {
+					nois list txt_noc if regexm(txt_noc, "{")
+				}
+				count if regexm(txt_noc, "{")
+			}
+			// display txt and newtxt for debugging, if requested
+			// (N.B. first time around, this will probably give a list of "{p_end}")
+			else if "`debug'"!="" {
+				nois list txt if regexm(txt, "{")
 			}
 		}
 		drop if txt==""
@@ -124,7 +140,7 @@ program define admetan_hlp_run
 		//  - convert SMCL characters to standard characters
 		//  - remove initial periods, if present
 		replace txt = subinstr(txt, "{c -(}", "{", .)
-		replace txt = subinstr(txt, "{c -)}", "}", .)
+		replace txt = subinstr(txt, "{c )-}", "}", .)
 		replace txt = subinstr(txt, "{c S|}", "$", .)
 		replace txt = subinstr(txt, "{c 'g}", "`", .)
 		replace txt = trim(subinstr(txt, ".", "", 1)) if substr(trim(txt), 1, 1)=="."
