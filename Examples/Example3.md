@@ -3,7 +3,7 @@
 # Example 3
 Pooled results colour-coded by genetic subtype
 
-Data taken from Supplementary Figure S1 of Liu X et al. Int. J. Cancer 2020; 147: 116–127. doi:10.1002/ijc.32744  
+Data taken from Supplementary Figure S1 of [Liu X et al. Int J Cancer 2020](https://doi.org/10.1002/ijc.32744).  
 "Association of PD-L1 expression status with the efficacy of PD-1/PD-L1 inhibitors and overall survival in solid tumours: A systematic review and meta-analysis"
 
 <a href ="https://github.com/UCL/metan/blob/main/Examples"><img src="Example3_Liu.png" width="75%" alt="forest plot" /></a>
