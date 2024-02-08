@@ -3,7 +3,7 @@
 # Example 2
 Fixed- and random-effects results displayed simultaneously, with predictive interval.
 
-Data taken from Figure 2 of [Colpani V et al. PLoS ONE 2020](doi:10.1371/journal.pone.0229154).  
+Data taken from Figure 2 of [Colpani V et al. PLoS ONE 2020](https://doi.org/10.1371/journal.pone.0229154).  
 "Prevalence of human papillomavirus (HPV) in Brazil: A systematic review and meta-analysis"
  
 <a href ="https://github.com/UCL/metan/blob/main/Examples"><img src="Example2_Colpani_FEB2024.png" width="100%" alt="forest plot" /></a>
