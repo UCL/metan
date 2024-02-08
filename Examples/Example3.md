@@ -77,7 +77,8 @@ replace _USE = 6 if _n > `oldN'
 forestplot, hr nowt plotid(PDL1) dataid(PDL1) lcols(IntString ControlString) xlabel(.5 "0.5" 1 2) range(.0625 2.5) cirange(.08 2.5) ///
     astext(70) textsize(90) boxsca(80) favours(Favours intervention # Favours control, fp(3)) ///
     box1opts(mcolor(edkblue)) box2opts(mcolor(orange)) ciopts(lcolor(black) lw(thin)) ///
-    diam1opts(lc(edkblue)) diam2opts(lc(orange)) oline1opts(lp(dash) lc(edkblue)) oline2opts(lp(dash) lc(orange)) graphregion(color(white)) ///
-	legend(order(1 "PDL-1 positive" 3 "PDL-1 negative") size(1.635) region(lstyle(none)) position(7) ring(0)) spacing(1.4)
+    diam1opts(lc(edkblue)) diam2opts(lc(orange)) oline1opts(lp(dash) lc(edkblue)) oline2opts(lp(dash) lc(orange)) ///
+    legend(order(1 "PDL-1 positive" 3 "PDL-1 negative") size(1.635) region(lstyle(none)) position(7) ring(0)) spacing(1.4) ///
+    graphregion(color(white)) scheme(s2color)	
 ```
 
