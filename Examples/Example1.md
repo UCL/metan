@@ -33,11 +33,6 @@ gen uci = ln(SHR_UCI)
 gen predlci = ln(LPI)
 gen preduci = ln(UPI)
 
-gen byte use = 3
-forestplot eff lci uci, use(use) labels(Exposure) rfdist(predlci preduci) nowt leftjustify ///
-	nodiam ppointopts(msize(small)) rfopts(lcolor(gs12) lwidth(vthick) overlay) ///
-	legend(off)
-	
 clonevar Exposure2 = Exposure
 replace Exposure2 = "HEI" if Exposure2=="Healthy Eating Index (HEI)"
 replace Exposure2 = "AHEI" if Exposure2=="Alternative Healthy Eating Index (AHEI)"
@@ -59,11 +54,12 @@ replace N_Cases_Str = "NA" if N_Cases_Str==".a"
 format %~5s N_Cases_Str
 label variable N_Cases_Str "No. cases"
 
+gen byte use = 3
 forestplot eff lci uci, use(use) labels(Exposure2) rfdist(predlci preduci) nowt eform effect(SHR) ///
 	nodiam rfopts(lcolor(gs12) lwidth(vthick) overlay) plotid(NutriGrade, list) ///
 	ppoint1opts(msize(small) mlcolor(green)) ppoint2opts(msize(small) mlcolor(orange)) ppoint3opts(msize(small) mlcolor(maroon)) ///
 	pci1opts(lcolor(green)) pci2opts(lcolor(orange)) pci3opts(lcolor(maroon)) ///
 	legend(order(8 "Moderate" 9 "Low" 10 "Very Low") rows(1) size(2) subtitle("NutriGrade meta-evidence score:", size(2)) region(lstyle(none))) ///
-	lcols(N_Studies_Str N_Cases_Str Range_Amount2) xlabel(.5 "0.5" 1 2) astext(70) graphregion(color(white))
+	lcols(N_Studies_Str N_Cases_Str Range_Amount2) xlabel(.5 "0.5" 1 2) astext(70) graphregion(color(white)) scheme(s2color)
 ```
 
