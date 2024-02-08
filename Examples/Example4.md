@@ -10,7 +10,8 @@ Simulated example dataset by Ross Harris, 2006
 ```Stata
 use http://fmwww.bc.edu/repec/bocode/m/metan_example_data, clear
 metan tdeath tnodeath cdeath cnodeath, rd random rfdist lcols(id) counts ///
-	forestplot(ocilineopts(color(gs8) hide) rfcilineopts(color(gs12)) graphregion(color(white)) classic ///
-	xlabel(, format("%03.1f")) favours(Favours treatment # Favours control))
+	forestplot(ocilineopts(color(gs8) hide) rfcilineopts(color(gs12)) ///
+	xlabel(, format("%03.1f")) favours(Favours treatment # Favours control)) ///
+	classic nonote graphregion(color(white)) scheme(s2color)
 ```
 
