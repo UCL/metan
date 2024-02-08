@@ -7,7 +7,7 @@ Data taken from Supplementary Appendix 2, and displayed in Figure 1, of Godolphi
 "Estimating interactions and subgroup-specific treatment effects in meta-analysis without aggregation bias: A within-trial framework".
 Note that this data are better analysed using the separate package `metafloat`, [available from GitHub here](https://github.com/UCL/metafloat), which implements the methods described in that paper and requires much less code than that given here.
 
-Data originally presented in Supplement 2, page 14, of (Shankar-Hari et al. JAMA 2021)[https://doi.org/10.1001/jama.2021.11330].
+Data originally presented in Supplement 2, page 14, of [Shankar-Hari et al. JAMA 2021](https://doi.org/10.1001/jama.2021.11330).
 
 <a href ="https://github.com/UCL/metan/blob/main/Examples"><img src="Example5_Godolphin.png" width="75%" alt="forest plot" /></a>
 
