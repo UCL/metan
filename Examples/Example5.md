@@ -1,12 +1,13 @@
 <a href ="https://www.mrcctu.ucl.ac.uk/"><img src="../logo_ukri-mrc-ctu_transparent-background.png" width="50%" /></a>
 
 # Example 5
-A "two-panel" subgroup and interaction forest plot, as proposed by Godolphin et al RSM 2023 doi: https://doi.org/10.1002/jrsm.1590
+A "two-panel" subgroup and interaction forest plot, as proposed by [Godolphin et al. RSM 2023](https://doi.org/10.1002/jrsm.1590).
 
 Data taken from Supplementary Appendix 2, and displayed in Figure 1, of Godolphin et al RSM 2023 (as above)
-"Estimating interactions and subgroup-specific treatment effects in meta-analysis without aggregation bias: A within-trial framework"
+"Estimating interactions and subgroup-specific treatment effects in meta-analysis without aggregation bias: A within-trial framework".
+Note that this data are better analysed using the separate package `metafloat`, [available from GitHub here](https://github.com/UCL/metafloat), which implements the methods described in that paper and requires much less code than that given here.
 
-Data originally presented in Supplement 2, page 14, of Shankar-Hari et al JAMA 2021 doi: https://doi.org/10.1001/jama.2021.11330
+Data originally presented in Supplement 2, page 14, of (Shankar-Hari et al. JAMA 2021)[https://doi.org/10.1001/jama.2021.11330].
 
 <a href ="https://github.com/UCL/metan/blob/main/Examples"><img src="Example5_Godolphin.png" width="75%" alt="forest plot" /></a>
 
