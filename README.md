@@ -1,7 +1,7 @@
 <a href ="https://www.mrcctu.ucl.ac.uk/"><img src="logo_ukri-mrc-ctu_transparent-background.png" width="50%" /></a>
 
 # metan
-Current release: v4.07  05sep2023
+Current release: v4.08  17jun2024
 
 # A Stata package to perform meta-analysis of aggregate (summary) data
 
@@ -86,8 +86,8 @@ In June 2019, Stata version 16 introduced a suite of built-in meta-analysis comm
 As of November 2020 (Stata version 16.1), Stata 16's `meta` suite is currently unable, amongst other things, to:
 * Display the results of analysis under multiple models in the same output, as can be done using `metan`'s `second()` or `model()` options
 * Make use of user-specified weights in analysis or in a forest plot
-* Show predictive intervals for study subgroups
-* Make use of marker label options to display text at the co-ordinates of study effect estimates
+* Use line and marker options to highlight, or differentiate between, particular study estimates
+* Make use of marker label options to display text at the co-ordinates of study effect estimates.
 
 Finally, note that there is an important difference in the way that `metan` and Stata 16's `meta` suite report heterogenity statistics with random-effects models.  `metan` views I-squared (and its transformations H and H-squared) as being descriptive of the observed data, and I-squared is therefore derived from Q regardless of the specified model unless specified otherwise with relevant options (see documentation within Stata).  By constrast, Stata 16's `meta` suite reports I-squared based on Q if a common-effect model is specified, or based on tau-squared if a random-effects model is specified.
 
@@ -99,7 +99,9 @@ Basic examples of `metan` syntax and usage may be found in the documentation fil
 * [Example 2](Examples/Example2.md): Fixed- and random-effects results displayed simultaneously, with predictive interval.
 * [Example 3](Examples/Example3.md): Two sets of pooled results, colour-coded by subgroup
 * [Example 4](Examples/Example4.md): Confidence and predictive intervals represented by overlaid shading
-* [Example 5](Examples/Example5.md): "Two-panel" subgroup and interaction plot
+* [Example 5](Examples/Example5.md): "Compound" forest plot, using `graph combine`
+
+An additional example may be found on the GitHub page for the `metafloat` command; [click here](https://github.com/UCL/metafloat).
 
 # Credits and Acknowledgments
 
