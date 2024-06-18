@@ -3,7 +3,10 @@
 ***************************
 
 // Compiled by David Fisher
-// for validating  -metan- v4.05  29nov2021
+// for validating  -metan- v4.08  11mar2024
+// [and previously -metan- v4.07  15sep2023
+// [and previously -metan- v4.06  12oct2022
+// [and previously -metan- v4.05  29nov2021
 // [and previously -metan- v4.04  16aug2021
 // [and previously -metan- v4.03  28apr2021
 // [and previously -metan- v4.02  23feb2021
@@ -530,11 +533,25 @@ qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) xlabe
 graph save "$Graphs/graph1_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) xlabel(.5,1,2) xtick(.75,1.5) force
 graph save "$Graphs/graph1_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) forestplot(xlabel(.5,1,2) xtick(.75,1.5) force) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore	
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nobox
 graph save "$Graphs/graph2_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nobox
 graph save "$Graphs/graph2_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nobox nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore	
 
 log on  log2
 metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nooverall
@@ -542,8 +559,15 @@ log off log2
 graph save "$Graphs/graph3_metan9.gph"
 log on  log3
 metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nooverall
-log off log3
 graph save "$Graphs/graph3_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nooverall nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore	
+log off log3
 
 log on  log2
 metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nowt
@@ -551,8 +575,15 @@ log off log2
 graph save "$Graphs/graph4_metan9.gph"
 log on  log3
 metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nowt
-log off log3
 graph save "$Graphs/graph4_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nowt nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore	
+log off log3
 
 log on  log2
 metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nostats
@@ -560,13 +591,27 @@ log off log2
 graph save "$Graphs/graph5_metan9.gph"
 log on  log3
 metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nostats
-log off log3
 graph save "$Graphs/graph5_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nostats nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore	
+log off log3
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) group1(treat) group2(control) counts		// appears on the right
 graph save "$Graphs/graph6_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) group1(treat) group2(control) counts		// appears on the left, c.f. RevMan
 graph save "$Graphs/graph6_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) group1(treat) group2(control) counts nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore	
 
 log on  log2
 metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) effect(effect size)
@@ -574,9 +619,15 @@ log off log2
 graph save "$Graphs/graph7_metan9.gph"
 log on  log3
 metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) effect(effect size)	// appears in the table as well as the forest plot
-log off log3
 graph save "$Graphs/graph7_metan.gph"
-
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) effect(effect size) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore	
+log off log3
 
 
 *** forest_plot_options: lcols(varlist) rcols(varlist) astext(#) double nohet summaryonly rfdist rflevel(#) null(#) nulloff favours(string # string)
@@ -584,6 +635,13 @@ qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) lcols
 graph save "$Graphs/graph8_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) lcols(n_pos) rcols(population) double		// includes label() within lcols()
 graph save "$Graphs/graph8_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) lcols(n_pos) rcols(population) forestplot(double) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 log on  log2
 cap nois metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) astext(0)		// exits with error
@@ -596,11 +654,25 @@ qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) astex
 graph save "$Graphs/graph9_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) astext(10)
 graph save "$Graphs/graph9_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) forestplot(astext(10)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) astext(90)
 graph save "$Graphs/graph10_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) astext(90)
 graph save "$Graphs/graph10_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) forestplot(astext(90)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 log on  log2
 cap nois metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) astext(100)		// exits with error
@@ -615,8 +687,15 @@ log off log2
 graph save "$Graphs/graph11_metan9.gph"
 log on  log3
 metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nohet		// nohet suppresses any on-screen het info, in addition to forest plot
-log off log3
 graph save "$Graphs/graph11_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nohet nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 log on  log2
 metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) summaryonly by(type_study)
@@ -624,34 +703,75 @@ log off log2
 graph save "$Graphs/graph12_metan9.gph"
 log on  log3
 metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) summaryonly by(type_study)	// again: affects on-screen as well as forest plot
-log off log3
 graph save "$Graphs/graph12_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) summaryonly by(type_study) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) rfdist by(type_study)
 graph save "$Graphs/graph13_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) rfdist by(type_study)	// prints message that rfdist will be ignored (common effect)
 graph save "$Graphs/graph13_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) rfdist by(type_study) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) rfdist by(type_study) random rflevel(80)
 graph save "$Graphs/graph14_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) rfdist by(type_study) random rflevel(80)		// corrects the error in -metan9-; see comparison with -metafor- in R
 graph save "$Graphs/graph14_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) rfdist by(type_study) random rflevel(80) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) null(1.5)	// no idea what this is doing
 graph save "$Graphs/graph15_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) null(1.5)	// works on the exp scale, same as xlabel() and fp()
 graph save "$Graphs/graph15_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) forestplot(null(1.5)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nulloff
 graph save "$Graphs/graph16_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) nulloff
 graph save "$Graphs/graph16_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) forestplot(nulloff) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) favours(left hand side string # right hand side string)
 graph save "$Graphs/graph17_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) favours(left hand side string # right hand side string)
 graph save "$Graphs/graph17_metan.gph"
-
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) forestplot(favours(left hand side string # right hand side string)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 
 *** forest_plot_options: firststats(string) secondstats(string)
@@ -667,12 +787,26 @@ graph save "$Graphs/graph18_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) boxopt(mcolor(red)) diamopt(lcolor(orange)) pointopt(mcolor(blue)) ///
 	ciopt(lcolor(orange)) olineopt(lpattern(dash) lcolor(blue))
 graph save "$Graphs/graph18_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) forestplot(boxopt(mcolor(red)) diamopt(lcolor(orange)) pointopt(mcolor(blue)) ///
+	ciopt(lcolor(orange)) olineopt(lpattern(dash) lcolor(blue))) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 qui metan9 tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) classic nowarning
 graph save "$Graphs/graph19_metan9.gph"
 qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) classic nowarning
 graph save "$Graphs/graph19_metan.gph"
-
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, label(namevar=id, yearid=year) forestplot(classic) nowarning nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 
 
@@ -719,14 +853,28 @@ forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph20_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, rd random label(namevar=id, yearid=year) counts nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 // Note: new version does not automatically present a p-value for heterogeneity on the forest plot
 // to avoid confusion with significance test of overall effect
 // Hence, to *exactly* recreate the example, we need to add the option "hetinfo(isq p)"
 metan  tdeath tnodeath cdeath cnodeath, rd random label(namevar=id, yearvar=year) counts hetinfo(isq p)
 graph save "$Graphs/graph20_metan_v2.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, rd random label(namevar=id, yearvar=year) counts hetinfo(isq p) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 // Stata 16
 gen id_year = id + " (" + string(year) + ")"
@@ -767,14 +915,30 @@ forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph21_metan.gph"
 // Note slight differences in syntax here, e.g. forestplot() option and "leftjustify"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, sortby(year) lcols(id year country) rcols(population) ///
+		forestplot(textsize(110) astext(60) double) nostats nowt nohet notable nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 // ...Also, text size is handled differently/better by new version, so textsize(110) may not be necessary.
 metan  tdeath tnodeath cdeath cnodeath, sortby(year) lcols(id year country) rcols(population) ///
 	forestplot(astext(60) double leftjustify) nostats nowt nohet notable
 graph save "$Graphs/graph21_metan_v2.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tdeath tnodeath cdeath cnodeath, sortby(year) lcols(id year country) rcols(population) ///
+		forestplot(astext(60) double leftjustify) nostats nowt nohet notable nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 // Stata 16
 meta esize tdeath tnodeath cdeath cnodeath, esize(lnrr) studylab(id_year) common(mh)
@@ -812,8 +976,16 @@ forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph22_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tsample tmean tsd csample cmean csd, by(type_study) sgweight fixed second(random) rfdist counts label(namevar=id) ///
+		forestplot(favours(Treatment reduces blood pressure # Treatment increases blood pressure)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 // Stata 16
 meta esize tsample tmean tsd csample cmean csd, studylab(id_year) esize(cohend, holkinse) common
@@ -862,8 +1034,15 @@ forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph23_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  logor selogor, eform effect(Odds ratio) forestplot(xlabel(0.5, 1, 1.5, 2, 2.5) force xtick(0.75, 1.25, 1.75, 2.25)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 // Note that xlabel() and xtick() now expect a standard Stata -numlist-  (i.e. not comma-separated)
 // ...and "force" is now a sub-option of xlabel() rather than a stand-alone option.
@@ -874,6 +1053,13 @@ graph save "$Graphs/graph23_metan.gph"
 // Hence, to *exactly* recreate the example, we need to add the option "hetinfo(isq p)"
 metan  logor selogor, eform effect(Odds ratio) forestplot(xlabel(0.5 1 1.5 2 2.5, force) xtick(0.75 1.25 1.75 2.25) hetinfo(isq p))
 graph save "$Graphs/graph23_metan_v2.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  logor selogor, eform effect(Odds ratio) forestplot(xlabel(0.5 1 1.5 2 2.5, force) xtick(0.75 1.25 1.75 2.25) hetinfo(isq p)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 // Stata 16
 meta set logor selogor, studylab(id_year) random(dl)
@@ -913,8 +1099,16 @@ forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph24_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  percent lowerci upperci, wgt(n_positives) label(namevar=id) nooverall notable ///
+		forestplot(xlabel(0,10,20,30,40,50,60,70,80,90,100) force null(50) title(Sensitivity, position(6))) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 // Note that xlabel() now expects a standard Stata -numlist-
 // ...and "force" is now a sub-option of xlabel() rather than a stand-alone option
@@ -922,6 +1116,14 @@ graph save "$Graphs/graph24_metan.gph"
 metan  percent lowerci upperci, wgt(n_positives) label(namevar=id) nooverall notable ///
 	forestplot(xlabel(0(10)100, force) null(50) title(Sensitivity, position(6)))
 graph save "$Graphs/graph24_metan_v2.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  percent lowerci upperci, wgt(n_positives) label(namevar=id) nooverall notable ///
+		forestplot(xlabel(0(10)100, force) null(50) title(Sensitivity, position(6))) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 // Stata 16
 // Cannot easily do this, as percent confidence limits are asymmetrical by definition, but meta will not accept them.
@@ -959,11 +1161,19 @@ forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph25_metan.gph"
 // N.B. last forestplot option is needed because scheme(economist) treats lines differently from areas
 // so default widths are different;  so need to override the scheme default for the diamond.
 // (see scheme-economist.scheme)
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  OR ORlci ORuci, wgt(bweight) first(0.924 0.753 1.095 Bayesian) firststats(param V=3.86, p=0.012) label(namevar=id) ///
+		forestplot(xlabel(0.25, 0.5, 1, 2, 4) force null(1) aspect(1.2) diamopts(lwidth(thick))) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 // Note that xlabel() now expects a standard Stata -numlist-
 // ...and "force" is now a sub-option of xlabel() rather than a stand-alone option
@@ -971,6 +1181,14 @@ graph save "$Graphs/graph25_metan.gph"
 metan  OR ORlci ORuci, wgt(bweight) first(0.924 0.753 1.095 Bayesian) firststats(param V=3.86, p=0.012) label(namevar=id) ///
 	forestplot(xlabel(0.25 0.5 1 2 4, force) null(1) aspect(1.2) scheme(economist))
 graph save "$Graphs/graph25_metan_v2.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  OR ORlci ORuci, wgt(bweight) first(0.924 0.753 1.095 Bayesian) firststats(param V=3.86, p=0.012) label(namevar=id) ///
+	forestplot(xlabel(0.25 0.5 1 2 4, force) null(1) aspect(1.2) scheme(economist)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 // Stata 16:
 // Need to transform the OR and CI limits to make them symmetrical
@@ -1013,7 +1231,7 @@ forvalues i = 1/15 {
 	macro drop S_`i'
 }
 macro drop S_51
-metan9 tdeath tnodeath cdeath cnodeath, lcols(id year) notable ///
+metan tdeath tnodeath cdeath cnodeath, lcols(id year) notable ///
 		boxopt( mcolor(forest_green) msymbol(triangle) ) ///
 		pointopt( msymbol(triangle) mcolor(gold) msize(tiny) mlabel(counts) mlabsize(vsmall) mlabcolor(forest_green) mlabposition(1) ) ///
 		ciopt( lcolor(sienna) lwidth(medium) )
@@ -1022,8 +1240,18 @@ forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph26_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan tdeath tnodeath cdeath cnodeath, lcols(id year counts) notable ///
+		forestplot( boxopt( mcolor(forest_green) msymbol(triangle) ) ///
+		pointopt( msymbol(triangle) mcolor(gold) msize(tiny) mlabel(counts) mlabsize(vsmall) mlabcolor(forest_green) mlabposition(1) ) ///
+		ciopt( lcolor(sienna) lwidth(medium) ) ) nograph clear
+	forestplot, useopts lcols(year)
+	return list, all
+	summarize
+restore
+log off log3
 
 // Note: new version does not automatically present a p-value for heterogeneity on the forest plot
 // to avoid confusion with significance test of overall effect.
@@ -1035,6 +1263,16 @@ metan  tdeath tnodeath cdeath cnodeath, lcols(id year) notable hetinfo(isq p) //
 		ciopt( lcolor(sienna) lwidth(medium) ) ///
 	)
 graph save "$Graphs/graph26_metan_v2.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan tdeath tnodeath cdeath cnodeath, lcols(id year counts) notable hetinfo(isq p) ///
+		forestplot( boxopt( mcolor(forest_green) msymbol(triangle) ) ///
+		pointopt( msymbol(triangle) mcolor(gold) msize(tiny) mlabel(counts) mlabsize(vsmall) mlabcolor(forest_green) mlabposition(1) ) ///
+		ciopt( lcolor(sienna) lwidth(medium) ) ) nograph clear
+	forestplot, useopts lcols(year)
+	return list, all
+	summarize
+restore
 
 // Stata 16
 meta esize tdeath tnodeath cdeath cnodeath, studylab(id)
@@ -1084,15 +1322,31 @@ forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph27_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tcases tnoncases ccases cnoncases, rr fixedi lcols(trialnam startyr) ///
+		forestplot(xlabel(0.1, 10) favours(BCG reduces risk of TB # BCG increases risk of TB)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 // Note: new version does not automatically present a p-value for heterogeneity on the forest plot
 // to avoid confusion with significance test of overall effect
 // Hence, to *exactly* recreate the example, we need to add the option "hetinfo(isq p)"
-metan  tcases tnoncases ccases cnoncases, rr fixedi lcols(trialnam startyr) ///
-	forestplot(xlabel(0.1 10) favours(BCG reduces risk of TB # BCG increases risk of TB) hetinfo(isq p))
+metan  tcases tnoncases ccases cnoncases, rr fixedi lcols(trialnam startyr) hetinfo(isq p) ///
+	forestplot(xlabel(0.1 10) favours(BCG reduces risk of TB # BCG increases risk of TB))
 graph save "$Graphs/graph27_metan_v2.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tcases tnoncases ccases cnoncases, rr fixedi lcols(trialnam startyr) hetinfo(isq p) ///
+		forestplot(xlabel(0.1, 10) favours(BCG reduces risk of TB # BCG increases risk of TB)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 // Stata 16
 meta esize tcases tnoncases ccases cnoncases, esize(lnrr) studylab(trialnam) fixed(iv)
@@ -1169,14 +1423,30 @@ forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph29_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tcases tnoncases ccases cnoncases, rr fixedi second(random) lcols(trialnam authors startyr alloc latitude) counts notable ///
+		forestplot(astext(70) textsize(200) boxsca(80) xlabel(0.1,10) xsize(10) ysize(6)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 // Note that automatic sizing of text and graph dimensions is better in the new version,
 // so options such as textsize(), boxsca(), xlabel(), xsize() and ysize() may not be necessary
 metan  tcases tnoncases ccases cnoncases, rr fixedi second(random) lcols(trialnam authors startyr alloc latitude) counts notable ///
 	forestplot(astext(70))
 graph save "$Graphs/graph29_metan_v2.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tcases tnoncases ccases cnoncases, rr fixedi second(random) lcols(trialnam authors startyr alloc latitude) counts notable ///
+		forestplot(astext(70)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 // Stata 16
 meta esize tcases tnoncases ccases cnoncases, esize(lnrr) studylab(trialnam) fixed(iv)
@@ -1215,20 +1485,36 @@ forvalues i = 1/15 {
 }
 macro drop S_51
 metan  tcases tnoncases ccases cnoncases, rr fixedi second(random) nosecsub lcols(trialnam startyr latitude) by(lat_cat) ///
-	astext(60) xlabel(0.1,10) xsize(10) ysize(8)
+	astext(60) xlabel(0.1,10) xsize(10) ysize(8) 
 return list, all
 forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph30_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tcases tnoncases ccases cnoncases, rr fixedi second(random) nosecsub lcols(trialnam startyr latitude) by(lat_cat) ///
+		forestplot(astext(60) xlabel(0.1,10) xsize(10) ysize(8)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 // Note that automatic sizing of graph dimensions is better in the new version,
 // so options such as xlabel(), xsize() and ysize() may not be necessary
 metan  tcases tnoncases ccases cnoncases, rr fixedi second(random) nosecsub lcols(trialnam startyr latitude) by(lat_cat) ///
 	forestplot(astext(60))
 graph save "$Graphs/graph30_metan_v2.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tcases tnoncases ccases cnoncases, rr fixedi second(random) nosecsub lcols(trialnam startyr latitude) by(lat_cat) ///
+		forestplot(astext(60)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 // Stata 16
 meta forest _id authors startyr latitude _plot _data1 _data2 _esci _weight, eform(Risk ratio) subgroup(lat_cat)
@@ -1266,13 +1552,29 @@ forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph31_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  logRR selogRR, random second(-.6587 -1.205 -.1937 Bayes) secondstats(Noninformative prior: d~dnorm(0.0, 0.001)) ///
+		lcols(trialnam startyr latitude) eform notable forestplot(astext(60) textsize(130) xlabel(0.1,10)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 // Note that text size is handled differently/better by new version, so textsize(130) and xlabel() may not be necessary.
 metan logRR selogRR, random second(-.6587 -1.205 -.1937 Bayes) secondstats(Noninformative prior: d~dnorm(0.0, 0.001)) ///
 	lcols(trialnam startyr latitude) eform notable forestplot(astext(60))
 graph save "$Graphs/graph31_metan_v2.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  logRR selogRR, random second(-.6587 -1.205 -.1937 Bayes) secondstats(Noninformative prior: d~dnorm(0.0, 0.001)) ///
+		lcols(trialnam startyr latitude) eform notable forestplot(astext(60)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 // Stata 16
 meta set logRR selogRR, random(dl) studylab(trialnam)
@@ -1308,17 +1610,33 @@ forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph32_metan.gph"
 // Note that automatic sizing of graph dimensions is better in the new version,
 // so options such as xsize() and ysize() may not be necessary
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tcases tnoncases ccases cnoncases, rr random rfdist lcols(trialnam startyr latitude) by(lat_cat) notable ///
+		forestplot(astext(60) xlabel(0.1 1 10) xsize(10) ysize(8)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 // Also note: new version does not automatically present a p-value for heterogeneity on the forest plot
 // to avoid confusion with significance test of overall effect
 // Hence, to *exactly* recreate the example, we need to add the option "hetinfo(isq p)"
-metan  tcases tnoncases ccases cnoncases, rr random rfdist lcols(trialnam startyr latitude) by(lat_cat) notable ///
-	forestplot(astext(60) xlabel(0.1 1 10) hetinfo(isq p))
+metan  tcases tnoncases ccases cnoncases, rr random rfdist lcols(trialnam startyr latitude) by(lat_cat) notable hetinfo(isq p) ///
+	forestplot(astext(60) xlabel(0.1 1 10))
 graph save "$Graphs/graph32_metan_v2.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tcases tnoncases ccases cnoncases, rr random rfdist lcols(trialnam startyr latitude) by(lat_cat) notable hetinfo(isq p) ///
+		forestplot(astext(60) xlabel(0.1 1 10)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 // Note: Slightly different results are seen here in the 2nd or 3rd decimal place
 // I think this is due to metan9 using "float" where (new) metan uses "double" throughout.
@@ -1361,10 +1679,18 @@ forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph33_metan.gph"
 // Note that text size is handled differently/better by new version, so textsize(150) may not be necessary.
 // Similarly, xlabel(0.1 1 10) may not be necessary, as sensible x-axis value labels are chosen automatically
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tcases tnoncases ccases cnoncases, rr random efficacy lcols(trialnam startyr) notable ///
+		forestplot(textsize(150) xlabel(0.1 1 10)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 // Also note: new version does not automatically present a p-value for heterogeneity on the forest plot
 //  to avoid confusion with significance test of overall effect.
@@ -1373,6 +1699,14 @@ graph save "$Graphs/graph33_metan.gph"
 metan  tcases tnoncases ccases cnoncases, rr random efficacy lcols(trialnam startyr) notable ///
 	forestplot(hetinfo(isq p) extraline(no))
 graph save "$Graphs/graph33_metan_v2.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tcases tnoncases ccases cnoncases, rr random efficacy lcols(trialnam startyr) notable ///
+		forestplot(hetinfo(isq p) extraline(no)) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
 
 // Stata 16:  Vaccine efficacy is not automatically calculated
 qui gen VacEff = string(100*(1 - exp(_ES)), "%4.0f") + " (" ///
@@ -1410,18 +1744,26 @@ forvalues i = 1/15 {
 }
 macro drop S_51
 metan  tcases tnoncases ccases cnoncases, rr fixedi second(random) nosecsub notable ///
-	forestplot( ///
-		olineopt(lwidth(thick) lcolor(navy) lpattern(dot)) ///
+	forestplot( olineopt(lwidth(thick) lcolor(navy) lpattern(dot)) ///
 		boxopt(msymbol(triangle) mcolor(dkgreen)) ///
-		pointopt(mlabel(counts) mlabsize(tiny) mlabposition(5)) ///
-	)
+		pointopt(mlabel(counts) mlabsize(tiny) mlabposition(5)) )
 return list, all
 forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph34_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tcases tnoncases ccases cnoncases, rr fixedi second(random) nosecsub notable rcols(counts) ///
+		forestplot( olineopt(lwidth(thick) lcolor(navy) lpattern(dot)) ///
+			boxopt(msymbol(triangle) mcolor(dkgreen)) ///
+			pointopt(mlabel(counts) mlabsize(tiny) mlabposition(5)) ) nograph clear
+	forestplot, useopts rcols()
+	return list, all
+	summarize
+restore
+log off log3
 
 // Stata 16
 meta forest _id _plot _esci _weight, eform fixed(iv) ///
@@ -1472,8 +1814,15 @@ forvalues i=1/15 {
 	cap nois macro list S_`i'
 }
 cap nois macro list S_51
-log off log3
 graph save "$Graphs/graph35_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan  tcases tnoncases ccases cnoncases, $metamethod lcols(trialnam startyr latitude counts) forestplot($metastyle $metaopts) by(lat_cat) notable nograph clear
+	forestplot, useopts lcols(startyr latitude)
+	return list, all
+	summarize
+restore
+log off log3
 
 // Stata 16
 // Need to completely redefine global macros!!
@@ -1618,8 +1967,15 @@ log off log2
 graph save "$Graphs/graph38_metan9.gph"
 log on  log3
 metan    logor selogor, random eform label(namevar=id, yearid=year) influence
-log off log3
 graph save "$Graphs/graph38_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan logor selogor, random eform label(namevar=id, yearid=year) influence nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -1631,8 +1987,15 @@ log off log2
 graph save "$Graphs/graph39_metan9.gph"
 log on  log3
 metan    tdeath tnodeath cdeath cnodeath, fixedi or label(namevar=id, yearid=year) influence
-log off log3
 graph save "$Graphs/graph39_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan tdeath tnodeath cdeath cnodeath, fixedi or label(namevar=id, yearid=year) influence nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 forvalues i = 1/15 {
 	macro drop S_`i'
@@ -1644,9 +2007,15 @@ log off log2
 graph save "$Graphs/graph40_metan9.gph"
 log on  log3
 metan    tsample tmean tsd csample cmean csd, cohen notable influence
-log off log3
 graph save "$Graphs/graph40_metan.gph"
-
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan tsample tmean tsd csample cmean csd, cohen notable influence nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 
 
@@ -1677,16 +2046,28 @@ metaprop num denom, random by(tgroup) cimethod(exact) ///
 log off log2
 graph save "$Graphs/graph41_metan9.gph"
 log on  log3
-metan num denom, proportion random by(tgroup) cimethod(exact) ///
-	label(namevar=author, yearvar=year) ///
-	forestplot(xlab(.25 0.5 .75 1) xline(0, lcolor(black)) ///
-	subti("Atypical cervical cytology", size(4)) ///
-	xtitle("Proportion",size(2)) nowt ///
-	olineopt(lcolor(red) lpattern(shortdash)) ///
-	plotregion(icolor(ltbluishgray)) ///
-	diamopt(lcolor(red)) classic boxsca(50))
-log off log3
+metan num denom, proportion random by(tgroup) cimethod(exact) label(namevar=author, yearvar=year) ///
+	forestplot( xlab(.25 0.5 .75 1) xline(0, lcolor(black)) ///
+		subti("Atypical cervical cytology", size(4)) ///
+		xtitle("Proportion",size(2)) nowt ///
+		olineopt(lcolor(red) lpattern(shortdash)) ///
+		plotregion(icolor(ltbluishgray)) ///
+		diamopt(lcolor(red)) classic boxsca(50) )
 graph save "$Graphs/graph41_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan num denom, proportion random by(tgroup) cimethod(exact) label(namevar=author, yearvar=year) ///
+		forestplot( xlab(.25 0.5 .75 1) xline(0, lcolor(black)) ///
+			subti("Atypical cervical cytology", size(4)) ///
+			xtitle("Proportion",size(2)) nowt ///
+			olineopt(lcolor(red) lpattern(shortdash)) ///
+			plotregion(icolor(ltbluishgray)) ///
+			diamopt(lcolor(red)) classic boxsca(50) ) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 	
 * Example 2
@@ -1711,17 +2092,29 @@ metaprop p16p p16tot, random ftt cimethod(exact) ///
 log off log2
 graph save "$Graphs/graph42_metan9.gph"
 log on  log3
-metan p16p p16tot, proportion random ftt cimethod(exact) ///
-	label(namevar=author, yearvar=year) sortby(year author) ///
-	forestplot(xlab(0.1(0.1)1) xline(0, lcolor(black)) ///
-	ti(Positivity of p16 immunostaining, size(4) color(blue)) ///
-	subti("Cytology = WNL", size(4) color(blue)) ///
-	xtitle(Proportion, size(3)) nowt nostats ///
-	olineopt(lcolor(red) lpattern(shortdash)) ///
-	diamopt(lcolor(black)) classic)
-log off log3
+metan p16p p16tot, proportion random ftt cimethod(exact) label(namevar=author, yearvar=year) sortby(year author) ///
+	forestplot( xlab(0.1(0.1)1) xline(0, lcolor(black)) ///
+		ti(Positivity of p16 immunostaining, size(4) color(blue)) ///
+		subti("Cytology = WNL", size(4) color(blue)) ///
+		xtitle(Proportion, size(3)) nowt nostats ///
+		olineopt(lcolor(red) lpattern(shortdash)) ///
+		diamopt(lcolor(black)) classic )
 graph save "$Graphs/graph42_metan.gph"
-	
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan p16p p16tot, proportion random ftt cimethod(exact) label(namevar=author, yearvar=year) sortby(year author) ///
+		forestplot( xlab(0.1(0.1)1) xline(0, lcolor(black)) ///
+			ti(Positivity of p16 immunostaining, size(4) color(blue)) ///
+			subti("Cytology = WNL", size(4) color(blue)) ///
+			xtitle(Proportion, size(3)) nowt nostats ///
+			olineopt(lcolor(red) lpattern(shortdash)) ///
+			diamopt(lcolor(black)) classic ) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
+
 
 * Example 3
 // The dataset used in this example produced the top-left graph in figure one in Ioanna Tsoumpou et al. (2009).
@@ -1742,16 +2135,28 @@ metaprop p16p p16tot, random ftt cimethod(exact) ///
 log off log2
 graph save "$Graphs/graph43_metan9.gph"
 log on  log3
-metan p16p p16tot, proportion random ftt cimethod(exact) ///
-	label(namevar=author, yearvar=year) sortby(year author) ///
-	forestplot(xlab(0.1(0.1)1) xline(0, lcolor(black)) ///
-	ti(Positivity of p16 immunostaining, size(4) color(blue)) ///
-	subti("Cytology = HSIL", size(4) color(blue)) ///
-	xtitle(Proportion, size(3)) nowt nostats ///
-	olineopt(lcolor(red) lpattern(shortdash)) ///
-	diamopt(lcolor(black)) classic)
-log off log3
+metan p16p p16tot, proportion random ftt cimethod(exact) label(namevar=author, yearvar=year) sortby(year author) ///
+	forestplot( xlab(0.1(0.1)1) xline(0, lcolor(black)) ///
+		ti(Positivity of p16 immunostaining, size(4) color(blue)) ///
+		subti("Cytology = HSIL", size(4) color(blue)) ///
+		xtitle(Proportion, size(3)) nowt nostats ///
+		olineopt(lcolor(red) lpattern(shortdash)) ///
+		diamopt(lcolor(black)) classic )
 graph save "$Graphs/graph43_metan.gph"
+/* NEW 2024: summary of forestplot results set and returned values from forestplot, to enable quick comparison of plots between versions */
+preserve
+	qui metan p16p p16tot, proportion random ftt cimethod(exact) label(namevar=author, yearvar=year) sortby(year author) ///
+		forestplot( xlab(0.1(0.1)1) xline(0, lcolor(black)) ///
+			ti(Positivity of p16 immunostaining, size(4) color(blue)) ///
+			subti("Cytology = HSIL", size(4) color(blue)) ///
+			xtitle(Proportion, size(3)) nowt nostats ///
+			olineopt(lcolor(red) lpattern(shortdash)) ///
+			diamopt(lcolor(black)) classic ) nograph clear
+	forestplot, useopts
+	return list, all
+	summarize
+restore
+log off log3
 
 
 

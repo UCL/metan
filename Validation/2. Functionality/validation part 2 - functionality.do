@@ -3,7 +3,10 @@
 ***************************
 
 // Compiled by David Fisher
-// for validating  -metan- v4.05  29nov2021
+// for validating  -metan- v4.08  11mar2024
+// [and previously -metan- v4.07  15sep2023
+// [and previously -metan- v4.06  12oct2022
+// [and previously -metan- v4.05  29nov2021
 // [and previously -metan- v4.04  16aug2021
 // [and previously -metan- v4.03  28apr2021
 // [and previously -metan- v4.02  23feb2021
@@ -25,7 +28,7 @@ global Date = subinstr("$S_DATE", " ", "", .)
 
 // global BaseDir2  `"S:/MRCCTU_Methodology/Software/Meta-analysis/metan/Validation/2. Functionality"'
 global Datasets `"$BaseDir2/Example datasets"'
-global Graphs   `"$BaseDir2/Graphs_${Date}"'
+// global Graphs   `"$BaseDir2/Graphs_${Date}"'
 
 // cap log close
 log using `"$BaseDir2/metan_test_${Date}_log"', name(functionality)
@@ -551,18 +554,28 @@ metan events total, proportion study(id) counts transform(ftukey, ivariance) den
 * Multiple weights ("allweights" option)
 * Large forest plots with many options
 use "$Datasets/metan_example_data", clear
-metan tsample tmean tsd csample cmean csd, label(namevar=id) model(iv\dl\hc\reml\hm) hetinfo(tausq Isq Q p)
-metan tsample tmean tsd csample cmean csd, label(namevar=id) model(iv\dl\hc\reml\hm) hetinfo(tausq Isq Q p) counts
-metan tsample tmean tsd csample cmean csd, label(namevar=id) model(iv\dl\hc\reml\hm) hetinfo(tausq Isq Q p) isqparam counts
+preserve
+	metan tsample tmean tsd csample cmean csd, label(namevar=id) model(iv\dl\hc\reml\hm) hetinfo(tausq Isq Q p) counts by(type) rfdist nogr clear
+	forestplot, useopts
+	return list, all
+	summarize
+	graph save "$Graphs/graph44_metan.gph"
+restore	
+preserve
+	metan tsample tmean tsd csample cmean csd, label(namevar=id) model(iv\dl\hc\reml\hm) hetinfo(tausq Isq Q p) allweights by(type) isqparam rfdist nogr clear
+	forestplot, useopts
+	return list, all
+	summarize
+	graph save "$Graphs/graph45_metan.gph"
+restore	
+preserve
+	metan tsample tmean tsd csample cmean csd, label(namevar=id) model(reml) hetinfo(tausq Isq Q p) counts by(type) cumulative nogr clear
+	forestplot, useopts
+	return list, all
+	summarize
+	graph save "$Graphs/graph46_metan.gph"	
+restore	
 
-metan tsample tmean tsd csample cmean csd, label(namevar=id) model(iv\dl\hc\reml\hm) hetinfo(tausq Isq Q p) counts by(type)
-metan tsample tmean tsd csample cmean csd, label(namevar=id) model(iv\dl\hc\reml\hm) hetinfo(tausq Isq Q p) isqparam counts by(type)	// Q placed after model1, not last
-metan tsample tmean tsd csample cmean csd, label(namevar=id) model(iv\dl\hc\reml\hm) hetinfo(tausq Isq Q p) counts by(type) rfdist
-metan tsample tmean tsd csample cmean csd, label(namevar=id) model(reml) hetinfo(tausq Isq Q p) counts by(type) cumulative				// whitespace on LHS?
-
-metan tsample tmean tsd csample cmean csd, label(namevar=id) model(iv\dl\hc\reml\hm) hetinfo(tausq Isq Q p) allweights
-metan tsample tmean tsd csample cmean csd, label(namevar=id) model(iv\dl\hc\reml\hm) hetinfo(tausq Isq Q p) allweights by(type) isqparam
-metan tsample tmean tsd csample cmean csd, label(namevar=id) model(iv\dl\hc\reml\hm) hetinfo(tausq Isq Q p) allweights rfdist
 
 * "altsavedvars" option
 metan tsample tmean tsd csample cmean csd, label(namevar=id) model(reml) nogr nokeepvars
@@ -808,6 +821,14 @@ disp ((r(bystats)[1,1] - `eff')/r(bystats)[2,1])^2	// 3.8766
 disp ((r(bystats)[1,2] - `eff')/r(bystats)[2,2])^2	// 4.4244
 assert float(`Qbet')==float( (((r(bystats)[1,1]-`eff')/r(bystats)[2,1])^2) + (((r(bystats)[1,2]-`eff')/r(bystats)[2,2])^2) )
 * 3.8766 + 4.4244 = 8.3009 again.
+
+
+* Added March 2024:  Empirical Bayes shrinkage estimates
+use "$Datasets/metan_example_data", clear
+metan tsample tmean tsd csample cmean csd, label(namevar=id) nogr ebsh random
+meta5 _ES _seES, ebayes
+assert round(ebest,.000001)==round(_EBS_ES,.000001)
+assert round(ebse,.000001)==round(_EBS_seES,.000001)
 
 
 
