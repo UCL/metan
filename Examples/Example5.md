@@ -3,7 +3,7 @@
 # Example 5
 A "compound" forest plot, in which study names and associated information are displayed separately, avoiding repetition whilst allowing the forest plots themselves to have similar dimensions.
 
-Data taken from Figure 3 of [Leeflang MMG et al. Ann Intern Med 2008] (https://doi.org/10.7326/0003-4819-149-12-200812160-00008) "Systematic Reviews of Diagnostic Test Accuracy"
+Data taken from Figure 3 of [Leeflang MMG et al. Ann Intern Med 2008](https://doi.org/10.7326/0003-4819-149-12-200812160-00008) "Systematic Reviews of Diagnostic Test Accuracy"
 
 <a href ="https://github.com/UCL/metan/blob/main/Examples"><img src="Example5_Leeflang.png" width="75%" alt="forest plot" /></a>
 
@@ -54,5 +54,5 @@ metan TN SpecDenom, proportion effect(Specificity) nooverall label(namevar=Autho
 	forestplot(xlabel(0(.2)1) nobox nonote nostats nowt colsonly graphregion(color(white)) scheme(s2color) usedims(A) name(NamesPlot))
 
 // Finally, we combine the plots:
-graph combine NamesPlot SensPlot SpecPlot, rows(1) imargin(zero) graphregion(color(white)) scheme(s2color)
+graph combine NamesPlot SensPlot SpecPlot, rows(1) imargin(zero) xsize(7) graphregion(color(white)) scheme(s2color)
 ```
