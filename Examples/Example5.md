@@ -34,25 +34,25 @@ label variable TN TN
 format %2.0f TP FP FN TN
 format %3.1f Cutoff
 
-// Create variables containing the denominators of sensitivity and specificity:
+* Create variables containing the denominators of sensitivity and specificity:
 gen int SensDenom = TP + FN
 gen int SpecDenom = TN + FP
 
-// Generate forest plots of sensitivity and specificity, using the proportion option.
-// Note the nonames option to suppress the study names here; and the use of the savedims() and usedims() options:
+* Generate forest plots of sensitivity and specificity, using the proportion option.
+* Note the nonames option to suppress the study names here; and the use of the savedims() and usedims() options:
 metan TP SensDenom, proportion effect(Sensitivity) nooverall
 	forestplot(xlabel(0(.2)1) nobox nonote nonames nowt graphregion(color(white)) scheme(s2color) savedims(A) name(SensPlot))
 metan TN SpecDenom, proportion effect(Specificity) nooverall
 	forestplot(xlabel(0(.2)1) nobox nonote nonames nowt graphregion(color(white)) scheme(s2color) usedims(A) name(SpecPlot))
 
-// Before creating the left-hand plot containing the study names and associated information, we need to consider the space taken up by column headings.
-// In the above forest plots, headings will spill over two lines, so we force one of the variables in the left-hand plot to also spill over two lines:
+* Before creating the left-hand plot containing the study names and associated information, we need to consider the space taken up by column headings.
+* In the above forest plots, headings will spill over two lines, so we force one of the variables in the left-hand plot to also spill over two lines:
 label variable Cutoff `"`" "' `"Cutoff"'"'
 
-// Now we can create the plot, using colsonly and usedims():
+* Now we can create the plot, using colsonly and usedims():
 metan TN SpecDenom, proportion effect(Specificity) nooverall label(namevar=Author, yearvar=Year) lcols(TP FP FN TN Cutoff)
 	forestplot(xlabel(0(.2)1) nobox nonote nostats nowt colsonly graphregion(color(white)) scheme(s2color) usedims(A) name(NamesPlot))
 
-// Finally, we combine the plots:
+* Finally, we combine the plots:
 graph combine NamesPlot SensPlot SpecPlot, rows(1) imargin(zero) xsize(7) graphregion(color(white)) scheme(s2color)
 ```
